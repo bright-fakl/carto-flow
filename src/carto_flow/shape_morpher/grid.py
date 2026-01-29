@@ -145,6 +145,9 @@ class Grid:
         """
         xmin, ymin, xmax, ymax = bounds
 
+        # Store original data bounds before margin expansion
+        self._data_bounds = (xmin, ymin, xmax, ymax)
+
         # Apply margin
         if margin > 0:
             w = xmax - xmin
@@ -267,8 +270,13 @@ class Grid:
 
     @property
     def bounds(self) -> tuple[float, float, float, float]:
-        """Grid bounds as (xmin, ymin, xmax, ymax)."""
+        """Grid bounds as (xmin, ymin, xmax, ymax), including any margin."""
         return (self._xmin, self._ymin, self._xmax, self._ymax)
+
+    @property
+    def data_bounds(self) -> tuple[float, float, float, float]:
+        """Original data bounds as (xmin, ymin, xmax, ymax), without margin."""
+        return self._data_bounds
 
     @property
     def size(self) -> tuple[int, int]:

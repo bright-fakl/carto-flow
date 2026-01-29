@@ -159,6 +159,12 @@ class CartogramInternalsSnapshot(BaseSnapshot):
         Modified X-component of velocity field (after anisotropy).
     vy_mod : Optional[np.ndarray]
         Modified Y-component of velocity field (after anisotropy).
+    mean_density : Optional[float]
+        Target equilibrium density (total_values / total_area).
+        Used for normalizing density field in visualizations.
+    outside_mask : Optional[np.ndarray]
+        Boolean mask where True indicates grid cells outside all geometries.
+        Used to exclude background cells in percentile calculations.
     """
 
     iteration: int
@@ -167,6 +173,8 @@ class CartogramInternalsSnapshot(BaseSnapshot):
     vy: Optional[np.ndarray] = None
     vx_mod: Optional[np.ndarray] = None
     vy_mod: Optional[np.ndarray] = None
+    mean_density: Optional[float] = None
+    outside_mask: Optional[np.ndarray] = None
 
     def __repr__(self) -> str:
         """Concise string representation for terminal display."""

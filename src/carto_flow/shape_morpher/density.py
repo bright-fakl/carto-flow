@@ -133,8 +133,34 @@ def compute_density_field(
 
 
 # Helper function for density computation from geometries
-def compute_density_field_from_geometries(geometries, column_values, grid, mean_density=None, smooth=None):
-    """Compute density field directly from geometries (no dataframe dependency)."""
+def compute_density_field_from_geometries(
+    geometries, column_values, grid, mean_density=None, smooth=None, return_outside_mask=False
+):
+    """Compute density field directly from geometries (no dataframe dependency).
+
+    Parameters
+    ----------
+    geometries : list of shapely geometries
+        The geometries to compute density for.
+    column_values : array-like
+        Values associated with each geometry.
+    grid : Grid
+        Grid object with X, Y coordinate arrays.
+    mean_density : float, optional
+        Background density for cells outside geometries.
+    smooth : float, optional
+        Gaussian smoothing sigma.
+    return_outside_mask : bool, default=False
+        If True, return tuple (rho, outside_mask) where outside_mask is a boolean
+        array indicating cells outside all geometries.
+
+    Returns
+    -------
+    rho : np.ndarray
+        Density field array.
+    outside_mask : np.ndarray (only if return_outside_mask=True)
+        Boolean array where True indicates cells outside all geometries.
+    """
     rho = np.zeros_like(grid.X)
 
     # Assign density based on geometry values / areas
@@ -166,4 +192,6 @@ def compute_density_field_from_geometries(geometries, column_values, grid, mean_
         # Preserve the global mean
         rho *= mu_rho / np.mean(rho)
 
+    if return_outside_mask:
+        return rho, outside
     return rho

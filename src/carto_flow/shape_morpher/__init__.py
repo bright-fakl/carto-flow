@@ -38,44 +38,71 @@ Basic GeoDataFrame interface:
 Object-oriented approach with refinement:
 
     >>> computer = MorphComputer(gdf, 'population', options=MorphOptions(grid=grid))
-    >>> result, history = computer.morph()
+    >>> result = computer.morph()
+    >>> cartogram, history = result.geometries, result.history
 
 Multi-resolution cartogram for better convergence:
 
-    >>> cartogram_multi, grids, histories, landmarks = multiresolution_morph(
-    ...     gdf, 'population', resolution=512, levels=3
-    ... )
+    >>> # Default: returns final MorphResult
+    >>> result = multiresolution_morph(gdf, 'population', resolution=512, levels=3)
+    >>> cartogram = result.geometries
+    >>> grid = result.grid
+    >>>
+    >>> # Get all level results
+    >>> results = multiresolution_morph(gdf, 'population', return_all_levels=True)
+    >>>
+    >>> # Get MorphComputer for further refinement
+    >>> computer = multiresolution_morph(gdf, 'population', return_computer=True)
 """
 
-# Core morphing functions
 # Import sub-modules
-from . import anisotropy, density, displacement, grid, history, velocity
-
-# Object-oriented interface classes
-from .shape_morpher import (
-    MorphComputer,
-    MorphOptions,
-    MorphResult,
-    morph_gdf,
-    morph_geometries,
-    multiresolution_morph,
+from . import (
+    anisotropy,
+    comparison,
+    density,
+    displacement,
+    grid,
+    history,
+    metrics,
+    serialization,
+    velocity,
+    visualization,
 )
+
+# Core morphing functions and classes (from split modules)
+from .algorithm import morph_geometries
+from .api import morph_gdf, multiresolution_morph
+from .computer import MorphComputer, RefinementRun
+from .options import (
+    MorphOptions,
+    MorphOptionsConsistencyError,
+    MorphOptionsError,
+    MorphOptionsValidationError,
+    MorphStatus,
+)
+from .result import MorphResult
 
 # Define public API for explicit control over what is exported
 __all__ = [
-    # Object-oriented interface
     "MorphComputer",
     "MorphOptions",
+    "MorphOptionsConsistencyError",
+    "MorphOptionsError",
+    "MorphOptionsValidationError",
     "MorphResult",
-    # Sub-modules
+    "MorphStatus",
+    "RefinementRun",
     "anisotropy",
+    "comparison",
     "density",
     "displacement",
     "grid",
     "history",
+    "metrics",
     "morph_gdf",
     "morph_geometries",
-    # Core morphing functions
     "multiresolution_morph",
+    "serialization",
     "velocity",
+    "visualization",
 ]

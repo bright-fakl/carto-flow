@@ -47,15 +47,21 @@ Basic cartogram creation:
 
 Multi-resolution cartogram with refinement:
 
-    >>> from carto_flow import MorphComputer
+    >>> from carto_flow import MorphComputer, multiresolution_morph
+    >>>
+    >>> # Multi-resolution morphing (returns final MorphResult)
+    >>> result = multiresolution_morph(gdf, 'population', resolution=512, levels=3)
+    >>> cartogram = result.geometries
+    >>> grid = result.grid
     >>>
     >>> # Object-oriented approach with refinement
     >>> computer = MorphComputer(gdf, 'population', options=MorphOptions(grid=grid))
-    >>> result, history = computer.morph()
+    >>> result = computer.morph()
+    >>> cartogram, history = result.geometries, result.history
     >>>
     >>> # Refine with different parameters
     >>> computer.set_computation(mean_tol=0.02, n_iter=200)
-    >>> refined_result, refined_history = computer.morph()
+    >>> refined_result = computer.morph()
 """
 
 # ============================================================================
@@ -82,6 +88,7 @@ from .shape_morpher import (
     MorphComputer,
     MorphOptions,
     MorphResult,
+    MorphStatus,
     anisotropy,
     density,
     displacement,
@@ -103,6 +110,7 @@ __all__ = [
     "MorphComputer",
     "MorphOptions",
     "MorphResult",
+    "MorphStatus",
     # Shape morpher sub-modules
     "anisotropy",
     "compute_complex_polygon_areas_numba",

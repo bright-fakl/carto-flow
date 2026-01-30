@@ -57,6 +57,7 @@ Multi-resolution cartogram for better convergence:
 
 # Import sub-modules
 from . import (
+    animation,
     anisotropy,
     comparison,
     density,
@@ -92,6 +93,7 @@ __all__ = [
     "MorphResult",
     "MorphStatus",
     "RefinementRun",
+    "animation",
     "anisotropy",
     "comparison",
     "density",

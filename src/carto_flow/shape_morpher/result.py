@@ -56,11 +56,15 @@ class MorphResult:
     iterations_completed : int, optional
         Number of iterations completed before termination
     final_mean_error : float, optional
-        Final mean area error at convergence
+        Final mean of absolute log2 area errors at convergence.
+        Log2 representation is symmetric: a value of 1.0 corresponds to
+        regions being 2x too large or too small.
     final_max_error : float, optional
-        Final maximum area error at convergence
+        Final maximum of absolute log2 area errors at convergence.
     final_area_errors : np.ndarray, optional
-        Per-geometry area errors at convergence (same order as geometries)
+        Per-geometry log2 area errors at convergence (same order as geometries).
+        Computed as log2(current_area / target_area). Positive = oversized,
+        negative = undersized.
     displacement_field : Union[Tuple[np.ndarray, np.ndarray], np.ndarray], optional
         Displacement field in same format as input coordinates
     displaced_coords : np.ndarray, optional

@@ -354,10 +354,18 @@ def morph_geometries(
     history = History() if options.save_history else None
     history_internals = History() if options.save_internals else None
 
+    # Pre-compute log2 thresholds from user-specified percentage tolerances
+    # User specifies tolerance as percentage (e.g., 0.02 for 2%)
+    # Internally we check if |log2(current/target)| < log2(1 + tolerance)
+    log2_mean_tol = np.log2(1.0 + options.mean_tol)
+    log2_max_tol = np.log2(1.0 + options.max_tol)
+
     # --- Initial snapshot ---
     if options.save_history:
         current_areas = flat_geoms.compute_areas(use_parallel=True)
-        errors = (current_areas - target_areas) / target_areas
+        # Use log2 ratio for symmetric treatment of over/under-sized regions
+        # log2(current/target): positive = too large, negative = too small
+        errors = np.log2(current_areas / target_areas)
         max_error = np.max(np.abs(errors))
         mean_error = np.mean(np.abs(errors))
 
@@ -449,11 +457,14 @@ def morph_geometries(
 
         # 6. Convergence stats
         current_areas = flat_geoms.compute_areas(use_parallel=True)
-        errors = (current_areas - target_areas) / target_areas
+        # Use log2 ratio for symmetric treatment of over/under-sized regions
+        # log2(current/target): positive = too large, negative = too small
+        errors = np.log2(current_areas / target_areas)
         max_error = np.max(np.abs(errors))
         mean_error = np.mean(np.abs(errors))
 
-        converged = mean_error < options.mean_tol and max_error < options.max_tol
+        # Check convergence using log2-converted thresholds
+        converged = mean_error < log2_mean_tol and max_error < log2_max_tol
         stalled_acc += mean_error > last_mean_error
         stalled = stalled_acc > 5
 
@@ -486,7 +497,11 @@ def morph_geometries(
             )
             history.add_snapshot(snapshot_data)
 
-        pbar.set_postfix_str(f"max={100 * max_error:.1f}%, mean={100 * mean_error:.1f}% - {status}")
+        # Convert log2 errors back to approximate percentage for display
+        # 2^|log2_error| - 1 gives the multiplicative deviation as a fraction
+        max_error_pct = (2**max_error - 1) * 100
+        mean_error_pct = (2**mean_error - 1) * 100
+        pbar.set_postfix_str(f"max={max_error_pct:.1f}%, mean={mean_error_pct:.1f}% - {status}")
 
         if converged or stalled:
             pbar.update()

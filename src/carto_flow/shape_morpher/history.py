@@ -208,11 +208,15 @@ class CartogramSnapshot(BaseSnapshot):
     geometry : Optional[Any]
         GeoDataFrame containing the current polygon geometries.
     area_errors : Optional[np.ndarray]
-        Array of area errors for each polygon.
+        Array of log2 area errors for each polygon.
+        Computed as log2(current_area / target_area).
+        Positive values indicate oversized regions, negative values indicate
+        undersized regions. This representation is symmetric: a value of +1
+        means 2x too large, -1 means 2x too small.
     mean_error : Optional[float]
-        Mean absolute area error across all polygons.
+        Mean of absolute log2 area errors across all polygons.
     max_error : Optional[float]
-        Maximum absolute area error across all polygons.
+        Maximum of absolute log2 area errors across all polygons.
     """
 
     iteration: int

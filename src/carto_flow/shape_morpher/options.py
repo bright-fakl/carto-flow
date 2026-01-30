@@ -131,8 +131,8 @@ class MorphOptions:
     n_iter: int = 100
     recompute_every: Optional[int] = None
     snapshot_every: Optional[int] = None
-    mean_tol: float = 0.05
-    max_tol: float = 0.1
+    mean_tol: float = 0.05  # Percentage tolerance, e.g., 0.05 = 5%
+    max_tol: float = 0.10  # Percentage tolerance, e.g., 0.10 = 10%
 
     # Anisotropy options
     Dx: float = 1.0

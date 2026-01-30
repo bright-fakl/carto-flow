@@ -508,7 +508,7 @@ class Grid:
         xmin, ymin, xmax, ymax = self.bounds
         bounds_str = f"({xmin:.1f}, {ymin:.1f}) to ({xmax:.1f}, {ymax:.1f})"
 
-        return f"Grid({sx}×{sy}, dx={dx:.3f}, dy={dy:.3f}, bounds={bounds_str})"
+        return f"Grid({sx}x{sy}, dx={dx:.3f}, dy={dy:.3f}, bounds={bounds_str})"
 
 
 def build_multilevel_grids(bounds, N, n_levels=3, margin=0.5, square=False) -> list:

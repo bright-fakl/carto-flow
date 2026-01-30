@@ -255,7 +255,7 @@ def apply_displacement_to_polygons_vectorized(
         elif isinstance(poly, MultiPolygon):
             flat_polys.extend(poly.geoms)
         else:
-            raise ValueError("Geometry must be Polygon or MultiPolygon")
+            raise TypeError("Geometry must be Polygon or MultiPolygon")
 
     # Flatten all coordinates
     coords = []

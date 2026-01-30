@@ -101,10 +101,7 @@ def _linear_over_values(
         # Interpolate within segment
         val_before = values[idx]
         val_after = values[idx + 1]
-        if val_before != val_after:
-            t = (val_before - target) / (val_before - val_after)
-        else:
-            t = 0.0
+        t = (val_before - target) / (val_before - val_after) if val_before != val_after else 0.0
     else:
         # For increasing values (like iteration), interpolate from min to max
         min_val = values[0]
@@ -118,10 +115,7 @@ def _linear_over_values(
         # Interpolate within segment
         val_before = values[idx]
         val_after = values[idx + 1]
-        if val_after > val_before:
-            t = (target - val_before) / (val_after - val_before)
-        else:
-            t = 0.0
+        t = (target - val_before) / (val_after - val_before) if val_after > val_before else 0.0
 
     return idx + np.clip(t, 0.0, 1.0)
 
@@ -254,10 +248,7 @@ def weights_to_position_mapper(
         # Interpolate within segment
         cumsum_before = cumsum[idx - 1] if idx > 0 else 0.0
         cumsum_after = cumsum[idx]
-        if cumsum_after > cumsum_before:
-            t = (progress - cumsum_before) / (cumsum_after - cumsum_before)
-        else:
-            t = 0.0
+        t = (progress - cumsum_before) / (cumsum_after - cumsum_before) if cumsum_after > cumsum_before else 0.0
 
         return (idx - 1) + np.clip(t, 0.0, 1.0)
 
@@ -703,11 +694,8 @@ def animate_morph_history(
     n_frames = int(duration * fps)
 
     # Check if column refers to a snapshot attribute (e.g., "area_errors")
-    # rather than a GeoDataFrame column
-    column_from_snapshot = False
+    # and use snapshot area_errors as color_values
     if column == "area_errors" and all(e is not None for e in snapshot_area_errors):
-        column_from_snapshot = True
-        # Use snapshot area_errors as color_values
         color_values = snapshot_area_errors
 
     # Validate color_values if provided
@@ -843,10 +831,7 @@ def animate_morph_history(
                     error = None
 
                 # Get interpolated colors from the GeoDataFrame
-                if "_color" in gdf.columns:
-                    colors = gdf["_color"].values
-                else:
-                    colors = None
+                colors = gdf["_color"].values if "_color" in gdf.columns else None
 
             return gdf, idx_before, iteration, error, colors
 
@@ -874,7 +859,7 @@ def animate_morph_history(
         if colorbar and not cbar_added[0] and mappable is not None and color_vmin is not None:
             sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
             sm.set_array([])
-            cbar = fig.colorbar(sm, ax=ax, label=colorbar_label)
+            fig.colorbar(sm, ax=ax, label=colorbar_label)
             cbar_added[0] = True
 
         ax.set_xlim(xmin, xmax)
@@ -1181,17 +1166,12 @@ def animate_geometry_keyframes(
                 )
 
                 # Get interpolated colors from the GeoDataFrame
-                if "_color" in gdf.columns:
-                    colors = gdf["_color"].values
-                else:
-                    colors = None
+                colors = gdf["_color"].values if "_color" in gdf.columns else None
 
                 return gdf, idx_before, t, colors
 
     def get_frame_data_legacy(frame: int) -> tuple["GeoDataFrame", int, float, Optional[np.ndarray]]:
         """Get the GeoDataFrame and colors using legacy hold_frames approach."""
-        n_transitions = n_keyframes - 1
-
         # Check if we're in a hold period
         frames_per_segment = transition_frames + hold_frames
         segment_idx = frame // frames_per_segment
@@ -1230,10 +1210,7 @@ def animate_geometry_keyframes(
         )
 
         # Get interpolated colors from the GeoDataFrame
-        if "_color" in gdf.columns:
-            colors = gdf["_color"].values
-        else:
-            colors = None
+        colors = gdf["_color"].values if "_color" in gdf.columns else None
 
         return gdf, segment_idx, t, colors
 
@@ -1264,7 +1241,7 @@ def animate_geometry_keyframes(
         if colorbar and not cbar_added[0] and mappable is not None and color_vmin is not None:
             sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
             sm.set_array([])
-            cbar = fig.colorbar(sm, ax=ax, label=colorbar_label)
+            fig.colorbar(sm, ax=ax, label=colorbar_label)
             cbar_added[0] = True
 
         ax.set_xlim(xmin, xmax)

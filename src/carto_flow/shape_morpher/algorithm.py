@@ -96,10 +96,10 @@ def _detect_coordinate_format(coords):
             # Check for reasonable dimensions (not too large)
             if X_array.size > 1e6:
                 raise ValueError("Grid format coordinates appear to be too large (>1M points)")
-
-            return "grid"
         except (ValueError, TypeError):
             pass
+        else:
+            return "grid"
 
     # Check for mesh format: (M, N, 2)
     elif coords_array.ndim == 3 and coords_array.shape[2] == 2:
@@ -294,13 +294,8 @@ def morph_geometries(
         options = MorphOptions()
 
     # 1. Setup and validation
-    # Handle different input types for geometries
-    if hasattr(geometries, "values"):
-        # pandas Series or numpy array
-        geom_list = geometries.values
-    else:
-        # List of geometries
-        geom_list = geometries
+    # Handle different input types for geometries (pandas Series, numpy array, or list)
+    geom_list = geometries.values if hasattr(geometries, "values") else geometries
 
     if len(geom_list) != len(column_values):
         raise ValueError("geometries and column_values must have same length")

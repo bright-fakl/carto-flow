@@ -144,11 +144,7 @@ def compare_results(
     >>> comparison = compare_results(result1, result2)
     """
     # Extract geometries from either GeoDataFrame or MorphResult
-    if hasattr(original, "geometries"):
-        gdf1 = original.geometries
-    else:
-        gdf1 = original
-
+    gdf1 = original.geometries if hasattr(original, "geometries") else original
     gdf2 = morphed.geometries
 
     # Compute centroid shifts
@@ -215,15 +211,8 @@ def compute_centroid_shifts(
         Array of shape (n_geometries, 2) containing (dx, dy) shifts
     """
     # Extract geometry lists
-    if hasattr(geom1, "geometry"):
-        geoms1 = geom1.geometry
-    else:
-        geoms1 = geom1
-
-    if hasattr(geom2, "geometry"):
-        geoms2 = geom2.geometry
-    else:
-        geoms2 = geom2
+    geoms1 = geom1.geometry if hasattr(geom1, "geometry") else geom1
+    geoms2 = geom2.geometry if hasattr(geom2, "geometry") else geom2
 
     # Compute centroids
     centroids1 = np.array([[g.centroid.x, g.centroid.y] for g in geoms1])

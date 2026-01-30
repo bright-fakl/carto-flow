@@ -566,10 +566,7 @@ def plot_velocity_field(
 
     # Normalize magnitude for alpha mapping
     mag_min, mag_max = magnitude.min(), magnitude.max()
-    if mag_max > mag_min:
-        magnitude_norm = (magnitude - mag_min) / (mag_max - mag_min)
-    else:
-        magnitude_norm = np.ones_like(magnitude)
+    magnitude_norm = (magnitude - mag_min) / (mag_max - mag_min) if mag_max > mag_min else np.ones_like(magnitude)
 
     # Compute color values if requested
     if color_by is not None or alpha_by_magnitude:

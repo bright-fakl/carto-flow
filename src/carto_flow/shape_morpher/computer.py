@@ -409,12 +409,7 @@ class MorphComputer:
 
         # Set dynamic progress message based on refinement stage
         num_geometries = len(self._gdf_current)
-        if run_id == 0:
-            # First run - morphing initial geometries
-            default_progress_msg = f"Morphing {num_geometries} geometries"
-        else:
-            # Subsequent runs - refinement
-            default_progress_msg = f"Morph refinement {run_id}"
+        default_progress_msg = f"Morphing {num_geometries} geometries" if run_id == 0 else f"Morph refinement {run_id}"
 
         # Create options with progress message (respect custom message if provided)
         morph_options = copy.deepcopy(self._current_options)
@@ -456,9 +451,6 @@ class MorphComputer:
 
             # Add to refinement history
             self._refinement_runs.append(run_record)
-
-            return result
-
         except Exception as e:
             # Mark run as failed
             end_time = time.time()
@@ -470,6 +462,8 @@ class MorphComputer:
 
             self._refinement_runs.append(run_record)
             raise
+        else:
+            return result
 
     # ============================================================================
     # State Management and Utilities

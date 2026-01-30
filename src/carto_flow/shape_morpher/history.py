@@ -133,7 +133,7 @@ class BaseSnapshot(ABC):
                     value = getattr(self, attr_name)
                     if value is not None:
                         variables[attr_name] = value
-                except:
+                except Exception:  # noqa: S110
                     pass  # Skip properties that might fail
         return variables
 
@@ -235,7 +235,7 @@ class CartogramSnapshot(BaseSnapshot):
                     geom_info = f"geom={len(self.geometry)}"
                 elif hasattr(self.geometry, "shape"):
                     geom_info = f"geom={self.geometry.shape[0]}"
-            except:
+            except Exception:
                 geom_info = "geom"
 
         # Error info

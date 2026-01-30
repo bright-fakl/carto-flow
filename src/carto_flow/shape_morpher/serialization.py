@@ -122,13 +122,13 @@ def load_state(path: Union[str, Path]) -> "MorphComputer":
     """
     path = Path(path)
     with open(path, "rb") as f:
-        return pickle.load(f)
+        return pickle.load(f)  # noqa: S301
 
 
 def export_history(
     history: "History",
     path: Union[str, Path],
-    format: str = "csv",
+    output_format: str = "csv",
 ) -> None:
     """Export convergence history to CSV or JSON format.
 
@@ -138,13 +138,13 @@ def export_history(
         History object containing iteration snapshots
     path : str or Path
         Output file path
-    format : str, default='csv'
+    output_format : str, default='csv'
         Output format: 'csv' or 'json'
 
     Examples
     --------
     >>> export_history(result.history, 'convergence.csv')
-    >>> export_history(result.history, 'convergence.json', format='json')
+    >>> export_history(result.history, 'convergence.json', output_format='json')
     """
     path = Path(path)
 
@@ -158,10 +158,10 @@ def export_history(
             row["max_error"] = snapshot.max_error
         data.append(row)
 
-    if format.lower() == "json":
+    if output_format.lower() == "json":
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
-    elif format.lower() == "csv":
+    elif output_format.lower() == "csv":
         if not data:
             return
         # Write CSV manually to avoid pandas dependency
@@ -172,4 +172,4 @@ def export_history(
                 values = [str(row.get(h, "")) for h in headers]
                 f.write(",".join(values) + "\n")
     else:
-        raise ValueError(f"Unsupported format: {format}. Use 'csv' or 'json'.")
+        raise ValueError(f"Unsupported format: {output_format}. Use 'csv' or 'json'.")

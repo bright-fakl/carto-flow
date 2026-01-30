@@ -210,15 +210,16 @@ class MorphOptions:
         # This will automatically trigger validation via __post_init__
         try:
             new_options = replace(self, **kwargs)
-            return new_options
         except Exception as e:
             # Re-raise validation errors with additional context about which fields were being modified
             field_list = ", ".join(kwargs.keys())
             if isinstance(e, MorphOptionsValidationError):
-                raise MorphOptionsValidationError(f"Failed to create options with {field_list}: {e!s}")
+                raise MorphOptionsValidationError(f"Failed to create options with {field_list}: {e!s}") from e
             else:
                 # Re-raise other exceptions (like dataclass field errors) as-is
                 raise
+        else:
+            return new_options
 
     def __post_init__(self):
         """Validate options after dataclass initialization."""

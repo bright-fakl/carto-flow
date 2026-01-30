@@ -109,9 +109,8 @@ def validate_result(result: "MorphResult") -> QualityReport:
         warnings.append(f"Max area error {max_error:.1%} exceeds 10% threshold")
 
     # Check convergence status
-    if hasattr(result, "status"):
-        if str(result.status) == "stalled":
-            warnings.append("Algorithm stalled before convergence")
+    if hasattr(result, "status") and str(result.status) == "stalled":
+        warnings.append("Algorithm stalled before convergence")
 
     return QualityReport(
         is_valid=is_valid,
@@ -147,11 +146,8 @@ def check_topology(geometries: Any) -> tuple[bool, list[int]]:
     """
     invalid_indices = []
 
-    # Handle GeoDataFrame
-    if hasattr(geometries, "geometry"):
-        geom_list = geometries.geometry
-    else:
-        geom_list = geometries
+    # Handle GeoDataFrame or list of geometries
+    geom_list = geometries.geometry if hasattr(geometries, "geometry") else geometries
 
     for i, geom in enumerate(geom_list):
         if (hasattr(geom, "is_valid") and not geom.is_valid) or (hasattr(geom, "is_simple") and not geom.is_simple):

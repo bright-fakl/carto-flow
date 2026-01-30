@@ -138,7 +138,7 @@ class MorphResult:
                 return self.geometries.shape[0]
             else:
                 return 1  # Single geometry
-        except:
+        except Exception:
             return 1  # Fallback
 
     def get_result_tuple(self) -> tuple[Any, "History"]:

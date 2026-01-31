@@ -14,6 +14,9 @@ Shape Splitting
 Shape Manipulation
     shrink: Shrink a shape to create concentric shells with specified area fractions
 
+Visualization
+    plot_partitions: Plot partitioned geometries as a choropleth map
+
 Examples
 --------
 Shape splitting:
@@ -54,10 +57,12 @@ Shape shrinking:
 from .partition import partition_geometries
 from .shrink import shrink
 from .split import split
+from .visualization import plot_partitions
 
 # Define public API for explicit control over what is exported
 __all__ = [
     "partition_geometries",
+    "plot_partitions",
     "shrink",
     "split",
 ]

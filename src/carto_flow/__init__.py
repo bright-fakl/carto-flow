@@ -101,6 +101,15 @@ from .shape_morpher import (
 )
 
 # ============================================================================
+# Shape Splitting
+# ============================================================================
+from .shape_splitter import (
+    shrink_shape,
+    split_geometries,
+    split_shape,
+)
+
+# ============================================================================
 # Public API Definition
 # ============================================================================
 
@@ -126,6 +135,10 @@ __all__ = [
     "multiresolution_morph",
     "reconstruct_geometries",
     "reconstruct_geometry",
+    # Shape splitting functions
+    "shrink_shape",
+    "split_geometries",
+    "split_shape",
     "unpack_geometries",
     "unpack_geometry",
     "velocity",

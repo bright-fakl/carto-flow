@@ -8,51 +8,56 @@ shape shrinking while maintaining general form.
 Main Components
 ---------------
 Shape Splitting
-    split_shape: Split a shape into two parts along an optimal line
-    split_geometries: Split multiple geometries with area-based optimization
+    split: Split a shape into N parts with specified area fractions
+    partition_geometries: Split multiple geometries with area-based optimization
 
 Shape Manipulation
-    shrink_shape: Shrink a shape while maintaining its general form
+    shrink: Shrink a shape to create concentric shells with specified area fractions
 
 Examples
 --------
 Shape splitting:
 
-    >>> from carto_flow.shape_splitter import split_shape
+    >>> from carto_flow.shape_splitter import split
     >>>
-    >>> # Split a shape into two parts with specific area ratio
-    >>> part1, part2 = split_shape(input_shape, fraction=0.6)
-    >>> print(f"Part1 area: {part1.area:.2f}, Part2 area: {part2.area:.2f}")
+    >>> # Binary split: divide into 2 parts with 60/40 ratio
+    >>> parts = split(input_shape, 0.6)
+    >>> print(f"Part1 area: {parts[0].area:.2f}, Part2 area: {parts[1].area:.2f}")
+    >>>
+    >>> # N-way split: divide into 3 parts with 30%, 20%, 50% of area
+    >>> parts = split(input_shape, [0.3, 0.2, 0.5])
+    >>> print(f"Areas: {[p.area for p in parts]}")
 
 Batch processing with GeoDataFrame:
 
     >>> import geopandas as gpd
-    >>> from carto_flow.shape_splitter import split_geometries
+    >>> from carto_flow.shape_splitter import partition_geometries
     >>>
     >>> # Process geometries based on column values
-    >>> result = split_geometries(gdf, 'population', method='shrink', normalization='sum')
+    >>> result = partition_geometries(gdf, 'population', method='shrink', normalization='sum')
     >>> print(f"Processed: {result.geometry.area.values}")
 
 Shape shrinking:
 
-    >>> from carto_flow.shape_splitter import shrink_shape
+    >>> from carto_flow.shape_splitter import shrink
     >>>
-    >>> # Shrink a shape to 80% of its original area
-    >>> shrunken, shell = shrink_shape(original_shape, fraction=0.8)
-    >>> print(f"Original area: {original_shape.area:.2f}")
-    >>> print(f"Shrunken area: {shrunken.area:.2f}")
+    >>> # Binary shrink: shrink to 80% of original area
+    >>> parts = shrink(original_shape, 0.8)
+    >>> print(f"Shell area: {parts[0].area:.2f}, Core area: {parts[1].area:.2f}")
+    >>>
+    >>> # N-way shrink: create 3 shells (25% each) and a core (25%)
+    >>> parts = shrink(original_shape, [0.25, 0.25, 0.25, 0.25])
+    >>> print(f"Areas: {[round(p.area, 2) for p in parts]}")
 """
 
 # Shape splitting functions
-from .shape_splitter import (
-    shrink_shape,
-    split_geometries,
-    split_shape,
-)
+from .partition import partition_geometries
+from .shrink import shrink
+from .split import split
 
 # Define public API for explicit control over what is exported
 __all__ = [
-    "shrink_shape",
-    "split_geometries",
-    "split_shape",
+    "partition_geometries",
+    "shrink",
+    "split",
 ]

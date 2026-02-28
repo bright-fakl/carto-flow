@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from .result import MorphResult
+    from .cartogram import Cartogram
 
 __all__ = [
     "QualityReport",
@@ -69,17 +69,18 @@ class QualityReport:
     warnings: list[str] = field(default_factory=list)
 
 
-def validate_result(result: "MorphResult") -> QualityReport:
+def validate_result(result: "Cartogram") -> QualityReport:
     """Comprehensive validation of morphing result.
 
     Checks topology (self-intersections) and reports area errors from
-    the result. Area errors are computed during morphing and stored in
-    result.final_mean_error, result.final_max_error, and result.final_area_errors.
+    the result. Area errors are computed during morphing and accessed via
+    result.get_errors() which returns a MorphErrors object with mean_error_pct
+    and max_error_pct attributes.
 
     Parameters
     ----------
-    result : MorphResult
-        Morphing result to validate
+    result : Cartogram
+        Cartogram result to validate
 
     Returns
     -------
@@ -97,7 +98,7 @@ def validate_result(result: "MorphResult") -> QualityReport:
     warnings = []
 
     # Check topology
-    topology_ok, invalid_indices = check_topology(result.geometries)
+    topology_ok, invalid_indices = check_topology(result.get_geometry())
 
     has_self_intersections = len(invalid_indices) > 0
     is_valid = topology_ok
@@ -106,14 +107,16 @@ def validate_result(result: "MorphResult") -> QualityReport:
         warnings.append(f"Found {len(invalid_indices)} invalid geometries")
 
     # Get error metrics from result (computed during morphing)
-    mean_error = result.final_mean_error if result.final_mean_error is not None else 0.0
-    max_error = result.final_max_error if result.final_max_error is not None else 0.0
+    errors = result.get_errors()
+    # Convert from percentage to ratio (e.g., 5.0% -> 0.05)
+    mean_error = errors.mean_error_pct / 100.0 if errors is not None else 0.0
+    max_error = errors.max_error_pct / 100.0 if errors is not None else 0.0
 
     if max_error > 0.1:
         warnings.append(f"Max area error {max_error:.1%} exceeds 10% threshold")
 
     # Check convergence status
-    if hasattr(result, "status") and str(result.status) == "stalled":
+    if hasattr(result, "status") and str(result.status.value) == "stalled":
         warnings.append("Algorithm stalled before convergence")
 
     return QualityReport(
@@ -144,7 +147,7 @@ def check_topology(geometries: Any) -> tuple[bool, list[int]]:
 
     Examples
     --------
-    >>> is_valid, invalid = check_topology(result.geometries)
+    >>> is_valid, invalid = check_topology(result.get_geometry())
     >>> if not is_valid:
     ...     print(f"Found {len(invalid)} invalid geometries")
     """

@@ -4,8 +4,8 @@ History management system for iterative algorithms.
 This module provides a flexible and extensible system for tracking algorithm
 state across iterations. It supports any iterative algorithm through the
 BaseSnapshot interface, making it reusable across different domains. The
-system provides both access to all data for a single snapshot (by iteration),
-and access to all snapshots for a single variable (by variable name).
+system provides both access to all data for a single snapshot (by index or
+iteration), and access to all snapshots for a single variable (by variable name).
 
 Classes
 -------
@@ -17,6 +17,10 @@ CartogramInternalsSnapshot
     Snapshot class for cartogram internal state.
 History
     Container class for managing collections of snapshots.
+ErrorRecord
+    Lightweight scalar error metrics for a single iteration.
+ConvergenceHistory
+    Lightweight history of scalar convergence metrics for all iterations.
 
 Notes
 -----
@@ -37,10 +41,13 @@ algorithm-specific attributes:
 Examples
 --------
 >>> from carto_flow.shape_morpher.history import History, CartogramSnapshot
+>>> from carto_flow.shape_morpher.errors import MorphErrors
+>>> import numpy as np
 >>> history = History()
->>> snapshot = CartogramSnapshot(iteration=0, mean_error=0.1)
+>>> errors = MorphErrors(np.array([0.1]), 0.1, 0.1, np.array([7.2]), 7.2, 7.2)
+>>> snapshot = CartogramSnapshot(iteration=0, errors=errors)
 >>> history.add_snapshot(snapshot)
->>> errors = history.get_variable_history('mean_error')
+>>> error_history = history.get_variable_history('errors')
 """
 
 from abc import ABC
@@ -50,12 +57,17 @@ from typing import Any, Optional
 
 import numpy as np
 
+from .errors import MorphErrors
+
 # Module-level exports - Public API
 __all__ = [
     "BaseSnapshot",
     "CartogramInternalsSnapshot",
     "CartogramSnapshot",
+    "ConvergenceHistory",
+    "ErrorRecord",
     "History",
+    "MorphErrors",
 ]
 
 
@@ -161,9 +173,6 @@ class CartogramInternalsSnapshot(BaseSnapshot):
         Modified X-component of velocity field (after anisotropy).
     vy_mod : Optional[np.ndarray]
         Modified Y-component of velocity field (after anisotropy).
-    mean_density : Optional[float]
-        Target equilibrium density (total_values / total_area).
-        Used for normalizing density field in visualizations.
     outside_mask : Optional[np.ndarray]
         Boolean mask where True indicates grid cells outside all geometries.
         Used to exclude background cells in percentile calculations.
@@ -175,7 +184,6 @@ class CartogramInternalsSnapshot(BaseSnapshot):
     vy: Optional[np.ndarray] = None
     vx_mod: Optional[np.ndarray] = None
     vy_mod: Optional[np.ndarray] = None
-    mean_density: Optional[float] = None
     outside_mask: Optional[np.ndarray] = None
 
     def __repr__(self) -> str:
@@ -208,24 +216,25 @@ class CartogramSnapshot(BaseSnapshot):
     iteration : int
         The iteration number this snapshot represents.
     geometry : Optional[Any]
-        GeoDataFrame containing the current polygon geometries.
-    area_errors : Optional[np.ndarray]
-        Array of log2 area errors for each polygon.
-        Computed as log2(current_area / target_area).
-        Positive values indicate oversized regions, negative values indicate
-        undersized regions. This representation is symmetric: a value of +1
-        means 2x too large, -1 means 2x too small.
-    mean_error : Optional[float]
-        Mean of absolute log2 area errors across all polygons.
-    max_error : Optional[float]
-        Maximum of absolute log2 area errors across all polygons.
+        List of shapely geometries or GeoDataFrame containing the current polygon geometries.
+    landmarks : Optional[Any]
+        List of morphed landmark geometries if landmarks were provided.
+    coords : Optional[Any]
+        Displaced coordinates for displacement field computation.
+        Format matches the input coordinates format (points, grid, or mesh).
+    errors : Optional[MorphErrors]
+        Structured error metrics object containing all error fields.
+        Provides consistent access to log_errors, percentage errors, etc.
+    density : Optional[np.ndarray]
+        Current density values for each geometry (values / current_areas).
     """
 
     iteration: int
-    geometry: Optional[Any] = None  # GeoDataFrame
-    area_errors: Optional[np.ndarray] = None
-    mean_error: Optional[float] = None
-    max_error: Optional[float] = None
+    geometry: Optional[Any] = None
+    landmarks: Optional[Any] = None
+    coords: Optional[Any] = None
+    errors: Optional[MorphErrors] = None
+    density: Optional[np.ndarray] = None
 
     def __repr__(self) -> str:
         """Concise string representation for terminal display."""
@@ -240,26 +249,263 @@ class CartogramSnapshot(BaseSnapshot):
             except Exception:
                 geom_info = "geom"
 
-        # Error info
+        # Error info from MorphErrors
         error_info = ""
-        if self.mean_error is not None or self.max_error is not None:
-            error_parts = []
-            if self.mean_error is not None:
-                error_parts.append(f"mean={self.mean_error:.4f}")
-            if self.max_error is not None:
-                error_parts.append(f"max={self.max_error:.4f}")
-            error_info = f", {', '.join(error_parts)}"
+        if self.errors is not None:
+            error_info = f", mean={self.errors.mean_log_error:.4f}, max={self.errors.max_log_error:.4f}"
 
-        return f"CartogramSnapshot(iter={self.iteration}, {geom_info}{error_info})"
+        # Optional fields
+        extras = []
+        if self.landmarks is not None:
+            extras.append("landmarks")
+        if self.coords is not None:
+            extras.append("coords")
+        extras_str = f", {', '.join(extras)}" if extras else ""
+
+        return f"CartogramSnapshot(iter={self.iteration}, {geom_info}{error_info}{extras_str})"
+
+
+@dataclass
+class ErrorRecord:
+    """Scalar error metrics for a single iteration.
+
+    This lightweight class stores only the 4 scalar error metrics,
+    unlike MorphErrors which also stores per-geometry error arrays.
+    Memory footprint: ~40 bytes per instance.
+
+    Attributes
+    ----------
+    iteration : int
+        The iteration number.
+    mean_log_error : float
+        Mean of absolute log2 errors across all geometries.
+    max_log_error : float
+        Maximum of absolute log2 errors across all geometries.
+    mean_error_pct : float
+        Mean approximate percentage error.
+    max_error_pct : float
+        Maximum approximate percentage error.
+    """
+
+    iteration: int
+    mean_log_error: float
+    max_log_error: float
+    mean_error_pct: float
+    max_error_pct: float
+
+    def __repr__(self) -> str:
+        """Concise string representation."""
+        return (
+            f"ErrorRecord(iter={self.iteration}, "
+            f"mean_log={self.mean_log_error:.4f}, max_log={self.max_log_error:.4f}, "
+            f"mean_pct={self.mean_error_pct:.1f}%, max_pct={self.max_error_pct:.1f}%)"
+        )
+
+
+class ConvergenceHistory:
+    """Lightweight history of scalar convergence metrics.
+
+    Stores scalar error metrics for every iteration of the morphing algorithm,
+    enabling detailed convergence analysis without the memory overhead of
+    full snapshots. Uses pre-allocated numpy arrays for efficiency.
+
+    Parameters
+    ----------
+    capacity : int, optional
+        Maximum number of iterations to store. If not provided, uses dynamic
+        resizing (less efficient but more flexible).
+
+    Attributes
+    ----------
+    iterations : np.ndarray
+        Array of iteration numbers (int64).
+    mean_log_errors : np.ndarray
+        Array of mean log2 errors (float64).
+    max_log_errors : np.ndarray
+        Array of max log2 errors (float64).
+    mean_errors_pct : np.ndarray
+        Array of mean percentage errors (float64).
+    max_errors_pct : np.ndarray
+        Array of max percentage errors (float64).
+
+    Examples
+    --------
+    >>> from carto_flow.shape_morpher.history import ConvergenceHistory
+    >>> from carto_flow.shape_morpher.errors import MorphErrors
+    >>> import numpy as np
+    >>> convergence = ConvergenceHistory(capacity=100)
+    >>> errors = MorphErrors(np.array([0.1]), 0.1, 0.2, np.array([7.2]), 7.2, 14.9)
+    >>> convergence.add(1, errors)
+    >>> print(len(convergence))
+    1
+    >>> record = convergence[0]
+    >>> print(record.iteration)
+    1
+    """
+
+    __slots__ = (
+        "_iterations",
+        "_max_errors_pct",
+        "_max_log_errors",
+        "_mean_errors_pct",
+        "_mean_log_errors",
+        "_size",
+    )
+
+    def __init__(self, capacity: Optional[int] = None):
+        """Initialize with optional pre-allocated capacity."""
+        cap = capacity if capacity is not None else 0
+        self._iterations = np.empty(cap, dtype=np.int64)
+        self._mean_log_errors = np.empty(cap, dtype=np.float64)
+        self._max_log_errors = np.empty(cap, dtype=np.float64)
+        self._mean_errors_pct = np.empty(cap, dtype=np.float64)
+        self._max_errors_pct = np.empty(cap, dtype=np.float64)
+        self._size = 0
+
+    def add(self, iteration: int, errors: MorphErrors) -> None:
+        """Add error metrics for an iteration.
+
+        Parameters
+        ----------
+        iteration : int
+            The iteration number.
+        errors : MorphErrors
+            Error metrics object (only scalar values are extracted).
+        """
+        # Grow arrays if needed (only happens if capacity wasn't specified)
+        if self._size >= len(self._iterations):
+            new_cap = max(16, len(self._iterations) * 2)
+            self._iterations = np.resize(self._iterations, new_cap)
+            self._mean_log_errors = np.resize(self._mean_log_errors, new_cap)
+            self._max_log_errors = np.resize(self._max_log_errors, new_cap)
+            self._mean_errors_pct = np.resize(self._mean_errors_pct, new_cap)
+            self._max_errors_pct = np.resize(self._max_errors_pct, new_cap)
+
+        self._iterations[self._size] = iteration
+        self._mean_log_errors[self._size] = errors.mean_log_error
+        self._max_log_errors[self._size] = errors.max_log_error
+        self._mean_errors_pct[self._size] = errors.mean_error_pct
+        self._max_errors_pct[self._size] = errors.max_error_pct
+        self._size += 1
+
+    def finalize(self) -> None:
+        """Trim arrays to actual size, freeing unused memory."""
+        if self._size < len(self._iterations):
+            self._iterations = self._iterations[: self._size].copy()
+            self._mean_log_errors = self._mean_log_errors[: self._size].copy()
+            self._max_log_errors = self._max_log_errors[: self._size].copy()
+            self._mean_errors_pct = self._mean_errors_pct[: self._size].copy()
+            self._max_errors_pct = self._max_errors_pct[: self._size].copy()
+
+    @property
+    def iterations(self) -> np.ndarray:
+        """Array of iteration numbers."""
+        return self._iterations[: self._size]
+
+    @property
+    def mean_log_errors(self) -> np.ndarray:
+        """Array of mean log2 errors."""
+        return self._mean_log_errors[: self._size]
+
+    @property
+    def max_log_errors(self) -> np.ndarray:
+        """Array of max log2 errors."""
+        return self._max_log_errors[: self._size]
+
+    @property
+    def mean_errors_pct(self) -> np.ndarray:
+        """Array of mean percentage errors."""
+        return self._mean_errors_pct[: self._size]
+
+    @property
+    def max_errors_pct(self) -> np.ndarray:
+        """Array of max percentage errors."""
+        return self._max_errors_pct[: self._size]
+
+    def __len__(self) -> int:
+        """Return number of recorded iterations."""
+        return self._size
+
+    def __getitem__(self, index: int) -> ErrorRecord:
+        """Get error record by index.
+
+        Parameters
+        ----------
+        index : int
+            Index into the history (supports negative indexing).
+
+        Returns
+        -------
+        ErrorRecord
+            Error metrics for the requested index.
+        """
+        if index < 0:
+            index = self._size + index
+        if index < 0 or index >= self._size:
+            raise IndexError(f"index {index} out of range for size {self._size}")
+        return ErrorRecord(
+            iteration=int(self._iterations[index]),
+            mean_log_error=float(self._mean_log_errors[index]),
+            max_log_error=float(self._max_log_errors[index]),
+            mean_error_pct=float(self._mean_errors_pct[index]),
+            max_error_pct=float(self._max_errors_pct[index]),
+        )
+
+    def __iter__(self) -> Iterator[ErrorRecord]:
+        """Iterate over error records."""
+        for i in range(self._size):
+            yield self[i]
+
+    def get_by_iteration(self, iteration: int) -> Optional[ErrorRecord]:
+        """Get error record for a specific iteration.
+
+        Parameters
+        ----------
+        iteration : int
+            The iteration number to retrieve.
+
+        Returns
+        -------
+        ErrorRecord or None
+            The error record, or None if iteration not found.
+        """
+        indices = np.where(self._iterations[: self._size] == iteration)[0]
+        if len(indices) == 0:
+            return None
+        return self[indices[0]]
+
+    def to_dict(self) -> dict[str, np.ndarray]:
+        """Convert to dictionary of arrays for easy export.
+
+        Returns
+        -------
+        dict
+            Dictionary with keys 'iteration', 'mean_log_error', 'max_log_error',
+            'mean_error_pct', 'max_error_pct'.
+        """
+        return {
+            "iteration": self.iterations,
+            "mean_log_error": self.mean_log_errors,
+            "max_log_error": self.max_log_errors,
+            "mean_error_pct": self.mean_errors_pct,
+            "max_error_pct": self.max_errors_pct,
+        }
+
+    def __repr__(self) -> str:
+        """Concise string representation."""
+        if self._size == 0:
+            return "ConvergenceHistory(empty)"
+        return f"ConvergenceHistory(n={self._size}, iters={self._iterations[0]}..{self._iterations[self._size - 1]})"
 
 
 @dataclass
 class History:
     """Manages a collection of snapshots with convenient access patterns.
 
-    This class provides both:
-    - Access to all data for a single snapshot (by iteration)
-    - Access to all snapshots for a single variable (by variable name)
+    This class provides:
+    - List-like index access via `history[index]` or `history[start:stop]`
+    - Iteration-based lookup via `get_snapshot(iteration)`
+    - Variable history across all snapshots via `get_variable_history(name)`
 
     It works with any snapshot class that inherits from BaseSnapshot,
     making it reusable for any iterative algorithm.
@@ -271,12 +517,12 @@ class History:
 
     Examples
     --------
-    >>> from carto_flow.history import History, CartogramSnapshot
+    >>> from carto_flow.shape_morpher.history import History, CartogramSnapshot
     >>> history = History()
-    >>> snapshot = CartogramSnapshot(iteration=0, mean_error=0.1)
+    >>> snapshot = CartogramSnapshot(iteration=0)
     >>> history.add_snapshot(snapshot)
     >>> latest = history.latest()
-    >>> errors = history.get_variable_history('mean_error')
+    >>> geometries = history.get_variable_history('geometry')
     """
 
     snapshots: list[BaseSnapshot] = field(default_factory=list)
@@ -376,28 +622,34 @@ class History:
         """
         return len(self.snapshots)
 
-    def __getitem__(self, iteration: int) -> BaseSnapshot:
-        """Get snapshot by iteration number.
+    def __getitem__(self, index: int | slice) -> BaseSnapshot | list[BaseSnapshot]:
+        """Get snapshot(s) by index, like a list.
+
+        This provides intuitive list-like access to snapshots. Use
+        `get_snapshot(iteration)` if you need to look up by iteration number.
 
         Parameters
         ----------
-        iteration : int
-            The iteration number to retrieve.
+        index : int | slice
+            The index or slice to retrieve.
 
         Returns
         -------
-        BaseSnapshot
-            The snapshot for the given iteration.
+        BaseSnapshot | list[BaseSnapshot]
+            The snapshot at the given index, or a list of snapshots for slices.
 
         Raises
         ------
-        KeyError
-            If no snapshot exists for the given iteration.
+        IndexError
+            If the index is out of range.
+
+        Examples
+        --------
+        >>> history[0]      # First snapshot
+        >>> history[-1]     # Last snapshot (same as history.latest())
+        >>> history[1:3]    # Snapshots at indices 1 and 2
         """
-        snapshot = self.get_snapshot(iteration)
-        if snapshot is None:
-            raise KeyError(f"No snapshot found for iteration {iteration}")
-        return snapshot
+        return self.snapshots[index]
 
     def __iter__(self) -> Iterator[CartogramSnapshot]:
         """Iterate over snapshots in chronological order.

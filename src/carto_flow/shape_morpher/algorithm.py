@@ -18,9 +18,10 @@ Examples
 >>> options = MorphOptions(n_iter=50)
 >>>
 >>> result = morph_geometries(polygons, values, options=options)
->>> morphed = result.geometries
+>>> morphed = result.snapshots.latest().geometry
 """
 
+import time
 from typing import Optional
 
 import numpy as np
@@ -31,15 +32,17 @@ from ..optimizations.geometry import (
     reconstruct_geometries,
     unpack_geometries,
 )
+from .cartogram import Cartogram
 from .density import compute_density_field_from_geometries
 from .displacement import displace_coords_numba
+from .errors import compute_error_metrics
 from .history import (
     CartogramInternalsSnapshot,
     CartogramSnapshot,
+    ConvergenceHistory,
     History,
 )
 from .options import MorphOptions, MorphStatus
-from .result import MorphResult
 from .velocity import VelocityComputerFFTW
 
 __all__ = [
@@ -63,8 +66,8 @@ def _detect_coordinate_format(coords):
 
     Returns
     -------
-    str
-        Detected format: 'points', 'grid', or 'mesh'
+    (str, sz)
+        Detected format ('points', 'grid', or 'mesh') and size of coordinate set
 
     Raises
     ------
@@ -78,7 +81,7 @@ def _detect_coordinate_format(coords):
         # Additional check: ensure values look like coordinates (not too large)
         if np.any(np.abs(coords_array) > 1e10):
             raise ValueError("Coordinates appear to contain unreasonably large values")
-        return "points"
+        return "points", coords_array.shape
 
     # Check for grid format: tuple/list of (X, Y) arrays
     elif isinstance(coords, (tuple, list)) and len(coords) == 2:
@@ -97,14 +100,14 @@ def _detect_coordinate_format(coords):
         except (ValueError, TypeError):
             pass
         else:
-            return "grid"
+            return "grid", (X_array.shape, Y_array.shape)
 
     # Check for mesh format: (M, N, 2)
     elif coords_array.ndim == 3 and coords_array.shape[2] == 2:
         # Check for reasonable size
         if coords_array.size > 2e6:  # 1M coordinates * 2 values
             raise ValueError("Mesh format coordinates appear to be too large (>1M points)")
-        return "mesh"
+        return "mesh", coords_array.shape
 
     # If we get here, format is unclear
     raise ValueError(
@@ -114,7 +117,7 @@ def _detect_coordinate_format(coords):
     )
 
 
-def _convert_displacement_to_input_format(displacement_field, original_coords, detected_format):
+def _convert_coords_to_input_format(coords, format_type, sz):
     """
     Convert displacement field back to the same format as input coordinates.
 
@@ -122,29 +125,27 @@ def _convert_displacement_to_input_format(displacement_field, original_coords, d
     ----------
     displacement_field : (N,2) array
         (Ux, Uy) displacement arrays as (N,2) array
-    original_coords : array-like
-        Original input coordinates to match format
-    detected_format : str
+    format_type : str
         The detected format of input coordinates
+    sz : tuple
+        The size of the original input coordinates (used for reshaping)
 
     Returns
     -------
     array-like
-        Displacement field in same format as input coordinates
+        Coordinates in same format as input coordinates
     """
-    if detected_format == "points":
+    if format_type == "points":
         # Input was (N, 2), return (N, 2) displacement
-        return displacement_field
-    elif detected_format == "grid":
+        return coords
+    elif format_type == "grid":
         # Input was (X, Y) tuple, return (X, Y) displacement tuple
-        X, Y = original_coords
-        return (displacement_field[:, 0].reshape(X.shape), displacement_field[:, 1].reshape(Y.shape))
-    elif detected_format == "mesh":
+        return (coords[:, 0].reshape(sz[0]), coords[:, 1].reshape(sz[1]))
+    elif format_type == "mesh":
         # Input was (M, N, 2), return (M, N, 2) displacement
-        coords_array = np.asarray(original_coords)
-        return displacement_field.reshape(coords_array.shape)
+        return coords.reshape(sz)
     else:
-        raise ValueError(f"Unknown format: {detected_format}")
+        raise ValueError(f"Unknown format: {format_type}")
 
 
 def _normalize_coordinates(coords, format_type=None):
@@ -171,7 +172,7 @@ def _normalize_coordinates(coords, format_type=None):
 
     # Auto-detect format if not provided
     if format_type is None:
-        format_type = _detect_coordinate_format(coords)
+        format_type, _ = _detect_coordinate_format(coords)
 
     if format_type == "points":
         # Already in correct format
@@ -195,15 +196,12 @@ def _normalize_coordinates(coords, format_type=None):
 
 def morph_geometries(
     geometries,
-    column_values,
-    original_areas=None,
+    values,
+    target_density=None,
     landmarks=None,
-    # New options parameter for simplified API
+    coords=None,
     options: Optional[MorphOptions] = None,
-    # Displacement field computation
-    displacement_coords=None,
-    previous_displaced_coords=None,
-) -> MorphResult:
+) -> Cartogram:
     """
     Core morphing algorithm working with shapely geometries.
 
@@ -215,137 +213,132 @@ def morph_geometries(
     ----------
     geometries : List[Geometry]
         Shapely geometries to morph
-    column_values : np.ndarray
-        Data values driving the morphing (e.g., population values)
-    original_areas : np.ndarray, optional
-        Original areas for refinement mode. If None, treats as initial morphing
+    values : np.ndarray
+        Data values driving the morphing (e.g., population sizes)
+    target_density : float, optional
+        Target density for refinement mode. If None, computed as the mean
+        density from values and areas of geometries.
     landmarks : Any, optional
-        Optional landmarks GeoDataFrame for tracking reference points
-    options : MorphOptions, optional
-        Algorithm options (dt, n_iter, density_smooth, etc.)
-    displacement_coords : array-like, optional
-        Coordinates for displacement field computation in various formats:
+        Optional landmarks geometries for tracking reference points
+    coords : array-like, optional
+        User-defined coordinates, e.g. for displacement field computation, in various formats:
         - (N, 2) array for point coordinates
         - (X, Y) tuple for meshgrid coordinates
         - (M, N, 2) array for mesh format
         Format is automatically detected from the coordinate structure.
-    previous_displaced_coords : np.ndarray, optional
-        Previously displaced coordinates for refinement mode
+    options : MorphOptions, optional
+        Algorithm options (dt, n_iter, density_smooth, etc.)
 
     Returns
     -------
-    result : MorphResult
-        Complete morphing results containing:
-        - geometries: List of morphed geometries
-        - landmarks: List of morphed landmark geometries (if provided)
-        - history: List of snapshot data for each saved iteration
-        - status: Computation status ("converged", "stalled", or "completed")
-        - displacement_field: Displacement field in same format as input coordinates (if displacement_coords provided)
-        - displaced_coords: Final displaced coordinates for refinement (if displacement_coords provided)
+    result : Cartogram
+        Complete cartogram result containing:
+        - snapshots: History of CartogramSnapshot objects with algorithm state
+        - status: MorphStatus enum (CONVERGED, STALLED, COMPLETED, RUNNING, ORIGINAL)
+        - niterations: Number of iterations completed
+        - duration: Computation time in seconds
+        - options: MorphOptions used for computation
+        - internals: History of internal state (if save_internals=True)
+        - grid: Grid used for computation
+        - target_density: Target equilibrium density
+
+        Access final results via result.latest or result.snapshots.latest():
+        - .geometry: List of morphed geometries
+        - .landmarks: Morphed landmarks (if provided)
+        - .coords: Displaced coordinates (if coords provided)
+        - .errors: MorphErrors with log and percentage error metrics
+        - .density: Current density values
 
     Examples
     --------
-    >>> from carto_flow.shape_morpher import morph_geometries, MorphResult
+    >>> from carto_flow.shape_morpher import morph_geometries, MorphOptions
     >>> from shapely.geometry import Polygon
     >>>
     >>> # Simple morphing
     >>> polygons = [Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])]
     >>> values = [100]
+    >>> options = MorphOptions(n_iter=50)
     >>>
     >>> # Get complete result object
     >>> result = morph_geometries(polygons, values, options=options)
-    >>> morphed = result.geometries
-    >>> snapshots = result.history
+    >>> morphed = result.snapshots.latest().geometry
     >>> print(f"Status: {result.status}")
-    >>> print(f"Converged in {len(snapshots)} iterations")
+    >>> print(f"Converged in {result.niterations} iterations")
 
     >>> # Compute displacement field
     >>> # Create regular grid of coordinates for displacement field
     >>> x = np.linspace(0, 100, 50)
     >>> y = np.linspace(0, 80, 40)
     >>> X, Y = np.meshgrid(x, y)
-    >>> displacement_coords = np.column_stack([X.ravel(), Y.ravel()])
+    >>> coords = np.column_stack([X.ravel(), Y.ravel()])
     >>>
     >>> # Run morphing with displacement field computation (auto-detects format)
     >>> result = morph_geometries(
     ...     polygons, values,
-    ...     displacement_coords=displacement_coords,
+    ...     coords=coords,
     ...     options=options
     ... )
     >>>
-    >>> # Access displacement field results (same format as input)
-    >>> displacement_field = result.displacement_field  # Format matches displacement_coords
-    >>> displaced_coords = result.displaced_coords      # For refinement
+    >>> # Access displaced coordinates (same format as input)
+    >>> final = result.snapshots.latest()
+    >>> displaced_coords = final.coords
     >>>
-    >>> # Refine with displacement field (format auto-detected)
+    >>> # Refine with displaced coordinates (format auto-detected)
     >>> refined_result = morph_geometries(
-    ...     result.geometries, values,
-    ...     displacement_coords=displacement_coords,
-    ...     previous_displaced_coords=result.displaced_coords,
+    ...     final.geometry, values,
+    ...     coords=final.coords,
     ...     options=options
     ... )
     """
 
+    # --- Start timing ---
+    start_time = time.time()
+
     # --- Handle options ---
     if options is None:
-        # Create options from explicit parameters (backward compatibility)
         options = MorphOptions()
 
     # 1. Setup and validation
-    # Handle different input types for geometries (pandas Series, numpy array, or list)
-    geom_list = geometries.values if hasattr(geometries, "values") else geometries
-
-    if len(geom_list) != len(column_values):
-        raise ValueError("geometries and column_values must have same length")
+    if len(geometries) != len(values):
+        raise ValueError("geometries and values must have same length")
 
     # 2. Compute areas and targets
-    current_areas = np.array([g.area for g in geom_list])
-
-    if original_areas is None:
-        original_areas = current_areas
+    current_areas = np.array([g.area for g in geometries])
 
     # 3. Compute algorithm inputs
-    column_values_array = np.asarray(column_values)
-    mean_density = float(np.sum(column_values_array) / np.sum(original_areas))
-    target_areas = np.sum(original_areas) * column_values_array / np.sum(column_values_array)
+    values_array = np.asarray(values)
+    # Compute target density - algorithm uses unscaled (original CRS units), user sees scaled
+    if target_density is None:
+        # Initial morph: compute from current areas
+        unscaled_target_density = float(np.sum(values_array) / np.sum(current_areas))
+        target_density = unscaled_target_density / options.area_scale
+    else:
+        # Refinement: target_density provided in scaled units, derive unscaled for algorithm
+        unscaled_target_density = target_density * options.area_scale
+    target_areas = values_array / unscaled_target_density
 
     # 4. Initialize algorithm state
-    flat_geoms = unpack_geometries(geom_list)
+    flat_geoms = unpack_geometries(geometries)
     # Resolve grid using options
-    grid = options.get_grid(options._calculate_bounds_from_geometries(geom_list))
+    grid = options.get_grid(options._calculate_bounds_from_geometries(geometries))
     velocity_computer = VelocityComputerFFTW(grid, Dx=options.Dx, Dy=options.Dy)
 
     # Handle landmarks
     flat_landmarks_geoms = unpack_geometries(landmarks) if landmarks is not None else None
 
-    # Handle displacement field coordinates
-    displacement_coords_original = None
-    displacement_coords_current = None
-    detected_format = None
-    if displacement_coords is not None:
+    # Handle displacement coordinates
+    flat_coords = None
+    coords_format = None
+    coords_sz = None
+    if coords is not None:
         # Detect and normalize input format to (N, 2) array
-        detected_format = _detect_coordinate_format(displacement_coords)
-        displacement_coords_original = _normalize_coordinates(displacement_coords)
-
-        if previous_displaced_coords is not None:
-            # Validate that displacement coordinates match in size
-            original_size = len(displacement_coords_original)
-            previous_size = len(previous_displaced_coords)
-            if original_size != previous_size:
-                raise ValueError(
-                    f"displacement_coords and previous_displaced_coords must have the same number of points. "
-                    f"Got {original_size} and {previous_size} points respectively."
-                )
-
-            # Refinement mode - use previously displaced coordinates
-            displacement_coords_current = previous_displaced_coords.copy()
-        else:
-            # Initial mode - start with original coordinates
-            displacement_coords_current = displacement_coords_original.copy()
+        coords_format, coords_sz = _detect_coordinate_format(coords)
+        flat_coords = _normalize_coordinates(coords, coords_format)
 
     # 5. Main algorithm loop with snapshotting
-    history = History() if options.save_history else None
-    history_internals = History() if options.save_internals else None
+    snapshots = History()
+    convergence = ConvergenceHistory(capacity=options.n_iter)
+    internals = History() if options.save_internals else None
 
     # Pre-compute log2 thresholds from user-specified percentage tolerances
     # User specifies tolerance as percentage (e.g., 0.02 for 2%)
@@ -353,23 +346,7 @@ def morph_geometries(
     log2_mean_tol = np.log2(1.0 + options.mean_tol)
     log2_max_tol = np.log2(1.0 + options.max_tol)
 
-    # --- Initial snapshot ---
-    if options.save_history:
-        current_areas = flat_geoms.compute_areas(use_parallel=True)
-        # Use log2 ratio for symmetric treatment of over/under-sized regions
-        # log2(current/target): positive = too large, negative = too small
-        errors = np.log2(current_areas / target_areas)
-        max_error = np.max(np.abs(errors))
-        mean_error = np.mean(np.abs(errors))
-
-        snapshot = CartogramSnapshot(
-            iteration=0,
-            geometry=geom_list,
-            area_errors=errors.copy(),
-            mean_error=mean_error,
-            max_error=max_error,
-        )
-        history.add_snapshot(snapshot)
+    status = MorphStatus.ORIGINAL
 
     last_mean_error = np.inf
     stalled_acc = 0
@@ -384,11 +361,16 @@ def morph_geometries(
             current_geoms = reconstruct_geometries(flat_geoms)
             if options.save_internals:
                 rho, outside_mask = compute_density_field_from_geometries(
-                    current_geoms, column_values, grid, mean_density, options.density_smooth, return_outside_mask=True
+                    current_geoms,
+                    values,
+                    grid,
+                    unscaled_target_density,
+                    options.density_smooth,
+                    return_outside_mask=True,
                 )
             else:
                 rho = compute_density_field_from_geometries(
-                    current_geoms, column_values, grid, mean_density, options.density_smooth
+                    current_geoms, values, grid, unscaled_target_density, options.density_smooth
                 )
                 outside_mask = None
 
@@ -422,10 +404,10 @@ def morph_geometries(
                     vy=vy.copy(),
                     vx_mod=vx_mod.copy() if options.anisotropy is not None else None,
                     vy_mod=vy_mod.copy() if options.anisotropy is not None else None,
-                    mean_density=mean_density,
+                    # target_density=target_density,
                     outside_mask=outside_mask.copy() if outside_mask is not None else None,
                 )
-                history_internals.add_snapshot(snapshot)
+                internals.add_snapshot(snapshot)
 
         # 5. Displace geometries
         max_v = max(np.max(np.abs(vx_mod)), np.max(np.abs(vy_mod)), 1e-8)
@@ -443,23 +425,28 @@ def morph_geometries(
             # no need to invalidate cache, because we do not compute the areas
 
         # Displace displacement field coordinates
-        if displacement_coords is not None:
-            displacement_coords_current[:] = displace_coords_numba(
-                displacement_coords_current, grid.x_coords, grid.y_coords, vx_mod, vy_mod, dt_prime, grid.dx, grid.dy
+        if flat_coords is not None:
+            flat_coords[:] = displace_coords_numba(
+                flat_coords, grid.x_coords, grid.y_coords, vx_mod, vy_mod, dt_prime, grid.dx, grid.dy
             )
 
         # 6. Convergence stats
         current_areas = flat_geoms.compute_areas(use_parallel=True)
-        # Use log2 ratio for symmetric treatment of over/under-sized regions
-        # log2(current/target): positive = too large, negative = too small
-        errors = np.log2(current_areas / target_areas)
-        max_error = np.max(np.abs(errors))
-        mean_error = np.mean(np.abs(errors))
+
+        # Compute error metrics using the structured MorphErrors object
+        error_metrics = compute_error_metrics(current_areas, target_areas)
+
+        # Record scalar error metrics for every iteration (lightweight)
+        convergence.add(step + 1, error_metrics)
+
+        # Use structured errors for convergence check
+        max_error = error_metrics.max_log_error
+        mean_error = error_metrics.mean_log_error
 
         # Check convergence using log2-converted thresholds
         converged = mean_error < log2_mean_tol and max_error < log2_max_tol
         stalled_acc += mean_error > last_mean_error
-        stalled = stalled_acc > 5
+        stalled = stalled_acc > 5  # 5 is an arbitrary patience parameter
 
         last_mean_error = mean_error
 
@@ -474,27 +461,30 @@ def morph_geometries(
         )
 
         # 7. Create snapshot data at appropriate iterations
-        if options.save_history and (
-            options.snapshot_every is None
-            or step % options.snapshot_every == 0
-            or converged
+        # We save snapshots at the final iteration (when the algorithm has converged, stalled, or reached the maximum number
+        # of iterations), or at user-defined intervals.
+        if (
+            converged
             or stalled
             or (step + 1) == options.n_iter
+            or (options.snapshot_every is not None and step % options.snapshot_every == 0)
         ):
             snapshot_data = CartogramSnapshot(
                 iteration=step + 1,
                 geometry=reconstruct_geometries(flat_geoms),
-                area_errors=errors.copy(),
-                mean_error=mean_error,
-                max_error=max_error,
+                landmarks=reconstruct_geometries(flat_landmarks_geoms) if landmarks is not None else None,
+                coords=_convert_coords_to_input_format(flat_coords, coords_format, coords_sz)
+                if flat_coords is not None
+                else None,
+                errors=error_metrics,
+                density=values_array / (current_areas * options.area_scale),
             )
-            history.add_snapshot(snapshot_data)
+            snapshots.add_snapshot(snapshot_data)
 
-        # Convert log2 errors back to approximate percentage for display
-        # 2^|log2_error| - 1 gives the multiplicative deviation as a fraction
-        max_error_pct = (2**max_error - 1) * 100
-        mean_error_pct = (2**mean_error - 1) * 100
-        pbar.set_postfix_str(f"max={max_error_pct:.1f}%, mean={mean_error_pct:.1f}% - {status.value}")
+        # Display progress using structured error metrics
+        pbar.set_postfix_str(
+            f"max={error_metrics.max_error_pct:.1f}%, mean={error_metrics.mean_error_pct:.1f}% - {status.value}"
+        )
 
         if converged or stalled:
             pbar.update()
@@ -502,46 +492,19 @@ def morph_geometries(
             break
 
     # 8. Return final geometries and snapshot data
-    final_geometries = reconstruct_geometries(flat_geoms)
-
-    # Handle landmarks if provided
-    if landmarks is not None:
-        landmarks = reconstruct_geometries(flat_landmarks_geoms)
-
-    # Compute displacement field results
-    displacement_field = None
-    displaced_coords_result = None
-    if displacement_coords is not None:
-        # Compute displacement field (displaced - original)
-        displacement_deltas = displacement_coords_current - displacement_coords_original
-
-        # Convert displacement field back to input format
-        displacement_field = _convert_displacement_to_input_format(
-            displacement_deltas, displacement_coords, detected_format
-        )
-        # Return displaced coordinates for future refinement (no copy needed)
-        displaced_coords_result = displacement_coords_current
-
-    # Extract final error metrics from history
-    final_snapshot = history.latest()
-    final_mean_error = final_snapshot.mean_error if final_snapshot else None
-    final_max_error = final_snapshot.max_error if final_snapshot else None
-    final_area_errors = final_snapshot.area_errors if final_snapshot else None
-    iterations_completed = final_snapshot.iteration if final_snapshot else None
+    # Finalize convergence history (convert to arrays, free list memory)
+    convergence.finalize()
 
     # Create result object
-    result = MorphResult(
-        geometries=final_geometries,
-        landmarks=landmarks,
-        history=history,
+    result = Cartogram(
+        snapshots=snapshots,
+        convergence=convergence,
         status=status,
-        history_internals=history_internals,
-        iterations_completed=iterations_completed,
-        final_mean_error=final_mean_error,
-        final_max_error=final_max_error,
-        final_area_errors=final_area_errors,
-        displacement_field=displacement_field,
-        displaced_coords=displaced_coords_result,
+        niterations=snapshots.latest().iteration,
+        duration=time.time() - start_time,
+        options=options,
         grid=grid,
+        target_density=target_density,
+        internals=internals,
     )
     return result

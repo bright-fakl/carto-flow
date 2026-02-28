@@ -33,7 +33,7 @@ import numpy as np
 import pandas as pd
 
 if TYPE_CHECKING:
-    from .result import MorphResult
+    from .cartogram import Cartogram
 
 __all__ = [
     "ComparisonResult",
@@ -117,16 +117,16 @@ class ComparisonResult:
 
 def compare_results(
     original: Any,
-    morphed: "MorphResult",
+    morphed: "Cartogram",
 ) -> ComparisonResult:
     """Compare original geometries to a morphing result.
 
     Parameters
     ----------
-    original : GeoDataFrame or MorphResult
-        Original geometries (GeoDataFrame) or a MorphResult to compare against
-    morphed : MorphResult
-        Morphing result containing transformed geometries
+    original : GeoDataFrame or Cartogram
+        Original geometries (GeoDataFrame) or a Cartogram to compare against
+    morphed : Cartogram
+        Cartogram result containing transformed geometries
 
     Returns
     -------
@@ -147,17 +147,19 @@ def compare_results(
     >>> result2 = morph_gdf(gdf, 'population', options=MorphOptions.preset_high_quality())
     >>> comparison = compare_results(result1, result2)
     """
-    # Extract geometries from either GeoDataFrame or MorphResult
-    gdf1 = original.geometries if hasattr(original, "geometries") else original
-    gdf2 = morphed.geometries
+    # Extract geometries from either GeoDataFrame or Cartogram
+    gdf1 = original.get_geometry() if hasattr(original, "get_geometry") else original
+    gdf2 = morphed.get_geometry()
 
     # Compute centroid shifts
     shifts = compute_centroid_shifts(gdf1, gdf2)
     distances = np.sqrt(shifts[:, 0] ** 2 + shifts[:, 1] ** 2)
 
-    # Compute area changes
-    areas1 = np.array([g.area for g in gdf1.geometry])
-    areas2 = np.array([g.area for g in gdf2.geometry])
+    # Compute area changes (handle both GeoDataFrame and list of geometries)
+    geoms1 = gdf1.geometry if hasattr(gdf1, "geometry") else gdf1
+    geoms2 = gdf2.geometry if hasattr(gdf2, "geometry") else gdf2
+    areas1 = np.array([g.area for g in geoms1])
+    areas2 = np.array([g.area for g in geoms2])
     area_changes = np.where(areas1 > 0, areas2 / areas1, 1.0)
 
     return ComparisonResult(
@@ -171,7 +173,7 @@ def compare_results(
 
 def compute_displacement_vectors(
     original: Any,
-    morphed: "MorphResult",
+    morphed: "Cartogram",
 ) -> np.ndarray:
     """Compute displacement vectors between original and morphed centroids.
 
@@ -179,8 +181,8 @@ def compute_displacement_vectors(
     ----------
     original : GeoDataFrame
         Original GeoDataFrame before morphing
-    morphed : MorphResult
-        Morphing result containing transformed geometries
+    morphed : Cartogram
+        Cartogram result containing transformed geometries
 
     Returns
     -------
@@ -193,7 +195,7 @@ def compute_displacement_vectors(
     >>> for i, (dx, dy) in enumerate(vectors):
     ...     print(f"Geometry {i}: moved ({dx:.2f}, {dy:.2f})")
     """
-    return compute_centroid_shifts(original, morphed.geometries)
+    return compute_centroid_shifts(original, morphed.get_geometry())
 
 
 def compute_centroid_shifts(

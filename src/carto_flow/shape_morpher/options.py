@@ -48,6 +48,8 @@ class MorphStatus(str, Enum):
 
     Values
     ------
+    ORIGINAL : str
+        Original unmorphed state (no morphing performed)
     CONVERGED : str
         Algorithm converged within tolerance thresholds
     STALLED : str
@@ -60,11 +62,15 @@ class MorphStatus(str, Enum):
         Algorithm failed due to an error
     """
 
+    ORIGINAL = "original"
     CONVERGED = "converged"
     STALLED = "stalled"
     COMPLETED = "completed"
     RUNNING = "running"
     FAILED = "failed"
+
+    def __str__(self) -> str:
+        return self.value
 
 
 # ============================================================================
@@ -129,8 +135,8 @@ class MorphOptions:
     # Computation options
     density_smooth: Optional[float] = None
     dt: float = 0.2
-    n_iter: int = 100
-    recompute_every: Optional[int] = None
+    n_iter: int = 500
+    recompute_every: Optional[int] = 10
     snapshot_every: Optional[int] = None
     mean_tol: float = 0.05  # Percentage tolerance, e.g., 0.05 = 5%
     max_tol: float = 0.10  # Percentage tolerance, e.g., 0.10 = 10%
@@ -143,8 +149,10 @@ class MorphOptions:
     # Smoothing options
     vsmooth: Optional[float] = None
 
+    # Unit scaling options
+    area_scale: float = 1.0  # Multiplier for area values (e.g., 1e6 to convert m² to km²)
+
     # Output options
-    save_history: bool = True
     save_internals: bool = False
     show_progress: bool = True
     progress_message: Optional[str] = None
@@ -276,7 +284,7 @@ class MorphOptions:
             "Dy",
             "anisotropy",
             "vsmooth",
-            "save_history",
+            "area_scale",
             "save_internals",
             "show_progress",
             "progress_message",
@@ -347,10 +355,12 @@ class MorphOptions:
             if value is not None and (not isinstance(value, (int, float)) or value < 0):
                 return "vsmooth must be a non-negative number"
 
+        # Unit scaling parameters
+        elif field_name == "area_scale":
+            if not isinstance(value, (int, float)) or value <= 0:
+                return "area_scale must be a positive number"
+
         # Output parameters
-        elif field_name == "save_history":
-            if not isinstance(value, bool):
-                return "save_history must be a boolean"
         elif field_name == "save_internals":
             if not isinstance(value, bool):
                 return "save_internals must be a boolean"

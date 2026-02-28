@@ -19,11 +19,12 @@ save_animation
 
 Examples
 --------
->>> from carto_flow.shape_morpher import morph_gdf, MorphOptions
+>>> from carto_flow import CartogramWorkflow, MorphOptions
 >>> from carto_flow.shape_morpher.animation import animate_morph_history, save_animation
 >>>
->>> result = morph_gdf(gdf, 'population', options=MorphOptions(save_internals=True))
->>> anim = animate_morph_history(result, duration=5.0, fps=15)
+>>> workflow = CartogramWorkflow(gdf, 'population')
+>>> cartogram = workflow.morph(options=MorphOptions(save_history=True))
+>>> anim = animate_morph_history(cartogram, duration=5.0, fps=15)
 >>> save_animation(anim, "morph.gif", fps=15)
 """
 
@@ -37,7 +38,8 @@ from matplotlib.animation import FuncAnimation
 if TYPE_CHECKING:
     from geopandas import GeoDataFrame
 
-    from .result import MorphResult
+    from .cartogram import Cartogram
+    from .workflow import CartogramWorkflow
 
 __all__ = [
     "animate_density_field",
@@ -45,6 +47,8 @@ __all__ = [
     "animate_geometry_keyframes",
     "animate_morph_history",
     "animate_velocity_field",
+    "animate_workflow",
+    "animate_workflow_fields",
     "linear_over",
     "save_animation",
     "weights_to_position_mapper",
@@ -272,7 +276,7 @@ def _extract_geometries(source: Any) -> "GeoDataFrame":
 
     Parameters
     ----------
-    source : GeoDataFrame or MorphResult
+    source : GeoDataFrame or Cartogram
         Geometry source to extract from
 
     Returns
@@ -285,13 +289,18 @@ def _extract_geometries(source: Any) -> "GeoDataFrame":
     TypeError
         If source type is not supported
     """
-    # Check for MorphResult first (has .geometries attribute)
-    if hasattr(source, "geometries"):
-        return source.geometries
+    # Check for Cartogram first (has .latest property with .geometry)
+    if hasattr(source, "latest") and source.latest is not None:
+        snapshot = source.latest
+        if hasattr(snapshot, "geometry") and snapshot.geometry is not None:
+            # Return geometry as a GeoDataFrame-like object
+            import geopandas as gpd
+
+            return gpd.GeoDataFrame(geometry=list(snapshot.geometry))
     # Check for GeoDataFrame (has .geometry attribute)
     if hasattr(source, "geometry"):
         return source
-    raise TypeError(f"Expected GeoDataFrame or MorphResult, got {type(source).__name__}")
+    raise TypeError(f"Expected GeoDataFrame or Cartogram, got {type(source).__name__}")
 
 
 def _interpolate_geometry(geom_a: Any, geom_b: Any, t: float) -> Any:
@@ -550,7 +559,7 @@ def save_animation(
 
 
 def animate_morph_history(
-    result: "MorphResult",
+    cartogram: "Cartogram",
     duration: float = 5.0,
     fps: int = 15,
     interpolation: str = "nearest",
@@ -565,12 +574,12 @@ def animate_morph_history(
     figsize: tuple[float, float] = (10, 8),
     **kwargs: Any,
 ) -> FuncAnimation:
-    """Animate through algorithm snapshots from a MorphResult's history.
+    """Animate through algorithm snapshots from a Cartogram's history.
 
     Parameters
     ----------
-    result : MorphResult
-        Morphing result with history containing geometry snapshots
+    cartogram : Cartogram
+        Cartogram result with snapshots containing geometry history
     duration : float, default=5.0
         Animation duration in seconds
     fps : int, default=15
@@ -590,8 +599,8 @@ def animate_morph_history(
     column : str, optional
         Column to use for coloring geometries. Values are read from each
         snapshot's GeoDataFrame and color limits are computed globally.
-        Special value: "area_errors" extracts per-geometry errors from
-        each snapshot's area_errors attribute.
+        Special value: "errors_pct" extracts per-geometry percentage errors
+        from each snapshot's errors attribute.
     color_values : list of arrays, optional
         Per-snapshot color values. Each array has one value per geometry.
         When provided, takes precedence over column. Color values are
@@ -619,59 +628,60 @@ def animate_morph_history(
     Raises
     ------
     ValueError
-        If result.history doesn't contain geometry snapshots
+        If cartogram.snapshots doesn't contain geometry snapshots
 
     Notes
     -----
     Available variables for position_mapper (extracted from snapshots):
     - "iteration": Iteration numbers
-    - "mean_error": Mean area errors (if available)
-    - "max_error": Maximum area errors (if available)
+    - "mean_error": Mean log2 errors (if available)
+    - "max_error": Maximum log2 errors (if available)
     - "index": Snapshot indices [0, 1, 2, ...]
 
     Color limits are computed globally across all snapshots to ensure
     consistent coloring throughout the animation.
 
     Special column handling:
-    - ``column="area_errors"``: Extracts per-geometry area errors from each
-      snapshot's ``area_errors`` attribute (not from the GeoDataFrame columns).
+    - ``column="errors_pct"``: Extracts per-geometry percentage errors from
+      each snapshot's ``errors.errors_pct`` attribute.
       This allows coloring geometries by their individual area errors.
 
     Examples
     --------
-    >>> result = morph_gdf(gdf, 'pop', options=MorphOptions(save_history=True))
-    >>> anim = animate_morph_history(result, duration=5.0, fps=15)
+    >>> workflow = CartogramWorkflow(gdf, 'pop')
+    >>> cartogram = workflow.morph(options=MorphOptions(save_history=True))
+    >>> anim = animate_morph_history(cartogram, duration=5.0, fps=15)
     >>> save_animation(anim, "morph.gif", fps=15)
 
-    >>> # Color by per-geometry area error (from snapshot.area_errors)
+    >>> # Color by per-geometry error percentage
     >>> anim = animate_morph_history(
-    ...     result, column="area_errors", cmap="RdYlGn_r",
-    ...     colorbar=True, colorbar_label="Area Error"
+    ...     cartogram, column="errors_pct", cmap="RdYlGn_r",
+    ...     colorbar=True, colorbar_label="Error %"
     ... )
 
     >>> # Custom per-snapshot values
-    >>> densities = [compute_density(snap.geometry) for snap in result.history]
-    >>> anim = animate_morph_history(result, color_values=densities, cmap="plasma")
+    >>> densities = [snap.density for snap in cartogram.snapshots]
+    >>> anim = animate_morph_history(cartogram, color_values=densities, cmap="plasma")
 
     >>> # Smooth animation with linear interpolation (colors also interpolated)
     >>> anim = animate_morph_history(
-    ...     result, interpolation="linear", column="area_errors"
+    ...     cartogram, interpolation="linear", column="errors_pct"
     ... )
     """
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
 
-    # Extract geometry snapshots from history
-    if not hasattr(result, "history") or result.history is None:
-        raise ValueError("result.history is required for animate_morph_history")
+    # Extract geometry snapshots from cartogram
+    if not hasattr(cartogram, "snapshots") or cartogram.snapshots is None:
+        raise ValueError("cartogram.snapshots is required for animate_morph_history")
 
-    snapshots = result.history.snapshots
+    snapshots = cartogram.snapshots.snapshots
     if not snapshots:
-        raise ValueError("result.history contains no snapshots")
+        raise ValueError("cartogram.snapshots contains no snapshots")
 
     # Extract geometries and build variables dict from snapshots
     geometries = []
-    snapshot_area_errors: list[Optional[np.ndarray]] = []
+    snapshot_errors_pct: list[Optional[np.ndarray]] = []
     variables: dict[str, list] = {
         "iteration": [],
         "mean_error": [],
@@ -682,10 +692,15 @@ def animate_morph_history(
         if hasattr(snap, "geometry") and snap.geometry is not None:
             geometries.append(snap.geometry)
             variables["iteration"].append(snap.iteration)
-            variables["mean_error"].append(snap.mean_error if hasattr(snap, "mean_error") else None)
-            variables["max_error"].append(snap.max_error if hasattr(snap, "max_error") else None)
-            # Extract area_errors from snapshot (stored as attribute, not in GeoDataFrame)
-            snapshot_area_errors.append(snap.area_errors if hasattr(snap, "area_errors") else None)
+            # Extract errors from the MorphErrors object
+            if snap.errors is not None:
+                variables["mean_error"].append(snap.errors.mean_log_error)
+                variables["max_error"].append(snap.errors.max_log_error)
+                snapshot_errors_pct.append(snap.errors.errors_pct)
+            else:
+                variables["mean_error"].append(None)
+                variables["max_error"].append(None)
+                snapshot_errors_pct.append(None)
 
     if not geometries:
         raise ValueError(
@@ -696,10 +711,10 @@ def animate_morph_history(
     n_snapshots = len(geometries)
     n_frames = int(duration * fps)
 
-    # Check if column refers to a snapshot attribute (e.g., "area_errors")
-    # and use snapshot area_errors as color_values
-    if column == "area_errors" and all(e is not None for e in snapshot_area_errors):
-        color_values = snapshot_area_errors
+    # Check if column refers to a snapshot attribute (e.g., "errors_pct")
+    # and use snapshot errors_pct as color_values
+    if column == "errors_pct" and all(e is not None for e in snapshot_errors_pct):
+        color_values = snapshot_errors_pct
 
     # Validate color_values if provided
     if color_values is not None:
@@ -710,16 +725,20 @@ def animate_morph_history(
         # Convert to numpy arrays
         color_values = [np.asarray(cv) for cv in color_values]
 
+    # Convert geometry arrays to GeoDataFrames for plotting
+    import geopandas as gpd
+
+    gdfs = [gpd.GeoDataFrame(geometry=list(geom)) for geom in geometries]
+
     # Determine coloring mode and gather all color values for global limits
     use_coloring = column is not None or color_values is not None
     all_color_values: list[np.ndarray] = []
 
     if color_values is not None:
         all_color_values = color_values
-    elif column is not None:
-        for gdf in geometries:
-            if column in gdf.columns:
-                all_color_values.append(gdf[column].values)
+    # Note: column-based coloring from GeoDataFrame columns is no longer supported
+    # since snapshots store geometry arrays, not GeoDataFrames with columns.
+    # Use color_values or "errors_pct" instead.
 
     # Compute global color limits
     computed_vmin = None
@@ -753,7 +772,7 @@ def animate_morph_history(
     fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     # Get consistent bounds from all geometries
-    all_bounds = [gdf.total_bounds for gdf in geometries]
+    all_bounds = [gdf.total_bounds for gdf in gdfs]
     xmin = min(b[0] for b in all_bounds)
     ymin = min(b[1] for b in all_bounds)
     xmax = max(b[2] for b in all_bounds)
@@ -772,8 +791,8 @@ def animate_morph_history(
         """Get color values for a specific snapshot."""
         if color_values is not None:
             return color_values[idx]
-        elif column is not None and column in geometries[idx].columns:
-            return geometries[idx][column].values
+        # Column-based coloring from GeoDataFrame columns is no longer supported
+        # since snapshots store geometry arrays, not GeoDataFrames with columns.
         return None
 
     def get_frame_data(frame: int) -> tuple["GeoDataFrame", int, float, Optional[float], Optional[np.ndarray]]:
@@ -799,16 +818,16 @@ def animate_morph_history(
             idx = idx_before if t < 0.5 else idx_after
             error = errors[idx] if errors is not None else None
             colors = get_color_values_for_snapshot(idx)
-            return geometries[idx], idx, iterations[idx], error, colors
+            return gdfs[idx], idx, iterations[idx], error, colors
 
         else:  # linear interpolation
             if idx_before == idx_after or t <= 0:
-                gdf = geometries[idx_before]
+                gdf = gdfs[idx_before]
                 iteration = iterations[idx_before]
                 error = errors[idx_before] if errors is not None else None
                 colors = get_color_values_for_snapshot(idx_before)
             elif t >= 1:
-                gdf = geometries[idx_after]
+                gdf = gdfs[idx_after]
                 iteration = iterations[idx_after]
                 error = errors[idx_after] if errors is not None else None
                 colors = get_color_values_for_snapshot(idx_after)
@@ -818,8 +837,8 @@ def animate_morph_history(
                 colors_after = get_color_values_for_snapshot(idx_after)
 
                 gdf = _interpolate_geodataframe(
-                    geometries[idx_before],
-                    geometries[idx_after],
+                    gdfs[idx_before],
+                    gdfs[idx_after],
                     t,
                     color_values_a=colors_before,
                     color_values_b=colors_after,
@@ -840,7 +859,7 @@ def animate_morph_history(
 
     def update(frame):
         ax.clear()
-        gdf, snapshot_idx, iteration, error, colors = get_frame_data(frame)
+        gdf, _snapshot_idx, iteration, error, colors = get_frame_data(frame)
 
         # Determine how to plot
         if use_coloring and colors is not None and color_vmin is not None:
@@ -849,10 +868,6 @@ def animate_morph_history(
             plot_gdf["_plot_color"] = colors
             mappable = plot_gdf.plot(
                 ax=ax, column="_plot_color", legend=False, vmin=color_vmin, vmax=color_vmax, cmap=cmap, **kwargs
-            )
-        elif use_coloring and column is not None and column in gdf.columns and color_vmin is not None:
-            mappable = gdf.plot(
-                ax=ax, column=column, legend=False, vmin=color_vmin, vmax=color_vmax, cmap=cmap, **kwargs
             )
         else:
             gdf.plot(ax=ax, **kwargs)
@@ -920,7 +935,7 @@ def animate_geometry_keyframes(
     keyframes : list
         List of geometry sources. Each can be:
         - GeoDataFrame
-        - MorphResult (uses .geometries)
+        - Cartogram (uses latest snapshot's geometry)
     duration : float, default=5.0
         Animation duration in seconds
     fps : int, default=15
@@ -1276,7 +1291,7 @@ def animate_geometry_keyframes(
 
 
 def animate_fields(
-    result: "MorphResult",
+    cartogram: "Cartogram",
     duration: float = 5.0,
     fps: int = 15,
     interpolation: str = "nearest",
@@ -1307,8 +1322,8 @@ def animate_fields(
 
     Parameters
     ----------
-    result : MorphResult
-        Morphing result with history_internals (requires save_internals=True)
+    cartogram : Cartogram
+        Cartogram result with internals (requires save_internals=True)
     duration : float, default=5.0
         Animation duration in seconds
     fps : int, default=15
@@ -1362,20 +1377,20 @@ def animate_fields(
     Examples
     --------
     >>> # Density field only (default)
-    >>> anim = animate_fields(result, normalize="ratio")
+    >>> anim = animate_fields(cartogram, normalize="ratio")
 
     >>> # Velocity field only
-    >>> anim = animate_fields(result, show_density=False, show_velocity=True)
+    >>> anim = animate_fields(cartogram, show_density=False, show_velocity=True)
 
     >>> # Combined: density with velocity overlay
     >>> anim = animate_fields(
-    ...     result, show_velocity=True, normalize="ratio",
+    ...     cartogram, show_velocity=True, normalize="ratio",
     ...     velocity_color="black", velocity_alpha_by_magnitude=True
     ... )
     """
     from matplotlib.colors import to_rgba
 
-    from .visualization import _resolve_bounds
+    from .visualization import _prepare_density_display, _prepare_velocity_colors, _resolve_bounds
 
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
@@ -1384,15 +1399,15 @@ def animate_fields(
         raise ValueError("At least one of show_density or show_velocity must be True")
 
     # Validate inputs
-    if not hasattr(result, "history_internals") or result.history_internals is None:
-        raise ValueError("result.history_internals is required. Run morphing with save_internals=True.")
+    if not hasattr(cartogram, "internals") or cartogram.internals is None:
+        raise ValueError("cartogram.internals is required. Run morphing with save_internals=True.")
 
-    if result.grid is None:
-        raise ValueError("result.grid is required for field animation")
+    if cartogram.grid is None:
+        raise ValueError("cartogram.grid is required for field animation")
 
-    snapshots = result.history_internals.snapshots
+    snapshots = cartogram.internals.snapshots
     if not snapshots:
-        raise ValueError("result.history_internals contains no snapshots")
+        raise ValueError("cartogram.internals contains no snapshots")
 
     # Filter snapshots based on what we need to show
     def has_density(s: Any) -> bool:
@@ -1414,7 +1429,7 @@ def animate_fields(
         if not valid_snapshots:
             raise ValueError("No velocity field snapshots found in history_internals")
 
-    grid = result.grid
+    grid = cartogram.grid
     n_snapshots = len(valid_snapshots)
     n_frames = int(duration * fps)
 
@@ -1426,11 +1441,20 @@ def animate_fields(
         "max_error": [],
     }
 
-    # Get errors if available (from main history), interpolated to match iterations
-    if hasattr(result, "history") and result.history is not None:
-        history_iterations = result.history.get_variable_history("iteration")
-        mean_errors = result.history.get_variable_history("mean_error")
-        max_errors = result.history.get_variable_history("max_error")
+    # Get errors if available (from snapshots), interpolated to match internals iterations
+    if hasattr(cartogram, "snapshots") and cartogram.snapshots is not None:
+        history_iterations = cartogram.snapshots.get_variable_history("iteration")
+
+        # Extract errors from MorphErrors objects in snapshots
+        mean_errors = []
+        max_errors = []
+        for snap in cartogram.snapshots.snapshots:
+            if snap.errors is not None:
+                mean_errors.append(snap.errors.mean_log_error)
+                max_errors.append(snap.errors.max_log_error)
+            else:
+                mean_errors.append(None)
+                max_errors.append(None)
 
         if history_iterations and mean_errors:
             valid_pairs = [
@@ -1463,22 +1487,29 @@ def animate_fields(
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     extent = [grid.xmin, grid.xmax, grid.ymin, grid.ymax]
 
+    # Get target density and area scale for normalization
+    target_density = cartogram.target_density
+    area_scale = cartogram.options.area_scale if cartogram.options else 1.0
+
     # Compute global ranges for density
     density_vmin, density_vmax, effective_density_cmap = None, None, None
     if show_density:
         if normalize == "difference":
             all_diffs = []
             for snap in valid_snapshots:
-                if hasattr(snap, "mean_density") and snap.mean_density is not None:
-                    all_diffs.append(np.abs(snap.rho - snap.mean_density).max())
+                if target_density is not None:
+                    # Scale rho to match target_density units
+                    rho_scaled = snap.rho / area_scale
+                    all_diffs.append(np.abs(rho_scaled - target_density).max())
             density_vmax = max(all_diffs) if all_diffs else 1.0
             density_vmin = -density_vmax
             effective_density_cmap = density_cmap or "RdBu_r"
         elif normalize == "ratio":
             all_ratios = []
             for snap in valid_snapshots:
-                if hasattr(snap, "mean_density") and snap.mean_density is not None:
-                    ratio = snap.rho / snap.mean_density
+                if target_density is not None and target_density > 0:
+                    rho_scaled = snap.rho / area_scale
+                    ratio = rho_scaled / target_density
                     ratio_clipped = np.clip(ratio, 1e-6, None)
                     all_ratios.append(np.abs(np.log2(ratio_clipped)).max())
             max_log = max(all_ratios) if all_ratios else 1.0
@@ -1517,7 +1548,7 @@ def animate_fields(
         effective_velocity_cmap = velocity_cmap
         velocity_colorbar_label = None
 
-    base_arrow_rgba = to_rgba(velocity_color, alpha=velocity_alpha)
+    to_rgba(velocity_color, alpha=velocity_alpha)
     density_cbar_added = [False]
     velocity_cbar_added = [False]
 
@@ -1525,17 +1556,10 @@ def animate_fields(
         ax.set_aspect("equal")
         return []
 
-    def apply_normalization(rho: np.ndarray, snap: Any) -> tuple[np.ndarray, str]:
-        if normalize == "difference":
-            if hasattr(snap, "mean_density") and snap.mean_density is not None:
-                return rho - snap.mean_density, "Density - Mean"
-            return rho, "Density - Mean"
-        elif normalize == "ratio":
-            if hasattr(snap, "mean_density") and snap.mean_density is not None:
-                ratio = rho / snap.mean_density
-                return np.log2(np.clip(ratio, 1e-6, None)), "log2(Density / Mean)"
-            return rho, "log2(Density / Mean)"
-        return rho, "Density"
+    def apply_normalization(rho: np.ndarray) -> tuple[np.ndarray, str]:
+        """Apply density normalization using shared helper."""
+        rho_display, _, _, _, label, _ = _prepare_density_display(rho, target_density, normalize, area_scale=area_scale)
+        return rho_display, label
 
     def get_frame_data(frame: int) -> tuple[Any, Any, Any, float]:
         """Get fields for a frame. Returns (rho, vx, vy, iteration)."""
@@ -1587,12 +1611,9 @@ def animate_fields(
         ax.clear()
         rho, vx, vy, iteration = get_frame_data(frame)
 
-        idx = min(int(frame / max(1, n_frames - 1) * (n_snapshots - 1)), n_snapshots - 1)
-        snap = valid_snapshots[idx]
-
         # Draw density field
         if show_density and rho is not None:
-            rho_display, label = apply_normalization(rho, snap)
+            rho_display, label = apply_normalization(rho)
             im = ax.imshow(
                 rho_display,
                 origin="lower",
@@ -1613,55 +1634,30 @@ def animate_fields(
             vx_sub = vx[::velocity_skip, ::velocity_skip]
             vy_sub = vy[::velocity_skip, ::velocity_skip]
 
-            if velocity_color_by is not None or velocity_alpha_by_magnitude:
-                magnitude = np.sqrt(vx_sub**2 + vy_sub**2)
-                if mag_max > mag_min:
-                    magnitude_norm = np.clip((magnitude - mag_min) / (mag_max - mag_min), 0, 1)
-                else:
-                    magnitude_norm = np.ones_like(magnitude)
+            # Use shared helper for velocity colors
+            colors, _colorbar_label, _ = _prepare_velocity_colors(
+                vx_sub,
+                vy_sub,
+                color_by=velocity_color_by,
+                alpha_by_magnitude=velocity_alpha_by_magnitude,
+                alpha_range=velocity_alpha_range,
+                cmap=effective_velocity_cmap,
+                base_color=velocity_color,
+                base_alpha=velocity_alpha,
+                mag_range=(mag_min, mag_max),
+            )
 
+            ax.quiver(X_sub, Y_sub, vx_sub, vy_sub, color=colors, scale=velocity_scale, **(velocity_kwargs or {}))
+
+            if velocity_colorbar and not velocity_cbar_added[0] and velocity_color_by is not None:
+                sm = plt.cm.ScalarMappable(cmap=effective_velocity_cmap, norm=plt.Normalize(vmin=0, vmax=1))
                 if velocity_color_by == "magnitude":
-                    C_norm = magnitude_norm
+                    sm.set_clim(mag_min, mag_max)
                 elif velocity_color_by == "direction":
-                    direction = np.arctan2(vy_sub, vx_sub)
-                    C_norm = (direction + np.pi) / (2 * np.pi)
-                else:
-                    C_norm = np.zeros_like(magnitude)
-
-                if effective_velocity_cmap is not None:
-                    cmap_obj = plt.get_cmap(effective_velocity_cmap)
-                    colors = cmap_obj(C_norm.ravel())
-                else:
-                    colors = np.tile(base_arrow_rgba, (C_norm.size, 1))
-
-                if velocity_alpha_by_magnitude:
-                    alpha_min, alpha_max = velocity_alpha_range
-                    alphas = alpha_min + magnitude_norm.ravel() * (alpha_max - alpha_min)
-                    colors = np.array(colors)  # Ensure mutable
-                    colors[:, 3] = alphas
-
-                ax.quiver(X_sub, Y_sub, vx_sub, vy_sub, color=colors, scale=velocity_scale, **(velocity_kwargs or {}))
-
-                if velocity_colorbar and not velocity_cbar_added[0] and velocity_color_by is not None:
-                    sm = plt.cm.ScalarMappable(cmap=effective_velocity_cmap, norm=plt.Normalize(vmin=0, vmax=1))
-                    if velocity_color_by == "magnitude":
-                        sm.set_clim(mag_min, mag_max)
-                    elif velocity_color_by == "direction":
-                        sm.set_clim(-np.pi, np.pi)
-                    sm.set_array([])
-                    fig.colorbar(sm, ax=ax, label=velocity_colorbar_label)
-                    velocity_cbar_added[0] = True
-            else:
-                ax.quiver(
-                    X_sub,
-                    Y_sub,
-                    vx_sub,
-                    vy_sub,
-                    color=velocity_color,
-                    alpha=velocity_alpha,
-                    scale=velocity_scale,
-                    **(velocity_kwargs or {}),
-                )
+                    sm.set_clim(-np.pi, np.pi)
+                sm.set_array([])
+                fig.colorbar(sm, ax=ax, label=velocity_colorbar_label)
+                velocity_cbar_added[0] = True
 
         ax.set_aspect("equal")
 
@@ -1701,7 +1697,7 @@ def animate_fields(
 
 
 def animate_density_field(
-    result: "MorphResult",
+    cartogram: "Cartogram",
     duration: float = 5.0,
     fps: int = 15,
     interpolation: str = "nearest",
@@ -1716,7 +1712,7 @@ def animate_density_field(
     See animate_fields for full documentation.
     """
     return animate_fields(
-        result,
+        cartogram,
         duration=duration,
         fps=fps,
         interpolation=interpolation,
@@ -1732,7 +1728,7 @@ def animate_density_field(
 
 
 def animate_velocity_field(
-    result: "MorphResult",
+    cartogram: "Cartogram",
     duration: float = 5.0,
     fps: int = 15,
     interpolation: str = "nearest",
@@ -1752,7 +1748,7 @@ def animate_velocity_field(
     See animate_fields for full documentation.
     """
     return animate_fields(
-        result,
+        cartogram,
         duration=duration,
         fps=fps,
         interpolation=interpolation,
@@ -1769,3 +1765,660 @@ def animate_velocity_field(
         velocity_kwargs=kwargs,
         figsize=figsize,
     )
+
+
+# =============================================================================
+# Workflow animation functions
+# =============================================================================
+
+
+def animate_workflow(
+    workflow: "CartogramWorkflow",
+    duration: float = 8.0,
+    fps: int = 15,
+    interpolation: str = "linear",
+    hold_at_keyframes: float = 0.5,
+    column: Optional[str] = "_morph_error_pct",
+    cmap: str = "RdYlGn_r",
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
+    colorbar: bool = True,
+    colorbar_label: Optional[str] = None,
+    show_run_info: bool = True,
+    figsize: tuple[float, float] = (10, 8),
+    **kwargs: Any,
+) -> FuncAnimation:
+    """Animate through all cartograms in a workflow.
+
+    Shows smooth transitions from original through all morphing results,
+    with optional hold time at each keyframe (final state of each run).
+
+    Parameters
+    ----------
+    workflow : CartogramWorkflow
+        Workflow containing cartogram results.
+    duration : float, default=8.0
+        Total animation duration in seconds.
+    fps : int, default=15
+        Frames per second.
+    interpolation : str, default="linear"
+        Interpolation between keyframes: "nearest" or "linear".
+    hold_at_keyframes : float, default=0.5
+        Seconds to pause at each cartogram's final state.
+    column : str, optional
+        Column for coloring geometries. Special values:
+        - "_morph_error_pct": Per-geometry percentage errors
+        - "_morph_density": Density values
+        If None, no coloring is applied.
+    cmap : str, default="RdYlGn_r"
+        Colormap for coloring geometries.
+    vmin : float, optional
+        Minimum value for color scale. If None, computed from all values.
+    vmax : float, optional
+        Maximum value for color scale. If None, computed from all values.
+    colorbar : bool, default=True
+        Whether to show a colorbar.
+    colorbar_label : str, optional
+        Label for the colorbar. Defaults to column name.
+    show_run_info : bool, default=True
+        Show "Run X/N" in title during animation.
+    figsize : tuple, default=(10, 8)
+        Figure size (width, height).
+    **kwargs
+        Additional arguments passed to GeoDataFrame.plot().
+
+    Returns
+    -------
+    FuncAnimation
+        Matplotlib animation object.
+
+    Examples
+    --------
+    >>> workflow = CartogramWorkflow(gdf, 'population')
+    >>> workflow.morph_multiresolution(levels=3)
+    >>> anim = animate_workflow(workflow, duration=10.0)
+    >>> save_animation(anim, "workflow.gif")
+
+    >>> # Color by error percentage with custom colormap
+    >>> anim = animate_workflow(
+    ...     workflow, column="_morph_error_pct", cmap="RdYlGn_r"
+    ... )
+
+    >>> # No coloring, just geometry transitions
+    >>> anim = animate_workflow(workflow, column=None)
+    """
+    import geopandas as gpd
+
+    if interpolation not in ("nearest", "linear"):
+        raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
+
+    if len(workflow) < 1:
+        raise ValueError("Workflow must contain at least one cartogram")
+
+    # Extract keyframes (final geometry from each cartogram)
+    keyframes: list[GeoDataFrame] = []
+    color_values: list[Optional[np.ndarray]] = []
+
+    for cartogram in workflow:
+        latest = cartogram.latest
+        if latest is None or latest.geometry is None:
+            raise ValueError("Cartogram has no geometry snapshot")
+
+        gdf = gpd.GeoDataFrame(geometry=list(latest.geometry))
+        keyframes.append(gdf)
+
+        # Extract color values based on column
+        if column == "_morph_error_pct":
+            errors = cartogram.get_errors()
+            if errors is not None:
+                color_values.append(errors.errors_pct)
+            else:
+                color_values.append(None)
+        elif column == "_morph_density":
+            density = cartogram.get_density()
+            color_values.append(density)
+        elif column is not None:
+            # Try to get from source GeoDataFrame
+            if cartogram._source_gdf is not None and column in cartogram._source_gdf.columns:
+                color_values.append(cartogram._source_gdf[column].values)
+            else:
+                color_values.append(None)
+        else:
+            color_values.append(None)
+
+    n_keyframes = len(keyframes)
+    n_frames = int(duration * fps)
+
+    # Compute global color limits
+    use_coloring = column is not None and any(cv is not None for cv in color_values)
+    computed_vmin, computed_vmax = None, None
+    if use_coloring:
+        valid_colors = [cv for cv in color_values if cv is not None]
+        if valid_colors:
+            computed_vmin = min(np.nanmin(cv) for cv in valid_colors)
+            computed_vmax = max(np.nanmax(cv) for cv in valid_colors)
+
+    color_vmin = vmin if vmin is not None else computed_vmin
+    color_vmax = vmax if vmax is not None else computed_vmax
+
+    # Determine colorbar label
+    if colorbar_label is None and column is not None:
+        colorbar_label = column
+
+    # Compute timing with hold at keyframes
+    # Total time = hold_time * n_keyframes + transition_time * (n_keyframes - 1)
+    total_hold_time = hold_at_keyframes * n_keyframes
+    if n_keyframes > 1:
+        transition_time = (duration - total_hold_time) / (n_keyframes - 1)
+        transition_time = max(0.1, transition_time)  # Minimum transition time
+    else:
+        transition_time = 0.0
+
+    # Build keyframe times for position mapping
+    keyframe_times = []
+    current_time = 0.0
+    for i in range(n_keyframes):
+        keyframe_times.append(current_time)
+        current_time += hold_at_keyframes
+        if i < n_keyframes - 1:
+            current_time += transition_time
+
+    # Normalize to [0, 1]
+    total_time = current_time
+    keyframe_positions = np.array(keyframe_times) / total_time if total_time > 0 else np.zeros(n_keyframes)
+
+    # Set up figure
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+
+    # Get consistent bounds from all geometries
+    all_bounds = [gdf.total_bounds for gdf in keyframes]
+    xmin = min(b[0] for b in all_bounds)
+    ymin = min(b[1] for b in all_bounds)
+    xmax = max(b[2] for b in all_bounds)
+    ymax = max(b[3] for b in all_bounds)
+
+    # Track colorbar (only add once)
+    cbar_added = [False]
+
+    def init():
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.set_aspect("equal")
+        return []
+
+    def get_frame_data(frame: int) -> tuple["GeoDataFrame", int, float, Optional[np.ndarray]]:
+        """Get the GeoDataFrame and colors for a given frame."""
+        # Map frame to progress [0, 1]
+        progress = frame / max(1, n_frames - 1)
+
+        # Find which segment we're in based on keyframe_positions
+        keyframe_idx = 0
+        t = 0.0
+
+        for i in range(n_keyframes - 1):
+            pos_before = keyframe_positions[i]
+            pos_after = keyframe_positions[i + 1]
+
+            if progress <= pos_after:
+                keyframe_idx = i
+                t = (progress - pos_before) / (pos_after - pos_before) if pos_after > pos_before else 0.0
+                break
+        else:
+            keyframe_idx = n_keyframes - 1
+            t = 0.0
+
+        # Handle hold period at keyframe start
+        hold_fraction = hold_at_keyframes / (hold_at_keyframes + transition_time) if transition_time > 0 else 1.0
+        actual_t = 0.0 if t < hold_fraction else (t - hold_fraction) / (1 - hold_fraction) if hold_fraction < 1 else 0.0
+
+        if interpolation == "nearest":
+            idx = keyframe_idx if actual_t < 0.5 else min(keyframe_idx + 1, n_keyframes - 1)
+            return keyframes[idx], idx, 0.0, color_values[idx]
+
+        else:  # linear interpolation
+            if actual_t <= 0 or keyframe_idx >= n_keyframes - 1:
+                return keyframes[keyframe_idx], keyframe_idx, 0.0, color_values[keyframe_idx]
+            elif actual_t >= 1:
+                next_idx = min(keyframe_idx + 1, n_keyframes - 1)
+                return keyframes[next_idx], next_idx, 0.0, color_values[next_idx]
+            else:
+                next_idx = min(keyframe_idx + 1, n_keyframes - 1)
+                colors_before = color_values[keyframe_idx]
+                colors_after = color_values[next_idx]
+
+                gdf = _interpolate_geodataframe(
+                    keyframes[keyframe_idx],
+                    keyframes[next_idx],
+                    actual_t,
+                    color_values_a=colors_before,
+                    color_values_b=colors_after,
+                    color_column="_color",
+                )
+
+                # Get interpolated colors
+                colors = gdf["_color"].values if "_color" in gdf.columns else None
+
+                return gdf, keyframe_idx, actual_t, colors
+
+    def update(frame):
+        ax.clear()
+        gdf, keyframe_idx, t, colors = get_frame_data(frame)
+
+        # Determine how to plot
+        if use_coloring and colors is not None and color_vmin is not None:
+            plot_gdf = gdf.copy()
+            plot_gdf["_plot_color"] = colors
+            plot_gdf.plot(
+                ax=ax, column="_plot_color", legend=False, vmin=color_vmin, vmax=color_vmax, cmap=cmap, **kwargs
+            )
+        else:
+            gdf.plot(ax=ax, **kwargs)
+
+        # Add colorbar on first frame if requested
+        if colorbar and not cbar_added[0] and use_coloring and color_vmin is not None:
+            sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
+            sm.set_array([])
+            fig.colorbar(sm, ax=ax, label=colorbar_label)
+            cbar_added[0] = True
+
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.set_aspect("equal")
+
+        # Build title
+        if show_run_info:
+            if t == 0.0:
+                title = f"Run {keyframe_idx}/{n_keyframes - 1}"
+                if keyframe_idx == 0:
+                    title = "Original"
+            else:
+                title = f"Run {keyframe_idx} → {keyframe_idx + 1} ({t:.0%})"
+        else:
+            title = "Cartogram Workflow"
+
+        ax.set_title(title)
+        return []
+
+    anim = FuncAnimation(
+        fig,
+        update,
+        frames=n_frames,
+        init_func=init,
+        blit=False,
+        interval=1000 / fps,
+    )
+
+    return anim
+
+
+def animate_workflow_fields(
+    workflow: "CartogramWorkflow",
+    duration: float = 8.0,
+    fps: int = 15,
+    interpolation: str = "nearest",
+    bounds: Optional[Any] = None,
+    show_density: bool = True,
+    show_velocity: bool = False,
+    normalize: Optional[str] = "ratio",
+    density_cmap: Optional[str] = None,
+    density_alpha: float = 1.0,
+    velocity_skip: int = 4,
+    velocity_color: str = "white",
+    velocity_alpha: float = 0.8,
+    velocity_scale: Optional[float] = None,
+    velocity_color_by: Optional[str] = None,
+    velocity_cmap: Optional[str] = None,
+    velocity_colorbar: bool = False,
+    velocity_alpha_by_magnitude: bool = False,
+    velocity_alpha_range: tuple[float, float] = (0.2, 1.0),
+    velocity_kwargs: Optional[dict[str, Any]] = None,
+    figsize: tuple[float, float] = (10, 8),
+    **kwargs: Any,
+) -> FuncAnimation:
+    """Animate density and/or velocity fields across all cartograms in a workflow.
+
+    Shows how the fields evolve through multiple morphing runs. Each run
+    displays at its native grid resolution, allowing visualization of
+    multi-resolution workflows where grid detail increases progressively.
+
+    Parameters
+    ----------
+    workflow : CartogramWorkflow
+        Workflow containing cartogram results with internals (requires
+        save_internals=True in MorphOptions for each run).
+    duration : float, default=8.0
+        Animation duration in seconds.
+    fps : int, default=15
+        Frames per second.
+    interpolation : str, default="nearest"
+        Interpolation method: "nearest" or "linear".
+    bounds : str, float, or tuple, optional
+        Clip view to specified bounds (same as animate_fields).
+    show_density : bool, default=True
+        Whether to show density field heatmap.
+    show_velocity : bool, default=False
+        Whether to show velocity field arrows.
+    normalize : str, default="ratio"
+        Density normalization: None, "difference", or "ratio".
+    density_cmap : str, optional
+        Colormap for density field.
+    density_alpha : float, default=1.0
+        Alpha for density heatmap.
+    velocity_skip : int, default=4
+        Plot every nth velocity arrow.
+    velocity_color : str, default="white"
+        Color for velocity arrows.
+    velocity_alpha : float, default=0.8
+        Alpha for velocity arrows.
+    velocity_scale : float, optional
+        Scale factor for arrow lengths.
+    velocity_color_by : str, optional
+        Color arrows by: None, "magnitude", or "direction".
+    velocity_cmap : str, optional
+        Colormap for velocity coloring.
+    velocity_colorbar : bool, default=False
+        Whether to show colorbar for velocity.
+    velocity_alpha_by_magnitude : bool, default=False
+        If True, arrow transparency varies with magnitude.
+    velocity_alpha_range : tuple, default=(0.2, 1.0)
+        Min and max alpha when velocity_alpha_by_magnitude is True.
+    velocity_kwargs : dict, optional
+        Additional arguments passed to quiver.
+    figsize : tuple, default=(10, 8)
+        Figure size (width, height).
+    **kwargs
+        Additional arguments passed to imshow.
+
+    Returns
+    -------
+    FuncAnimation
+        Matplotlib animation object.
+
+    Examples
+    --------
+    >>> workflow = CartogramWorkflow(gdf, 'population')
+    >>> workflow.morph(options=MorphOptions(save_internals=True))
+    >>> workflow.morph(options=MorphOptions(save_internals=True))
+    >>> anim = animate_workflow_fields(workflow, normalize="ratio")
+    >>> save_animation(anim, "workflow_fields.gif")
+
+    >>> # Show velocity overlaid on density
+    >>> anim = animate_workflow_fields(
+    ...     workflow, show_velocity=True, normalize="ratio",
+    ...     velocity_color="black", velocity_alpha_by_magnitude=True
+    ... )
+    """
+    from matplotlib.colors import to_rgba
+
+    from .visualization import _prepare_density_display, _prepare_velocity_colors, _resolve_bounds
+
+    if interpolation not in ("nearest", "linear"):
+        raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
+
+    if not show_density and not show_velocity:
+        raise ValueError("At least one of show_density or show_velocity must be True")
+
+    # Collect all internals snapshots with run and grid metadata
+    # Format: (run_idx, grid, snapshot, cumulative_iteration)
+    all_snapshots: list[tuple[int, Any, Any, int]] = []
+    run_boundaries: list[int] = [0]
+    cumulative_iter = 0
+
+    # Track global bounds across all grids
+    global_xmin, global_ymin = float("inf"), float("inf")
+    global_xmax, global_ymax = float("-inf"), float("-inf")
+
+    def has_density(s: Any) -> bool:
+        return hasattr(s, "rho") and s.rho is not None
+
+    def has_velocity(s: Any) -> bool:
+        return hasattr(s, "vx") and s.vx is not None and hasattr(s, "vy") and s.vy is not None
+
+    for run_idx, cartogram in enumerate(workflow):
+        if cartogram.internals is None or len(cartogram.internals.snapshots) == 0:
+            continue  # Skip runs without internals
+
+        grid = cartogram.grid
+        if grid is None:
+            continue
+
+        # Update global bounds
+        global_xmin = min(global_xmin, grid.xmin)
+        global_ymin = min(global_ymin, grid.ymin)
+        global_xmax = max(global_xmax, grid.xmax)
+        global_ymax = max(global_ymax, grid.ymax)
+
+        for snap in cartogram.internals.snapshots:
+            # Filter based on what we need to show
+            if show_density and show_velocity:
+                if not (has_density(snap) and has_velocity(snap)):
+                    continue
+            elif show_density:
+                if not has_density(snap):
+                    continue
+            else:  # show_velocity only
+                if not has_velocity(snap):
+                    continue
+
+            all_snapshots.append((run_idx, grid, snap, cumulative_iter + snap.iteration))
+
+        # Update cumulative iteration based on last snapshot
+        if cartogram.internals.snapshots:
+            cumulative_iter += cartogram.internals.snapshots[-1].iteration
+
+        run_boundaries.append(len(all_snapshots))
+
+    if not all_snapshots:
+        raise ValueError(
+            "No field snapshots found in workflow. Ensure morphing was run with MorphOptions(save_internals=True)."
+        )
+
+    n_snapshots = len(all_snapshots)
+    n_frames = int(duration * fps)
+
+    # Build variables dict for position mapping
+    iterations = np.array([snap[3] for snap in all_snapshots])
+    variables_arrays: dict[str, np.ndarray] = {
+        "index": np.arange(n_snapshots),
+        "iteration": iterations,
+    }
+
+    mapper = _default_position_mapper
+
+    # Compute global density/velocity ranges across all runs
+    density_vmin, density_vmax, effective_density_cmap = None, None, None
+    if show_density:
+        # Get first cartogram's target_density and area_scale for normalization
+        first_morphed = None
+        for cartogram in workflow:
+            if cartogram.target_density is not None:
+                first_morphed = cartogram
+                break
+
+        target_density = first_morphed.target_density if first_morphed else None
+        area_scale = first_morphed.options.area_scale if first_morphed and first_morphed.options else 1.0
+
+        if normalize == "difference":
+            all_diffs = []
+            for _, _, snap, _ in all_snapshots:
+                if target_density is not None:
+                    rho_scaled = snap.rho / area_scale
+                    all_diffs.append(np.abs(rho_scaled - target_density).max())
+            density_vmax = max(all_diffs) if all_diffs else 1.0
+            density_vmin = -density_vmax
+            effective_density_cmap = density_cmap or "RdBu_r"
+        elif normalize == "ratio":
+            all_ratios = []
+            for _, _, snap, _ in all_snapshots:
+                if target_density is not None and target_density > 0:
+                    rho_scaled = snap.rho / area_scale
+                    ratio = rho_scaled / target_density
+                    ratio_clipped = np.clip(ratio, 1e-6, None)
+                    all_ratios.append(np.abs(np.log2(ratio_clipped)).max())
+            max_log = max(all_ratios) if all_ratios else 1.0
+            density_vmin, density_vmax = -max_log, max_log
+            effective_density_cmap = density_cmap or "RdBu_r"
+        else:
+            all_rho = [snap[2].rho for snap in all_snapshots]
+            density_vmin = min(r.min() for r in all_rho)
+            density_vmax = max(r.max() for r in all_rho)
+            effective_density_cmap = density_cmap or "viridis"
+
+    # Compute global velocity magnitude range
+    mag_min, mag_max = 0.0, 1.0
+    if show_velocity:
+        all_mags = []
+        for _, _, snap, _ in all_snapshots:
+            vx_sub = snap.vx[::velocity_skip, ::velocity_skip]
+            vy_sub = snap.vy[::velocity_skip, ::velocity_skip]
+            mag = np.sqrt(vx_sub**2 + vy_sub**2)
+            all_mags.extend([mag.min(), mag.max()])
+        mag_min, mag_max = min(all_mags), max(all_mags)
+
+    # Determine velocity colormap
+    if velocity_color_by == "magnitude":
+        effective_velocity_cmap = velocity_cmap or "viridis"
+        velocity_colorbar_label = "Magnitude"
+    elif velocity_color_by == "direction":
+        effective_velocity_cmap = velocity_cmap or "twilight"
+        velocity_colorbar_label = "Direction"
+    else:
+        effective_velocity_cmap = velocity_cmap
+        velocity_colorbar_label = None
+
+    to_rgba(velocity_color, alpha=velocity_alpha)
+    density_cbar_added = [False]
+    velocity_cbar_added = [False]
+
+    # Set up figure
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
+
+    def init():
+        ax.set_aspect("equal")
+        return []
+
+    def apply_normalization(rho: np.ndarray) -> tuple[np.ndarray, str]:
+        """Apply density normalization."""
+        rho_display, _, _, _, label, _ = _prepare_density_display(rho, target_density, normalize, area_scale=area_scale)
+        return rho_display, label
+
+    def get_frame_data(frame: int) -> tuple[int, Any, Any, int]:
+        """Get snapshot data for a frame. Returns (run_idx, grid, snapshot, iteration)."""
+        progress = frame / max(1, n_frames - 1)
+        position = mapper(progress, variables_arrays)
+        position = np.clip(position, 0, n_snapshots - 1)
+
+        idx_before = int(position)
+        idx_after = min(idx_before + 1, n_snapshots - 1)
+        t = position - idx_before
+
+        if interpolation == "nearest":
+            idx = idx_before if t < 0.5 else idx_after
+            return all_snapshots[idx]
+
+        else:  # linear
+            if idx_before == idx_after or t <= 0:
+                return all_snapshots[idx_before]
+            elif t >= 1:
+                return all_snapshots[idx_after]
+            else:
+                # For simplicity, use nearest for linear mode too
+                # (interpolating between different grid sizes is complex)
+                idx = idx_before if t < 0.5 else idx_after
+                return all_snapshots[idx]
+
+    def update(frame):
+        ax.clear()
+        run_idx, grid, snap, _cum_iter = get_frame_data(frame)
+
+        extent = [grid.xmin, grid.xmax, grid.ymin, grid.ymax]
+
+        # Draw density field
+        if show_density and snap.rho is not None:
+            rho_display, label = apply_normalization(snap.rho)
+            im = ax.imshow(
+                rho_display,
+                origin="lower",
+                extent=extent,
+                aspect="equal",
+                cmap=effective_density_cmap,
+                vmin=density_vmin,
+                vmax=density_vmax,
+                alpha=density_alpha,
+                **kwargs,
+            )
+            if not density_cbar_added[0]:
+                plt.colorbar(im, ax=ax, label=label)
+                density_cbar_added[0] = True
+
+        # Draw velocity field
+        if show_velocity and snap.vx is not None and snap.vy is not None:
+            X, Y = grid.X, grid.Y
+            X_sub = X[::velocity_skip, ::velocity_skip]
+            Y_sub = Y[::velocity_skip, ::velocity_skip]
+            vx_sub = snap.vx[::velocity_skip, ::velocity_skip]
+            vy_sub = snap.vy[::velocity_skip, ::velocity_skip]
+
+            colors, _colorbar_label, _ = _prepare_velocity_colors(
+                vx_sub,
+                vy_sub,
+                color_by=velocity_color_by,
+                alpha_by_magnitude=velocity_alpha_by_magnitude,
+                alpha_range=velocity_alpha_range,
+                cmap=effective_velocity_cmap,
+                base_color=velocity_color,
+                base_alpha=velocity_alpha,
+                mag_range=(mag_min, mag_max),
+            )
+
+            ax.quiver(X_sub, Y_sub, vx_sub, vy_sub, color=colors, scale=velocity_scale, **(velocity_kwargs or {}))
+
+            if velocity_colorbar and not velocity_cbar_added[0] and velocity_color_by is not None:
+                sm = plt.cm.ScalarMappable(cmap=effective_velocity_cmap, norm=plt.Normalize(vmin=0, vmax=1))
+                if velocity_color_by == "magnitude":
+                    sm.set_clim(mag_min, mag_max)
+                elif velocity_color_by == "direction":
+                    sm.set_clim(-np.pi, np.pi)
+                sm.set_array([])
+                fig.colorbar(sm, ax=ax, label=velocity_colorbar_label)
+                velocity_cbar_added[0] = True
+
+        ax.set_aspect("equal")
+
+        # Title with run info
+        n_runs = max(snap[0] for snap in all_snapshots) + 1
+        if show_density and show_velocity:
+            field_type = "Density + Velocity"
+        elif show_density:
+            field_type = "Density Field"
+        else:
+            field_type = "Velocity Field"
+
+        title = f"{field_type} (Run {run_idx}/{n_runs - 1}, iter {snap.iteration})"
+        ax.set_title(title)
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+
+        # Apply bounds clipping
+        resolved_bounds = _resolve_bounds(bounds, grid)
+        if resolved_bounds is not None:
+            bxmin, bymin, bxmax, bymax = resolved_bounds
+            ax.set_xlim(bxmin, bxmax)
+            ax.set_ylim(bymin, bymax)
+        else:
+            # Use global bounds for consistent view
+            ax.set_xlim(global_xmin, global_xmax)
+            ax.set_ylim(global_ymin, global_ymax)
+
+        return []
+
+    anim = FuncAnimation(
+        fig,
+        update,
+        frames=n_frames,
+        init_func=init,
+        blit=False,
+        interval=1000 / fps,
+    )
+
+    return anim

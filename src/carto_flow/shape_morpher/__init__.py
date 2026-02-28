@@ -17,14 +17,14 @@ multiresolution_morph
 
 Classes
 -------
-MorphComputer
-    Stateful object-oriented interface for iterative refinement workflows.
+Cartogram
+    Result class with morphed geometries, methods for plotting, export, and analysis.
+CartogramWorkflow
+    Workflow class for iterative refinement with state management.
 MorphOptions
     Configuration dataclass with validation and quality presets.
-MorphResult
-    Result container with morphed geometries and convergence metrics.
 MorphStatus
-    Enum indicating morphing outcome (CONVERGED, STALLED, COMPLETED, FAILED).
+    Enum indicating morphing outcome (CONVERGED, STALLED, COMPLETED, ORIGINAL).
 
 Notes
 -----
@@ -36,17 +36,29 @@ MorphOptions provides convenience presets for common use cases:
 - ``MorphOptions.preset_balanced()`` - Good quality/speed trade-off
 - ``MorphOptions.preset_high_quality()`` - More iterations, tighter tolerance
 
-**MorphResult Attributes**
+**Cartogram Attributes**
 
-The result object contains:
+The Cartogram result object contains:
 
-- ``geometries`` - Morphed GeoDataFrame or geometry list
-- ``status`` - MorphStatus enum (CONVERGED, STALLED, COMPLETED, FAILED)
-- ``iterations_completed`` - Number of iterations run
-- ``final_mean_error`` - Mean log2 area error
-- ``final_max_error`` - Max log2 area error
-- ``displacement_field`` - Displacement field (if save_internals=True)
-- ``history`` - Iteration history (if save_history=True)
+- ``snapshots`` - History of CartogramSnapshot objects with algorithm state
+- ``status`` - MorphStatus enum (CONVERGED, STALLED, COMPLETED, RUNNING, ORIGINAL)
+- ``niterations`` - Number of iterations completed
+- ``duration`` - Computation time in seconds
+- ``options`` - MorphOptions used for computation
+- ``internals`` - History of internal state (if save_internals=True)
+- ``grid`` - Grid used for computation
+- ``target_density`` - Target equilibrium density
+
+Access final results via ``cartogram.latest`` or convenience methods:
+
+- ``cartogram.get_geometry()`` - Morphed geometries
+- ``cartogram.get_landmarks()`` - Morphed landmarks (if provided)
+- ``cartogram.get_coords()`` - Displaced coordinates (if provided)
+- ``cartogram.get_errors()`` - MorphErrors with log and percentage error metrics
+- ``cartogram.get_density()`` - Current density values
+- ``cartogram.to_geodataframe()`` - Export as GeoDataFrame
+- ``cartogram.plot()`` - Visualize the cartogram
+- ``cartogram.save()`` - Save to file
 
 **Sub-modules**
 
@@ -69,15 +81,15 @@ Create a population cartogram:
 >>> import geopandas as gpd
 >>> from carto_flow.shape_morpher import morph_gdf, MorphOptions
 >>> gdf = gpd.read_file("regions.geojson")
->>> result = morph_gdf(gdf, "population", options=MorphOptions.preset_balanced())
->>> cartogram = result.geometries
->>> print(f"Status: {result.status}")
->>> print(f"Iterations: {result.iterations_completed}")
+>>> cartogram = morph_gdf(gdf, "population", options=MorphOptions.preset_balanced())
+>>> cartogram.plot()
+>>> print(f"Status: {cartogram.status}")
+>>> print(f"Error: {cartogram.get_errors().mean_error_pct:.1f}%")
 
 Multi-resolution morphing for better convergence:
 
 >>> from carto_flow.shape_morpher import multiresolution_morph
->>> result = multiresolution_morph(gdf, "population", levels=3, resolution=512)
+>>> cartogram = multiresolution_morph(gdf, "population", levels=3, resolution=512)
 
 Custom configuration:
 
@@ -91,16 +103,14 @@ Custom configuration:
 ...     show_progress=True,
 ... )
 
-Using MorphComputer for iterative refinement:
+Using CartogramWorkflow for iterative refinement:
 
->>> from carto_flow.shape_morpher import MorphComputer
->>> computer = MorphComputer(gdf, column="population")
->>> computer.set_computation(n_iter=50, dt=0.5)
->>> computer.set_grid(grid_size=256)
->>> result = computer.morph()  # Initial morphing
->>> result = computer.morph()  # Further refinement
->>> computer.rollback()  # Undo last refinement
->>> computer.reset()  # Reset to original geometries
+>>> from carto_flow.shape_morpher import CartogramWorkflow
+>>> workflow = CartogramWorkflow(gdf, column="population")
+>>> workflow.morph()                    # Initial morphing
+>>> workflow.morph(mean_tol=0.01)       # Refine with tighter tolerance
+>>> workflow.pop()                      # Undo last refinement
+>>> workflow.reset()                    # Reset to original geometries
 
 Accessing sub-modules:
 
@@ -127,10 +137,12 @@ from . import (
     visualization,
 )
 
-# Core morphing functions and classes (from split modules)
+# Core morphing functions and classes
 from .algorithm import morph_geometries
 from .api import morph_gdf, multiresolution_morph
-from .computer import MorphComputer, RefinementRun
+from .cartogram import Cartogram
+from .errors import MorphErrors, compute_error_metrics
+from .history import ConvergenceHistory, ErrorRecord
 from .options import (
     MorphOptions,
     MorphOptionsConsistencyError,
@@ -138,21 +150,27 @@ from .options import (
     MorphOptionsValidationError,
     MorphStatus,
 )
-from .result import MorphResult
+from .workflow import CartogramWorkflow
 
 # Define public API for explicit control over what is exported
 __all__ = [
-    "MorphComputer",
+    # Classes
+    "Cartogram",
+    "CartogramWorkflow",
+    "ConvergenceHistory",
+    "ErrorRecord",
+    "MorphErrors",
     "MorphOptions",
     "MorphOptionsConsistencyError",
     "MorphOptionsError",
     "MorphOptionsValidationError",
-    "MorphResult",
     "MorphStatus",
-    "RefinementRun",
+    # Sub-modules
     "animation",
     "anisotropy",
     "comparison",
+    # Functions
+    "compute_error_metrics",
     "density",
     "displacement",
     "grid",

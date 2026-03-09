@@ -63,10 +63,31 @@ Visualization
 -------------
 plot_adjacency
     Visualize the adjacency graph overlaid on the cartogram.
+plot_adjacency_heatmap
+    Render the adjacency matrix as a heatmap.
 plot_comparison
     Side-by-side comparison of original geometries and symbols.
 plot_displacement
     Plot displacement arrows from original centroids to symbol centers.
+
+Plot Results
+------------
+SymbolsPlotResult
+    Artists returned by ``plot_symbols()`` / ``SymbolCartogram.plot()``.
+AdjacencyPlotResult
+    Artists returned by ``plot_adjacency()``.
+DisplacementPlotResult
+    Artists returned by ``plot_displacement()``.
+TilingPlotResult
+    Artists returned by ``plot_tiling()``.
+TilingGridPlotResult
+    Artists returned by ``TilingResult.plot()``.
+PrototilePlotResult
+    Artists returned by ``TilingResult.plot_tile()`` / ``Tiling.plot_tile()``.
+AdjacencyHeatmapResult
+    Artists returned by ``plot_adjacency_heatmap()``.
+ComparisonPlotResult
+    Artists returned by ``plot_comparison()``.
 
 Utilities
 ---------
@@ -123,6 +144,16 @@ from .options import (
     SymbolOrientation,
     SymbolShape,
 )
+from .plot_results import (
+    AdjacencyHeatmapResult,
+    AdjacencyPlotResult,
+    ComparisonPlotResult,
+    DisplacementPlotResult,
+    PrototilePlotResult,
+    SymbolsPlotResult,
+    TilingGridPlotResult,
+    TilingPlotResult,
+)
 from .presets import (
     preset_demers,
     preset_dorling,
@@ -162,11 +193,12 @@ from .tiling import (
     TriangleTiling,
     resolve_tiling,
 )
-from .visualization import plot_adjacency, plot_comparison, plot_displacement, plot_tiling
+from .visualization import plot_adjacency, plot_adjacency_heatmap, plot_comparison, plot_displacement, plot_tiling
 
 __all__ = [
-    # Enums
+    "AdjacencyHeatmapResult",
     "AdjacencyMode",
+    "AdjacencyPlotResult",
     "CentroidLayout",
     "CentroidLayoutOptions",
     "CirclePackingLayout",
@@ -174,26 +206,25 @@ __all__ = [
     "CirclePhysicsLayout",
     "CirclePhysicsLayoutOptions",
     "CircleSymbol",
+    "ComparisonPlotResult",
+    "DisplacementPlotResult",
     "FitMode",
     "ForceMode",
     "GridBasedLayout",
-    # Options
     "GridBasedLayoutOptions",
     "HexagonSymbol",
     "HexagonTiling",
     "IsohedralTileSymbol",
     "IsohedralTiling",
-    # Layout-Styling Separation
     "Layout",
     "LayoutData",
     "LayoutResult",
+    "PrototilePlotResult",
     "QuadrilateralTiling",
-    # Result
     "SimulationHistory",
     "SquareSymbol",
     "SquareTiling",
     "Styling",
-    # Symbol classes
     "Symbol",
     "SymbolCartogram",
     "SymbolCartogramStatus",
@@ -201,37 +232,34 @@ __all__ = [
     "SymbolParam",
     "SymbolShape",
     "SymbolSpec",
+    "SymbolsPlotResult",
     "TileAdjacencyType",
     "TileSymbol",
     "TileTransform",
-    # Tiling
     "Tiling",
+    "TilingGridPlotResult",
+    "TilingPlotResult",
     "TilingResult",
     "Transform",
     "TransformedSymbol",
     "TriangleTiling",
-    # Data prep utilities
     "compute_adjacency",
-    # Grid utilities
     "compute_grid_symbol_size",
     "compute_symbol_sizes",
-    # Symbol creation functions (low-level)
     "create_circle",
     "create_hexagon",
     "create_layout",
     "create_square",
-    # Main function
     "create_symbol_cartogram",
     "create_symbols",
     "generate_grid",
     "get_layout",
-    # Visualization
     "plot_adjacency",
+    "plot_adjacency_heatmap",
     "plot_comparison",
     "plot_displacement",
     "plot_tiling",
     "prepare_layout_data",
-    # Presets
     "preset_demers",
     "preset_dorling",
     "preset_fast",

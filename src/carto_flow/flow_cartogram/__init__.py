@@ -139,8 +139,23 @@ from . import (
 
 # Core morphing functions and classes
 from .algorithm import morph_geometries
+from .anisotropy import (
+    BoundaryDecay,
+    BoundaryNormalDecay,
+    DirectionalTensor,
+    LocalizedTensor,
+    Multiplicative,
+    Pipeline,
+    Tensor,
+    VelocityModulator,
+)
+from .anisotropy import Smooth as VelocitySmooth
+from .anisotropy import preview_modulator as preview_velocity_modulator
 from .api import morph_gdf, multiresolution_morph
 from .cartogram import Cartogram
+from .density import DensityBorderExtension, DensityModulator, DensityPipeline
+from .density import Smooth as DensitySmooth
+from .density import preview_modulator as preview_density_modulator
 from .errors import MorphErrors, compute_error_metrics
 from .history import ConvergenceHistory, ErrorRecord
 from .options import (
@@ -150,26 +165,58 @@ from .options import (
     MorphOptionsValidationError,
     MorphStatus,
 )
+from .plot_results import (
+    CartogramComparisonResult,
+    CartogramPlotResult,
+    ConvergencePlotResult,
+    DensityFieldResult,
+    DensityModulatorPreviewResult,
+    ModulatorPreviewResult,
+    VelocityFieldResult,
+    WorkflowConvergencePlotResult,
+)
+from .visualization import DensityPlotOptions, VelocityPlotOptions
 from .workflow import CartogramWorkflow
 
 # Define public API for explicit control over what is exported
 __all__ = [
-    # Classes
+    "BoundaryDecay",
+    "BoundaryNormalDecay",
     "Cartogram",
+    "CartogramComparisonResult",
+    "CartogramPlotResult",
     "CartogramWorkflow",
     "ConvergenceHistory",
+    "ConvergencePlotResult",
+    "DensityBorderExtension",
+    "DensityFieldResult",
+    "DensityModulator",
+    "DensityModulatorPreviewResult",
+    "DensityPipeline",
+    "DensityPlotOptions",
+    "DensitySmooth",
+    "DirectionalTensor",
     "ErrorRecord",
+    "Harmonic",
+    "LocalizedTensor",
+    "ModulatorPreviewResult",
     "MorphErrors",
     "MorphOptions",
     "MorphOptionsConsistencyError",
     "MorphOptionsError",
     "MorphOptionsValidationError",
     "MorphStatus",
-    # Sub-modules
+    "Multiplicative",
+    "Pipeline",
+    "Tensor",
+    "VelocityFieldResult",
+    "VelocityModulator",
+    "VelocityPlotOptions",
+    "VelocitySmooth",
+    "WorkflowConvergencePlotResult",
     "animation",
     "anisotropy",
     "comparison",
-    # Functions
     "compute_error_metrics",
     "density",
     "displacement",
@@ -179,6 +226,8 @@ __all__ = [
     "morph_gdf",
     "morph_geometries",
     "multiresolution_morph",
+    "preview_density_modulator",
+    "preview_velocity_modulator",
     "serialization",
     "velocity",
     "visualization",

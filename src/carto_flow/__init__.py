@@ -91,12 +91,13 @@ from .flow_cartogram import (
     multiresolution_morph,
     velocity,
 )
-from .optimizations import (
+from .geo_utils import (
     GeometryCoordinateInfo,
     compute_complex_polygon_areas_numba,
     compute_polygon_area_numba,
     reconstruct_geometries,
     reconstruct_geometry,
+    simplify_coverage,
     unpack_geometries,
     unpack_geometry,
 )
@@ -156,8 +157,17 @@ __all__ = [
     "reconstruct_geometries",
     "reconstruct_geometry",
     "shrink",
+    "simplify_coverage",
     "split",
     "unpack_geometries",
     "unpack_geometry",
     "velocity",
 ]
+
+# Optional data module (requires optional dependencies)
+try:
+    from . import data as data
+
+    __all__.append("data")
+except Exception:  # noqa: S110
+    pass

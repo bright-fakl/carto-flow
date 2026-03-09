@@ -11,8 +11,9 @@ split
     Divide a geometry into multiple parts with specified area fractions.
     Supports sequential and treemap splitting strategies.
 shrink
-    Create concentric shells by shrinking a geometry inward.
-    Supports area-based and thickness-based modes.
+    Create concentric shells by shrinking a geometry inward. Returns parts
+    from innermost core to outermost shell. Supports area-based and
+    thickness-based modes.
 partition_geometries
     Batch process geometries in a GeoDataFrame using split or shrink.
     Supports parallel processing and multiple normalization modes.
@@ -103,14 +104,20 @@ See Also
 """
 
 # Shape splitting functions
+from .dot_density import generate_dot_density, plot_dot_density
 from .partition import partition_geometries
+from .plot_results import DotDensityPlotResult, PartitionsPlotResult
 from .shrinking import shrink
 from .splitting import split
 from .visualization import plot_partitions
 
 # Define public API for explicit control over what is exported
 __all__ = [
+    "DotDensityPlotResult",
+    "PartitionsPlotResult",
+    "generate_dot_density",
     "partition_geometries",
+    "plot_dot_density",
     "plot_partitions",
     "shrink",
     "split",

@@ -25,6 +25,10 @@ compute_polygon_area_numba
     Fast shoelace formula for single polygon ring.
 compute_complex_polygon_areas_numba
     Parallel area computation for polygons with holes.
+find_adjacent_pairs
+    Find touching geometry pairs using buffered intersection.
+simplify_coverage
+    Simplify polygon geometries while preserving shared boundaries.
 
 Notes
 -----
@@ -44,7 +48,7 @@ Notes
 
 Examples
 --------
->>> from carto_flow.optimizations import unpack_geometries, reconstruct_geometries
+>>> from carto_flow.geo_utils import unpack_geometries, reconstruct_geometries
 >>> from shapely.geometry import Polygon
 >>>
 >>> # Process multiple polygons efficiently
@@ -67,6 +71,7 @@ See Also
 """
 
 # Import and re-export main functions and classes from geometry module
+from .adjacency import find_adjacent_pairs
 from .geometry import (
     # Classes
     GeometryCoordinateInfo,
@@ -80,18 +85,17 @@ from .geometry import (
     unpack_geometries,
     unpack_geometry,
 )
+from .simplification import simplify_coverage
 
 # Define public API for explicit control over what is exported
 __all__ = [
-    # Classes
     "GeometryCoordinateInfo",
     "compute_complex_polygon_areas_numba",
-    # Area computation functions
     "compute_polygon_area_numba",
-    # Reconstruction functions
+    "find_adjacent_pairs",
     "reconstruct_geometries",
     "reconstruct_geometry",
-    # Unpacking functions
+    "simplify_coverage",
     "unpack_geometries",
     "unpack_geometry",
 ]

@@ -28,7 +28,7 @@ compute_complex_polygon_areas_numba
 
 Examples
 --------
->>> from carto_flow.optimizations import unpack_geometries, reconstruct_geometries
+>>> from carto_flow.geo_utils import unpack_geometries, reconstruct_geometries
 >>> from shapely.geometry import Polygon
 >>>
 >>> # Process multiple polygons efficiently
@@ -448,7 +448,7 @@ class GeometryCoordinateInfo:
 
     Examples
     --------
-    >>> from carto_flow.optimizations import unpack_geometries, reconstruct_geometries
+    >>> from carto_flow.geo_utils import unpack_geometries, reconstruct_geometries
     >>> from shapely.geometry import Polygon
     >>>
     >>> polygons = [Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])]

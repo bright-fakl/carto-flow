@@ -30,6 +30,11 @@ import pandas as pd
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
+    from matplotlib.collections import Collection
+    from matplotlib.colorbar import Colorbar
+    from matplotlib.legend import Legend
+
+    from .plot_results import PartitionsPlotResult
 
 __all__ = ["plot_partitions"]
 
@@ -128,7 +133,7 @@ def plot_partitions(
     ax: Axes | None = None,
     legend: bool = True,
     **kwargs: Any,
-) -> Axes:
+) -> PartitionsPlotResult:
     """
     Plot partitioned geometries as a choropleth map.
 
@@ -206,8 +211,8 @@ def plot_partitions(
 
     Returns
     -------
-    matplotlib.axes.Axes
-        The axes with the plot.
+    PartitionsPlotResult
+        Result with the axes and named artist references.
 
     Raises
     ------
@@ -371,55 +376,22 @@ def plot_partitions(
     if not records:
         ax.set_title("No geometries to plot")
         ax.set_aspect("equal")
-        return ax
+        from .plot_results import PartitionsPlotResult
+
+        return PartitionsPlotResult(ax=ax, partition_collections=[], complement_collections=[])
 
     # Create unified GeoDataFrame
     plot_gdf = gpd.GeoDataFrame(records, crs=gdf.crs)
 
-    # Assign colors to each geometry
+    # Pre-compute categorical color map once (avoids recomputing inside the loop)
+    cat_values = plot_gdf[~plot_gdf["is_complement"]]["color_value"].unique()
+    _cat_cmap_obj = plt.get_cmap(cmap)
+    cat_colors_map: dict = {
+        v: mcolors.to_hex(_cat_cmap_obj(i / max(len(cat_values) - 1, 1))) for i, v in enumerate(cat_values)
+    }
+
+    # Single pass: assign color and all styling columns together
     colors = []
-    for _, record in plot_gdf.iterrows():
-        if record["is_complement"]:
-            # Complement coloring
-            if record["color_value"] is not None:
-                # Data-driven complement color
-                if is_categorical:
-                    if palette and record["color_value"] in palette:
-                        colors.append(palette[record["color_value"]])
-                    else:
-                        # Use colormap for categorical
-                        cat_values = plot_gdf[~plot_gdf["is_complement"]]["color_value"].unique()
-                        cat_cmap = plt.get_cmap(cmap)
-                        cat_colors = {
-                            v: mcolors.to_hex(cat_cmap(i / max(len(cat_values) - 1, 1)))
-                            for i, v in enumerate(cat_values)
-                        }
-                        colors.append(cat_colors.get(record["color_value"], complement_color))
-                else:
-                    # Continuous
-                    c = _get_colors_from_cmap(np.array([record["color_value"]]), cmap, vmin, vmax)[0]
-                    colors.append(c)
-            else:
-                colors.append(complement_color)
-        else:
-            # Regular partition coloring
-            if is_categorical:
-                if palette and record["color_value"] in palette:
-                    colors.append(palette[record["color_value"]])
-                else:
-                    cat_values = plot_gdf[~plot_gdf["is_complement"]]["color_value"].unique()
-                    cat_cmap = plt.get_cmap(cmap)
-                    cat_colors = {
-                        v: mcolors.to_hex(cat_cmap(i / max(len(cat_values) - 1, 1))) for i, v in enumerate(cat_values)
-                    }
-                    colors.append(cat_colors.get(record["color_value"], "#888888"))
-            else:
-                c = _get_colors_from_cmap(np.array([record["color_value"]]), cmap, vmin, vmax)[0]
-                colors.append(c)
-
-    plot_gdf["_color"] = colors
-
-    # Apply highlight styling
     alphas = []
     edge_colors = []
     line_widths = []
@@ -427,73 +399,101 @@ def plot_partitions(
     for _, record in plot_gdf.iterrows():
         cat = record["category"]
         is_comp = record["is_complement"]
-        base_color = record["_color"]
+        cv = record["color_value"]
 
+        # Base color
         if is_comp:
-            # Complement styling
-            alphas.append(complement_alpha)
-            edge_colors.append(complement_edgecolor or edgecolor)
-            line_widths.append(complement_linewidth or linewidth)
+            if cv is not None:
+                if is_categorical:
+                    base_color = palette[cv] if palette and cv in palette else cat_colors_map.get(cv, complement_color)
+                else:
+                    base_color = _get_colors_from_cmap(np.array([cv]), cmap, vmin, vmax)[0]
+            else:
+                base_color = complement_color
+        elif is_categorical:
+            base_color = palette[cv] if palette and cv in palette else cat_colors_map.get(cv, "#888888")
+        else:
+            base_color = _get_colors_from_cmap(np.array([cv]), cmap, vmin, vmax)[0]
+
+        # Final color + styling
+        if is_comp:
+            final_color = base_color
+            alpha = complement_alpha
+            ec = complement_edgecolor or edgecolor
+            lw = complement_linewidth or linewidth
         elif highlight_set is not None and cat not in highlight_set:
-            # Background (non-highlighted) styling
-            # Apply color adjustments
             if background_color is not None:
-                plot_gdf.at[_, "_color"] = background_color
+                final_color = background_color
             elif background_saturation is not None or background_lightness is not None:
-                adjusted = _adjust_color(
+                final_color = _adjust_color(
                     base_color,
                     saturation=background_saturation,
                     lightness=background_lightness,
                 )
-                plot_gdf.at[_, "_color"] = adjusted
-
-            alphas.append(background_alpha if background_alpha is not None else 1.0)
-            edge_colors.append(background_edgecolor or edgecolor)
-            line_widths.append(background_linewidth or linewidth)
+            else:
+                final_color = base_color
+            alpha = background_alpha if background_alpha is not None else 1.0
+            ec = background_edgecolor or edgecolor
+            lw = background_linewidth or linewidth
         else:
-            # Highlighted or no highlight specified
-            alphas.append(1.0)
-            edge_colors.append(edgecolor)
-            line_widths.append(linewidth)
+            final_color = base_color
+            alpha = 1.0
+            ec = edgecolor
+            lw = linewidth
 
+        colors.append(final_color)
+        alphas.append(alpha)
+        edge_colors.append(ec)
+        line_widths.append(lw)
+
+    plot_gdf["_color"] = colors
     plot_gdf["_alpha"] = alphas
     plot_gdf["_edgecolor"] = edge_colors
     plot_gdf["_linewidth"] = line_widths
 
-    # Plot each geometry individually to support per-geometry styling
-    for _, record in plot_gdf.iterrows():
-        gpd.GeoDataFrame([{"geometry": record["geometry"]}], crs=plot_gdf.crs).plot(
+    # Batch plot: group by uniform styling parameters → one matplotlib call per group
+    # instead of one call per geometry.  In practice at most 3 groups exist:
+    # highlighted partitions, non-highlighted (background) partitions, complement.
+    partition_collections: list[Collection] = []
+    complement_collections: list[Collection] = []
+    for style_key, group in plot_gdf.groupby(["_alpha", "_edgecolor", "_linewidth", "is_complement"], sort=False):
+        alpha, ec, lw, is_comp = style_key
+        before = len(ax.collections)
+        gpd.GeoDataFrame(group[["geometry"]], crs=plot_gdf.crs).plot(
             ax=ax,
-            color=record["_color"],
-            alpha=record["_alpha"],
-            edgecolor=record["_edgecolor"],
-            linewidth=record["_linewidth"],
+            color=group["_color"].tolist(),
+            alpha=alpha,
+            edgecolor=ec,
+            linewidth=lw,
             **kwargs,
         )
+        new_colls = list(ax.collections[before:])
+        if is_comp:
+            complement_collections.extend(new_colls)
+        else:
+            partition_collections.extend(new_colls)
 
     ax.set_aspect("equal")
 
     # Add legend/colorbar
+    legend_art: Legend | None = None
+    colorbar_art: Colorbar | None = None
     if legend:
         if is_categorical:
-            # Categorical legend
-            cat_values = plot_gdf[~plot_gdf["is_complement"]]["color_value"].unique()
-            cat_cmap = plt.get_cmap(cmap)
+            # Categorical legend — reuse cat_values and cat_colors_map computed above
             handles = []
-            for i, val in enumerate(cat_values):
-                if palette and val in palette:
-                    c = palette[val]
-                else:
-                    c = mcolors.to_hex(cat_cmap(i / max(len(cat_values) - 1, 1)))
+            for val in cat_values:
+                c = palette[val] if palette and val in palette else cat_colors_map.get(val, "#888888")
                 handles.append(plt.Rectangle((0, 0), 1, 1, facecolor=c, edgecolor=edgecolor, label=str(val)))
             if handles:
                 ax.legend(handles=handles, loc="best")
+                legend_art = ax.get_legend()
         else:
             # Continuous colorbar
             if vmin is not None and vmax is not None:
                 sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=vmin, vmax=vmax))
                 sm.set_array([])
-                plt.colorbar(sm, ax=ax)
+                colorbar_art = plt.colorbar(sm, ax=ax)
 
     # Set title
     if highlight_set is not None:
@@ -506,4 +506,12 @@ def plot_partitions(
     elif color_by_columns is not None:
         ax.set_title(f"Partitions by {', '.join(set(color_by_columns))}")
 
-    return ax
+    from .plot_results import PartitionsPlotResult
+
+    return PartitionsPlotResult(
+        ax=ax,
+        partition_collections=partition_collections,
+        complement_collections=complement_collections,
+        colorbar=colorbar_art,
+        legend=legend_art,
+    )

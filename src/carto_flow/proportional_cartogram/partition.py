@@ -39,6 +39,7 @@ def _process_single_geometry(
     direction: Literal["vertical", "horizontal"],
     alternate: bool,
     strategy: Literal["sequential", "treemap"],
+    treemap_reference: list[float] | None = None,
 ) -> tuple[list[BaseGeometry], BaseGeometry | None]:
     """
     Process a single geometry with shrink or split method.
@@ -67,6 +68,7 @@ def _process_single_geometry(
                 alternate=alternate,
                 strategy=strategy,
                 tol=tol,
+                treemap_reference=treemap_reference,
             )
     except Exception:
         # Fallback: first column gets original, others get empty
@@ -90,6 +92,7 @@ def partition_geometries(
     direction: Literal["vertical", "horizontal"] = "vertical",
     alternate: bool = True,
     strategy: Literal["sequential", "treemap"] = "sequential",
+    treemap_reference: Literal["mean", "equal"] | Sequence[float] | None = None,
     invert: bool = False,
     copy: bool = True,
     n_jobs: int = 1,
@@ -118,8 +121,8 @@ def partition_geometries(
     method : {'shrink', 'split'}, default='shrink'
         Processing method to apply:
 
-        - **'shrink'**: Creates concentric shells from outside to inside.
-          For N fractions, produces N parts (N-1 shells + 1 core).
+        - **'shrink'**: Creates concentric shells from inside to outside.
+          For N fractions, produces N parts (1 core + N-1 shells).
         - **'split'**: Divides geometries into parts with specified area ratios.
           For N fractions, produces N parts.
     normalization : {'sum', 'maximum', 'row', None}, default=None
@@ -153,6 +156,20 @@ def partition_geometries(
 
         - **'sequential'**: Parts are carved off one-by-one from edges.
         - **'treemap'**: Recursive binary partitioning for grid-like patterns.
+    treemap_reference : {'mean', 'equal'} or Sequence[float], optional
+        Only used when ``method='split'`` and ``strategy='treemap'``. Fixes the
+        tree grouping structure so all geometries share the same spatial layout:
+
+        - **'equal'**: Reference fractions are ``[1/N, …, 1/N]``. Produces a
+          symmetric, count-balanced tree. Good when the typical distribution is
+          unknown.
+        - **'mean'**: Reference fractions are the column-wise mean across all rows.
+          Reflects the dataset's typical distribution.
+        - **Sequence[float]**: User-provided reference fractions (same length as
+          the number of parts including any remainder column).
+
+        In all cases, split ratios are still computed from each row's actual
+        fractions, so part areas exactly match the data.
     invert : bool, default=False
         Whether to invert computed fractions (1 - fraction).
     copy : bool, default=True
@@ -179,8 +196,9 @@ def partition_geometries(
         - **Multiple columns ['a', 'b', 'c']**: ``geometry_a``, ``geometry_b``,
           ``geometry_c``, and ``geometry_complement`` if any row has remainder.
 
-        For shrink method with multiple columns, parts are ordered from outermost
-        shell to innermost core. For split method, parts correspond to each fraction.
+        For shrink method with multiple columns, parts are ordered from innermost
+        core to outermost shell (first column = core). For split method, parts
+        correspond to each fraction.
 
     Raises
     ------
@@ -237,8 +255,8 @@ def partition_geometries(
     ...     method='shrink',
     ...     normalization='maximum'
     ... )
-    >>> # Output: geometry_cat_a (outer shell), geometry_cat_b (core),
-    >>> #         geometry_complement (if any row sum < 1.0)
+    >>> # Output: geometry_cat_a (core), geometry_cat_b (outer shell),
+    >>> #         geometry_complement (outermost unfilled area, if any row sum < 1.0)
 
     Parallel processing with progress bar:
 
@@ -373,6 +391,28 @@ def partition_geometries(
         else:
             full_fractions_list.append(list(row_fractions))
 
+    # Compute fixed treemap reference fractions (once for all geometries)
+    ref_fracs_for_split: list[float] | None = None
+    if method == "split" and strategy == "treemap" and treemap_reference is not None:
+        n_parts = len(full_fractions_list[0])
+        if treemap_reference == "equal":
+            ref_fracs_for_split = [1.0 / n_parts] * n_parts
+        elif treemap_reference == "mean":
+            ref_fracs_for_split = [
+                sum(row[i] for row in full_fractions_list) / len(full_fractions_list) for i in range(n_parts)
+            ]
+            s = sum(ref_fracs_for_split)
+            ref_fracs_for_split = [f / s for f in ref_fracs_for_split]
+        else:
+            ref_fracs_for_split = list(treemap_reference)
+            if len(ref_fracs_for_split) != n_parts:
+                raise ValueError(
+                    f"treemap_reference has {len(ref_fracs_for_split)} values but "
+                    f"expected {n_parts} (n_columns={n_columns}" + (" + 1 remainder" if has_remainder else "") + ")."
+                )
+            if any(f < 0 for f in ref_fracs_for_split):
+                raise ValueError("treemap_reference values must be non-negative.")
+
     # Define processing function for a single geometry
     def process_one(geom, full_fracs):
         return _process_single_geometry(
@@ -387,6 +427,7 @@ def partition_geometries(
             direction=direction,
             alternate=alternate,
             strategy=strategy,
+            treemap_reference=ref_fracs_for_split,
         )
 
     # Process geometries (parallel or sequential)
@@ -458,15 +499,17 @@ def partition_geometries(
     # --- Build output DataFrame ---
     # First geometry column becomes the active geometry
     first_col = column_list[0]
-    result_gdf = result_gdf.set_geometry(gpd.GeoSeries(output_geoms[first_col], crs=result_gdf.crs))
+    result_gdf = result_gdf.set_geometry(
+        gpd.GeoSeries(output_geoms[first_col], index=result_gdf.index, crs=result_gdf.crs)
+    )
     result_gdf = result_gdf.rename_geometry(f"geometry_{first_col}")
 
     # Add remaining geometry columns
     for col in column_list[1:]:
-        result_gdf[f"geometry_{col}"] = gpd.GeoSeries(output_geoms[col], crs=result_gdf.crs)
+        result_gdf[f"geometry_{col}"] = gpd.GeoSeries(output_geoms[col], index=result_gdf.index, crs=result_gdf.crs)
 
     # Add complement column if needed
     if has_remainder:
-        result_gdf["geometry_complement"] = gpd.GeoSeries(complement_geoms, crs=result_gdf.crs)
+        result_gdf["geometry_complement"] = gpd.GeoSeries(complement_geoms, index=result_gdf.index, crs=result_gdf.crs)
 
     return result_gdf

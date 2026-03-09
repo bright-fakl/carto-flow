@@ -311,6 +311,128 @@ def _split_treemap(
     return left_parts + right_parts
 
 
+def _indices_of(structure: int | tuple) -> list[int]:
+    """Collect all fraction indices from a treemap structure node."""
+    if isinstance(structure, int):
+        return [structure]
+    _, left, right = structure
+    return _indices_of(left) + _indices_of(right)
+
+
+def _build_treemap_structure(
+    fractions: list[float],
+    direction: Literal["vertical", "horizontal"],
+) -> int | tuple:
+    """
+    Build a treemap index grouping structure from reference fractions.
+
+    Mirrors the balancing logic of _split_treemap but operates on fraction indices
+    rather than geometry. The result records which indices go left vs right at each
+    recursive level, independently of any actual geometry or actual fractions.
+
+    Parameters
+    ----------
+    fractions : list[float]
+        Reference fractions used to determine the balancing. Must be non-empty.
+    direction : {'vertical', 'horizontal'}
+        Starting split direction.
+
+    Returns
+    -------
+    int or tuple
+        Tree node: an int (leaf, single index) or (direction, left, right).
+    """
+
+    def _recurse(
+        indices: list[int],
+        dir_: Literal["vertical", "horizontal"],
+    ) -> int | tuple:
+        if len(indices) == 1:
+            return indices[0]
+
+        if len(indices) == 2:
+            return (dir_, indices[0], indices[1])
+
+        values = [fractions[i] for i in indices]
+        cumsum: list[float] = []
+        running = 0.0
+        for v in values:
+            running += v
+            cumsum.append(running)
+
+        half = cumsum[-1] / 2.0
+        best_idx = 0
+        best_diff = abs(cumsum[0] - half)
+        for i in range(1, len(cumsum) - 1):
+            diff = abs(cumsum[i] - half)
+            if diff < best_diff:
+                best_diff = diff
+                best_idx = i
+
+        left_indices = indices[: best_idx + 1]
+        right_indices = indices[best_idx + 1 :]
+        next_dir: Literal["vertical", "horizontal"] = "horizontal" if dir_ == "vertical" else "vertical"
+        return (dir_, _recurse(left_indices, next_dir), _recurse(right_indices, next_dir))
+
+    return _recurse(list(range(len(fractions))), direction)
+
+
+def _split_with_fixed_structure(
+    geom: BaseGeometry,
+    fracs: list[float],
+    structure: int | tuple,
+    tol: float,
+) -> list[BaseGeometry]:
+    """
+    Split a geometry using a fixed tree structure with actual fractions for ratios.
+
+    Applies the index groupings in `structure` (from _build_treemap_structure) but
+    computes split positions from `fracs`. Areas exactly match `fracs`; spatial
+    layout matches the reference structure.
+
+    Parameters
+    ----------
+    geom : BaseGeometry
+        Geometry to split.
+    fracs : list[float]
+        Actual (normalised) fractions. Determines split ratios.
+    structure : int or tuple
+        Tree structure from _build_treemap_structure.
+    tol : float
+        Tolerance for binary splits.
+
+    Returns
+    -------
+    list[BaseGeometry]
+        Parts ordered by fraction index (same as input fractions order).
+    """
+    if isinstance(structure, int):
+        return [geom]
+
+    direction, left_struct, right_struct = structure
+    left_indices = _indices_of(left_struct)
+    right_indices = _indices_of(right_struct)
+
+    left_sum = sum(fracs[i] for i in left_indices)
+    right_sum = sum(fracs[i] for i in right_indices)
+    total = left_sum + right_sum
+
+    if total < 1e-10:
+        empty = geom.buffer(1e-10).buffer(-1e10)
+        return [empty] * (len(left_indices) + len(right_indices))
+
+    split_frac = max(0.001, min(0.999, left_sum / total))
+
+    try:
+        left_geom, right_geom = _split_binary(geom, split_frac, direction=direction, tol=tol)
+    except (ValueError, TypeError):
+        return [geom] * (len(left_indices) + len(right_indices))
+
+    left_parts = _split_with_fixed_structure(left_geom, fracs, left_struct, tol)
+    right_parts = _split_with_fixed_structure(right_geom, fracs, right_struct, tol)
+    return left_parts + right_parts
+
+
 def split(
     geom: BaseGeometry,
     fractions: float | Sequence[float],
@@ -318,6 +440,7 @@ def split(
     alternate: bool = True,
     strategy: Literal["sequential", "treemap"] = "sequential",
     tol: float = 0.01,
+    treemap_reference: Sequence[float] | None = None,
 ) -> list[BaseGeometry]:
     """
     Split a geometry into multiple parts with specified area fractions.
@@ -365,6 +488,17 @@ def split(
           should have similar visual prominence.
     tol : float, default=0.01
         Absolute tolerance for area matching in each split operation.
+    treemap_reference : Sequence[float], optional
+        Only used when ``strategy='treemap'``. When provided, the tree grouping
+        structure (which fraction indices go left vs right at each recursive level)
+        is derived from these reference fractions rather than from ``fractions``.
+        The actual split ratios are still computed from ``fractions``, so part
+        areas exactly match the data. Must be the same length as ``fractions``.
+
+        Use this to achieve a consistent spatial layout when splitting multiple
+        geometries that have different fractions. Pass the same
+        ``treemap_reference`` to each call and part[i] will always occupy the
+        same relative spatial position regardless of the actual values.
 
     Returns
     -------
@@ -410,6 +544,15 @@ def split(
     Sequential without alternation (vertical strips):
 
     >>> parts = split(rect, [0.25, 0.25, 0.25, 0.25], strategy='sequential', alternate=False)
+
+    Consistent layout across geometries with different fractions:
+
+    >>> ref = [0.3, 0.3, 0.4]
+    >>> g1 = Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])
+    >>> g2 = Polygon([(0, 0), (3, 0), (3, 1), (0, 1)])
+    >>> # part[0] occupies the same relative spatial position in both geometries
+    >>> p1 = split(g1, [0.5, 0.2, 0.3], strategy='treemap', treemap_reference=ref)
+    >>> p2 = split(g2, [0.1, 0.6, 0.3], strategy='treemap', treemap_reference=ref)
     """
 
     def _make_empty() -> BaseGeometry:
@@ -457,6 +600,9 @@ def split(
 
     # Dispatch to appropriate strategy
     if strategy == "treemap":
+        if treemap_reference is not None:
+            structure = _build_treemap_structure(list(treemap_reference), direction)
+            return _split_with_fixed_structure(geom, frac_list, structure, tol)
         return _split_treemap(geom, frac_list, direction, tol)
 
     # Sequential N-way splitting (default)

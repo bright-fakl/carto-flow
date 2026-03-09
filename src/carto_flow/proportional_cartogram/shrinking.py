@@ -163,8 +163,8 @@ def shrink(
     Shrink a geometry to create concentric shells with specified area fractions.
 
     This function reduces a geometry's area by creating one or more concentric
-    shells. For N fractions, it creates N parts: N-1 shells from outside to
-    inside, plus the innermost core.
+    shells. For N fractions, it creates N parts: 1 innermost core plus N-1
+    shells expanding outward.
 
     Parameters
     ----------
@@ -174,13 +174,13 @@ def shrink(
     fractions : float or Sequence[float]
         Target area fractions for each part.
 
-        - **Single float**: Shrink to one target fraction, returning [shell, core]
-          where shell has area (1-fraction) and core has area fraction.
+        - **Single float**: Shrink to one target fraction, returning [core, shell]
+          where core has area fraction and shell has area (1-fraction).
           Must be in range [0, 1].
         - **Sequence of floats**: Create N parts. Values represent the area
-          fraction of each part from outside to inside.
+          fraction of each part from inside to outside (core first).
           Values should be non-negative and sum to approximately 1.0.
-          Example: [0.25, 0.25, 0.25, 0.25] creates 3 shells + 1 core, each 25%.
+          Example: [0.25, 0.25, 0.25, 0.25] creates 1 core + 3 shells, each 25%.
     simplify : float, optional
         Simplification tolerance for the Douglas-Peucker algorithm.
         Applied before shrinking to reduce complexity.
@@ -195,12 +195,14 @@ def shrink(
     Returns
     -------
     list[BaseGeometry]
-        List of geometry parts from outermost to innermost.
+        List of geometry parts from innermost to outermost. Each part
+        corresponds positionally to its input fraction (``fractions[i]``
+        maps to ``parts[i]``), consistent with :func:`split`.
 
-        - For single float f: returns [shell, core] where shell has area
-          (1-f)*original and core has area f*original.
+        - For single float f: returns [core, shell] where core has area
+          f*original and shell has area (1-f)*original.
         - For sequence of N values: returns N geometries [part_0, ..., part_{N-1}]
-          where part_0 is the outermost shell and part_{N-1} is the core.
+          where part_0 is the innermost core and part_{N-1} is the outermost shell.
         - Zero fractions produce empty geometries in the corresponding position.
 
     Raises
@@ -219,24 +221,24 @@ def shrink(
     >>>
     >>> square = Polygon([(0, 0), (10, 0), (10, 10), (0, 10)])
     >>> parts = shrink(square, 0.5)
-    >>> len(parts)  # [shell, core]
+    >>> len(parts)  # [core, shell]
     2
-    >>> print(f"Shell area: {parts[0].area:.1f}")  # 50.0
-    >>> print(f"Core area: {parts[1].area:.1f}")  # 50.0
+    >>> print(f"Core area: {parts[0].area:.1f}")  # 50.0
+    >>> print(f"Shell area: {parts[1].area:.1f}")  # 50.0
 
     Create concentric shells with equal fractions:
 
-    >>> # 4 equal parts: 3 shells + core (25% each)
+    >>> # 4 equal parts: core + 3 shells (25% each)
     >>> parts = shrink(square, [0.25, 0.25, 0.25, 0.25])
     >>> len(parts)  # 4 parts
     4
     >>> print(f"Areas: {[round(p.area, 1) for p in parts]}")  # [25.0, 25.0, 25.0, 25.0]
 
-    Unequal shells:
+    Unequal shells (core first):
 
-    >>> # Outer shell 50%, middle shell 30%, core 20%
-    >>> parts = shrink(square, [0.5, 0.3, 0.2])
-    >>> print(f"Core area: {parts[-1].area:.1f}")  # 20.0
+    >>> # Core 20%, middle shell 30%, outer shell 50%
+    >>> parts = shrink(square, [0.2, 0.3, 0.5])
+    >>> print(f"Core area: {parts[0].area:.1f}")  # 20.0
 
     Shell mode for thickness-based shrinking:
 
@@ -253,8 +255,8 @@ def shrink(
         fraction = float(fractions)
         # _shrink_single returns (shrunken_core, shell)
         core, shell = _shrink_single(geom, fraction, simplify=simplify, mode=mode, tol=tol)
-        # Return [shell, core] - shell has area (1-fraction), core has area fraction
-        return [shell, core]
+        # Return [core, shell] - core has area fraction, shell has area (1-fraction)
+        return [core, shell]
 
     # Convert to list for easier manipulation
     frac_list = list(fractions)
@@ -285,6 +287,11 @@ def shrink(
 
     # Normalize fractions to sum to 1
     frac_list = [f / total for f in frac_list]
+
+    # Fractions are ordered core-first (innermost to outermost).
+    # The internal algorithm peels shells from outside in, so reverse the
+    # input for processing and reverse the output to restore core-first order.
+    frac_list = list(reversed(frac_list))
 
     # Create shells progressively from outside to inside
     # Each fraction (except the last) becomes a shell
@@ -325,4 +332,5 @@ def shrink(
     # Add the core (final remaining geometry)
     parts.append(current_geom)
 
-    return parts
+    # Reverse to return [core, inner_shell, ..., outer_shell]
+    return list(reversed(parts))

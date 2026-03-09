@@ -202,6 +202,11 @@ class LayoutResult:
             if hasattr(self.canonical_symbol, "edge_curves") and self.canonical_symbol.edge_curves:
                 symbol_params["edge_curves"] = self.canonical_symbol.edge_curves
 
+        # Filter algorithm_info to only JSON-safe scalar values.
+        # Non-serializable objects (TilingResult, numpy arrays) are stripped here
+        # and handled separately at the SymbolCartogram level.
+        safe_info = {k: v for k, v in self.algorithm_info.items() if isinstance(v, (str, int, float, bool, type(None)))}
+
         return {
             "canonical_symbol": {
                 "class": symbol_class,
@@ -214,7 +219,7 @@ class LayoutResult:
             "adjacency": self.adjacency.tolist(),
             "bounds": list(self.bounds),
             "crs": self.crs,
-            "algorithm_info": self.algorithm_info,
+            "algorithm_info": safe_info,
         }
 
     @classmethod

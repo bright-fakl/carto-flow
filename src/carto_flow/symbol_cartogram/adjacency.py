@@ -33,24 +33,9 @@ def _find_adjacent_pairs(
         where ``i < j``.
 
     """
-    buffered = gdf.geometry.buffer(distance_tolerance / 2)
-    sindex = gdf.sindex
-    n = len(gdf)
+    from carto_flow.geo_utils.adjacency import find_adjacent_pairs
 
-    pairs: list[tuple[int, int, float]] = []
-    for i in range(n):
-        candidates = list(sindex.query(buffered.iloc[i], predicate="intersects"))
-        for j in candidates:
-            if i >= j:
-                continue
-            intersection = buffered.iloc[i].intersection(buffered.iloc[j])
-            if intersection.is_empty:
-                continue
-            shared_length = intersection.length
-            if shared_length > distance_tolerance:
-                pairs.append((i, j, shared_length))
-
-    return pairs
+    return find_adjacent_pairs(gdf.geometry.tolist(), distance_tolerance)
 
 
 def compute_adjacency(

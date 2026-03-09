@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     import matplotlib.pyplot as plt
 
     from .layout_result import LayoutResult
+    from .plot_results import SymbolsPlotResult
     from .styling import Styling
 
 
@@ -236,7 +237,7 @@ class SymbolCartogram:
         label_kwargs: dict[str, Any] | None = None,
         title: str | None = None,
         zorder: int = 1,
-    ) -> plt.Axes:
+    ) -> SymbolsPlotResult:
         """Plot the symbol cartogram with per-symbol visual styling.
 
         Every visual property can be set **globally** (scalar / colour string),
@@ -349,8 +350,9 @@ class SymbolCartogram:
 
         Returns
         -------
-        plt.Axes
-            The matplotlib axes with the plot.
+        SymbolsPlotResult
+            Result with the axes and captured artists (collections, labels,
+            colorbars, legends).  Access the axes via ``result.ax``.
 
         Examples
         --------
@@ -474,6 +476,194 @@ class SymbolCartogram:
                 source_subset[col] = self.symbols[col].values
 
         return source_subset
+
+    def save(self, path: str) -> None:
+        """Save the symbol cartogram to a JSON file.
+
+        Saves the symbol geometries, layout result, source GeoDataFrame, and
+        metrics so the cartogram can be fully restored with SymbolCartogram.load().
+
+        Parameters
+        ----------
+        path : str
+            Output file path (typically .json extension).
+
+        Examples
+        --------
+        >>> result.save('cartogram.json')
+        >>> loaded = SymbolCartogram.load('cartogram.json')
+        >>> loaded.plot(facecolor='population')
+
+        """
+        import json
+        from pathlib import Path
+
+        path = Path(path)
+
+        data: dict = {
+            "status": self.status.value,
+            "metrics": {k: (v.item() if hasattr(v, "item") else v) for k, v in self.metrics.items()},
+        }
+
+        # Symbols GeoDataFrame — stored as GeoJSON FeatureCollection
+        symbols_fc = json.loads(self.symbols.to_json())
+        data["symbols"] = symbols_fc
+        if self.symbols.crs is not None:
+            data["symbols_crs"] = self.symbols.crs.to_string()
+
+        # Layout result
+        if self.layout_result is not None:
+            data["layout_result"] = self.layout_result.serialize()
+
+        # Source GeoDataFrame
+        if self._source_gdf is not None:
+            src = self._source_gdf
+            if src.crs is not None:
+                data["source_crs"] = src.crs.to_string()
+            data["source_index"] = list(src.index)
+            non_geom_cols = [c for c in src.columns if c != src.geometry.name]
+            data["source_columns"] = non_geom_cols
+            records = src[non_geom_cols].to_dict(orient="records")
+            data["source_records"] = [
+                {k: (v.item() if hasattr(v, "item") else v) for k, v in row.items()} for row in records
+            ]
+            data["source_geometries"] = [geom.__geo_interface__ for geom in src.geometry]
+
+        # Valid mask
+        if self._valid_mask is not None:
+            data["valid_mask"] = self._valid_mask.tolist()
+
+        # Grid layout data: tiling polygons/transforms and symbol assignments.
+        # adjacency is NOT saved — it's only used during assignment (already done)
+        # and is not needed by plot_tiling().
+        if self._tiling_result is not None:
+            tr = self._tiling_result
+            data["tiling_result"] = {
+                "polygons": [p.__geo_interface__ for p in tr.polygons],
+                "transforms": [
+                    {"center": list(t.center), "rotation": t.rotation, "flipped": t.flipped} for t in tr.transforms
+                ],
+                "tile_size": tr.tile_size,
+                "inscribed_radius": tr.inscribed_radius,
+                "canonical_tile": tr.canonical_tile.__geo_interface__,
+                "n_base_vertices": tr.n_base_vertices,
+            }
+        if self._assignments is not None:
+            data["assignments"] = self._assignments.tolist()
+
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+
+    @classmethod
+    def load(cls, path: str) -> SymbolCartogram:
+        """Load a symbol cartogram from a JSON file.
+
+        Restores a SymbolCartogram saved by save(), including symbol geometries,
+        layout result, source GeoDataFrame, and metrics.
+
+        Parameters
+        ----------
+        path : str
+            Path to saved JSON file.
+
+        Returns
+        -------
+        SymbolCartogram
+            Restored cartogram. Supports plot(), to_geodataframe(), and restyle()
+            (if layout_result was present at save time).
+
+        Examples
+        --------
+        >>> loaded = SymbolCartogram.load('cartogram.json')
+        >>> loaded.plot(facecolor='population')
+        >>> restyled = loaded.restyle(symbol='hexagon')
+
+        """
+        import json
+        from pathlib import Path
+
+        import geopandas as gpd
+        import numpy as np
+        from shapely.geometry import shape
+
+        from .layout_result import LayoutResult
+        from .status import SymbolCartogramStatus
+
+        path = Path(path)
+        with open(path) as f:
+            data = json.load(f)
+
+        # Reconstruct symbols GeoDataFrame
+        symbols = gpd.GeoDataFrame.from_features(data["symbols"]["features"])
+        if "symbols_crs" in data:
+            symbols = symbols.set_crs(data["symbols_crs"])
+
+        # Reconstruct layout_result
+        layout_result = None
+        if "layout_result" in data:
+            layout_result = LayoutResult.from_serialized(data["layout_result"])
+
+        # Reconstruct source GeoDataFrame
+        source_gdf = None
+        if "source_geometries" in data:
+            src_geoms = [shape(g) for g in data["source_geometries"]]
+            records = data.get("source_records", [{} for _ in src_geoms])
+            index = data.get("source_index", list(range(len(src_geoms))))
+            source_gdf = gpd.GeoDataFrame(records, geometry=src_geoms, index=index)
+            if "source_crs" in data:
+                source_gdf = source_gdf.set_crs(data["source_crs"])
+
+        # Reconstruct valid_mask
+        valid_mask = None
+        if "valid_mask" in data:
+            valid_mask = np.array(data["valid_mask"])
+
+        # Reconstruct tiling data (grid layouts only)
+        tiling_result = None
+        if "tiling_result" in data:
+            from shapely.geometry import shape as shapely_shape
+
+            from .tiling import TileTransform, TilingResult
+
+            tr_data = data["tiling_result"]
+            n = len(tr_data["polygons"])
+            tiling_result = TilingResult(
+                polygons=[shapely_shape(p) for p in tr_data["polygons"]],
+                transforms=[
+                    TileTransform(
+                        center=tuple(t["center"]),
+                        rotation=t["rotation"],
+                        flipped=t["flipped"],
+                    )
+                    for t in tr_data["transforms"]
+                ],
+                adjacency=np.zeros((n, n), dtype=bool),  # not needed post-assignment
+                vertex_adjacency=None,
+                tile_size=tr_data["tile_size"],
+                inscribed_radius=tr_data["inscribed_radius"],
+                canonical_tile=shapely_shape(tr_data["canonical_tile"]),
+                n_base_vertices=tr_data.get("n_base_vertices"),
+            )
+
+        assignments = None
+        if "assignments" in data:
+            assignments = np.array(data["assignments"], dtype=np.intp)
+
+        try:
+            status = SymbolCartogramStatus(data.get("status", "completed"))
+        except ValueError:
+            status = SymbolCartogramStatus.COMPLETED
+
+        return cls(
+            symbols=symbols,
+            status=status,
+            metrics=data.get("metrics", {}),
+            layout_result=layout_result,
+            _source_gdf=source_gdf,
+            _valid_mask=valid_mask,
+            _tiling_result=tiling_result,
+            _assignments=assignments,
+        )
 
     def get_displacement_vectors(self) -> NDArray[np.floating]:
         """Get displacement vectors from original centroid to symbol center.

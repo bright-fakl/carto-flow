@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002
 """Tiling abstractions for tile-based symbol cartograms.
 
 This module defines the ``Tiling`` ABC and concrete tiling classes that generate
@@ -33,6 +34,18 @@ from shapely.geometry import Point, Polygon, box
 
 if TYPE_CHECKING:
     from .symbols import Symbol
+
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+
+#: Default bounding box used by :meth:`Tiling.generate` when *bounds* is omitted.
+DEFAULT_BOUNDS: tuple[float, float, float, float] = (-1.0, -1.0, 1.0, 1.0)
+
+#: Default tile count used by :meth:`Tiling.generate` when neither *n_tiles* nor
+#: *tile_size* is specified.
+DEFAULT_N_TILES: int = 64
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +107,12 @@ class TilingResult:
         at the generated size.
     canonical_tile : Polygon
         The unit tile shape (before transforms), at the generated size.
+    n_base_vertices : int or None
+        Topological vertex count of the prototile.  For most tilings this
+        equals ``len(canonical_tile.exterior.coords) - 1``, but for
+        isohedral tilings with custom edge curves the ``canonical_tile``
+        polygon has many more points due to spline interpolation.  Used by
+        :meth:`plot_tile` to select the correct auto-colour.
 
     """
 
@@ -104,6 +123,7 @@ class TilingResult:
     tile_size: float
     inscribed_radius: float
     canonical_tile: Polygon
+    n_base_vertices: int | None = None
 
     @property
     def centers(self) -> NDArray[np.floating]:
@@ -174,6 +194,166 @@ class TilingResult:
             tile_size=self.tile_size,
             inscribed_radius=self.inscribed_radius,  # Unchanged for rotation about origin
             canonical_tile=rotated_canonical,
+            n_base_vertices=self.n_base_vertices,
+        )
+
+    def plot(
+        self,
+        ax=None,
+        *,
+        color_by: str = "uniform",
+        face_color: str = "#4e9af1",
+        edge_color: str = "#333333",
+        colormap: str = "tab10",
+        alpha: float = 0.85,
+        linewidth: float = 0.5,
+    ):
+        """Plot the tiling using matplotlib.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on. A new figure is created if *ax* is ``None``.
+        color_by : {"uniform", "aspect", "index", "x", "y", "random"}
+            Colouring scheme:
+
+            * ``"uniform"`` — all tiles use *face_color*.
+            * ``"aspect"`` — colour by tile rotation angle (0–360 → colormap).
+            * ``"index"`` — colour by tile index (0…n−1 → colormap).
+            * ``"x"`` — colour by tile centroid x coordinate (normalised).
+            * ``"y"`` — colour by tile centroid y coordinate (normalised).
+            * ``"random"`` — random colour per tile drawn from *colormap*.
+        face_color : str
+            Hex fill colour used in ``"uniform"`` mode.
+        edge_color : str
+            Stroke colour for tile outlines.
+        colormap : str
+            Matplotlib colormap name used in ``"aspect"`` and ``"index"`` modes.
+        alpha : float
+            Tile fill transparency.
+        linewidth : float
+            Tile outline width in points.
+
+        Returns
+        -------
+        TilingGridPlotResult
+            Named result with ``ax``, ``fig``, and ``tiles`` (the
+            ``PolyCollection``).
+
+        Examples
+        --------
+        >>> from carto_flow.symbol_cartogram import SquareTiling
+        >>> pr = SquareTiling().generate().plot(color_by="index")
+        >>> pr.tiles.set_alpha(0.5)
+        """
+        import matplotlib.colors as mcolors
+        import matplotlib.pyplot as plt
+        from matplotlib.collections import PolyCollection
+
+        from .plot_results import TilingGridPlotResult
+
+        if ax is None:
+            fig, ax = plt.subplots()
+            ax.set_aspect("equal")
+        else:
+            fig = ax.get_figure()
+
+        _CMAP_MODES = {"aspect", "index", "x", "y", "random"}
+        if color_by not in _CMAP_MODES | {"uniform"}:
+            raise ValueError(
+                f"Unknown color_by={color_by!r}. Choose from 'uniform', 'aspect', 'index', 'x', 'y', 'random'."
+            )
+
+        n = len(self.polygons)
+        cmap = plt.get_cmap(colormap) if color_by in _CMAP_MODES else None
+
+        coords = [list(zip(*p.exterior.xy)) for p in self.polygons]
+        if color_by == "uniform":
+            colors = [face_color] * n
+        elif color_by == "aspect":
+            colors = [mcolors.to_hex(cmap((tr.rotation % 360) / 360.0)) for tr in self.transforms]
+        elif color_by == "index":
+            colors = [mcolors.to_hex(cmap(i / max(n - 1, 1))) for i in range(n)]
+        elif color_by == "x":
+            xs = self.centers[:, 0]
+            lo, hi = xs.min(), xs.max()
+            values = (xs - lo) / max(hi - lo, 1e-9)
+            colors = [mcolors.to_hex(cmap(v)) for v in values]
+        elif color_by == "y":
+            ys = self.centers[:, 1]
+            lo, hi = ys.min(), ys.max()
+            values = (ys - lo) / max(hi - lo, 1e-9)
+            colors = [mcolors.to_hex(cmap(v)) for v in values]
+        else:  # random
+            colors = [mcolors.to_hex(cmap(v)) for v in np.random.default_rng().random(n)]
+
+        col = PolyCollection(
+            coords,
+            facecolors=colors,
+            edgecolors=edge_color,
+            linewidths=linewidth,
+            alpha=alpha,
+        )
+        ax.add_collection(col)
+        ax.autoscale_view()
+        ax.axis("off")
+        return TilingGridPlotResult(ax=ax, fig=fig, tiles=col)
+
+    def plot_tile(
+        self,
+        ax=None,
+        *,
+        face_color: str | None = None,
+        edge_color: str = "#1971c2",
+        alpha: float = 0.7,
+        show_vertices: bool = True,
+        show_vertex_labels: bool = False,
+        linewidth: float = 1.5,
+    ):
+        """Plot the canonical (proto)tile shape using matplotlib.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on. A new figure is created if *ax* is ``None``.
+        face_color : str, optional
+            Fill colour.  When ``None`` the colour is chosen automatically by
+            vertex count to match the panel UI palette
+            (3 → pink, 4 → blue, 5 → yellow, 6 → green).
+        edge_color : str
+            Outline colour.
+        alpha : float
+            Fill transparency.
+        show_vertices : bool
+            Draw a dot at each tile vertex.
+        show_vertex_labels : bool
+            Annotate each vertex with its 0-based index.
+        linewidth : float
+            Outline width in points.
+
+        Returns
+        -------
+        PrototilePlotResult
+            Named result with ``ax``, ``fig``, ``tile`` (the patch), and
+            ``vertices`` (scatter artist, or ``None``).
+
+        Examples
+        --------
+        >>> from carto_flow.symbol_cartogram import IsohedralTiling
+        >>> result = IsohedralTiling(1).generate()
+        >>> pr = result.plot_tile(show_vertex_labels=True)
+        >>> pr.tile.set_facecolor("coral")
+        """
+        return _plot_polygon_tile(
+            self.canonical_tile,
+            ax,
+            face_color,
+            edge_color,
+            alpha,
+            show_vertices,
+            show_vertex_labels,
+            linewidth,
+            n_vertices=self.n_base_vertices,
         )
 
 
@@ -192,7 +372,7 @@ class Tiling(ABC):
     @abstractmethod
     def generate(
         self,
-        bounds: tuple[float, float, float, float],
+        bounds: tuple[float, float, float, float] = DEFAULT_BOUNDS,
         n_tiles: int | None = None,
         tile_size: float | None = None,
         margin: float = 0.1,
@@ -202,10 +382,12 @@ class Tiling(ABC):
 
         Parameters
         ----------
-        bounds : tuple
-            Bounding box as (minx, miny, maxx, maxy).
+        bounds : tuple, optional
+            Bounding box as (minx, miny, maxx, maxy).  Defaults to the unit
+            box ``(-1, -1, 1, 1)`` (see :data:`DEFAULT_BOUNDS`).
         n_tiles : int, optional
             Approximate number of tiles. Mutually exclusive with *tile_size*.
+            When neither is given, defaults to :data:`DEFAULT_N_TILES`.
         tile_size : float, optional
             Size of each tile. Mutually exclusive with *n_tiles*.
         margin : float
@@ -219,6 +401,77 @@ class Tiling(ABC):
 
         """
         ...
+
+    @property
+    def _n_base_vertices(self) -> int | None:
+        """Topological prototile vertex count, or *None* to auto-detect."""
+        return None
+
+    def _resolve_generate_args(
+        self,
+        bounds: tuple[float, float, float, float] | None,
+        n_tiles: int | None,
+        tile_size: float | None,
+    ) -> tuple[tuple[float, float, float, float], int | None, float | None]:
+        """Apply defaults for *bounds* and *n_tiles*/*tile_size*."""
+        if bounds is None:
+            bounds = DEFAULT_BOUNDS
+        if n_tiles is None and tile_size is None:
+            n_tiles = DEFAULT_N_TILES
+        return bounds, n_tiles, tile_size
+
+    def plot_tile(
+        self,
+        ax=None,
+        *,
+        face_color: str | None = None,
+        edge_color: str = "#1971c2",
+        alpha: float = 0.7,
+        show_vertices: bool = True,
+        show_vertex_labels: bool = False,
+        linewidth: float = 1.5,
+    ):
+        """Plot the canonical (proto)tile shape using matplotlib.
+
+        No call to :meth:`generate` is needed — the tile is derived directly
+        from the tiling's :attr:`canonical_tile` property.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            Axes to draw on. A new figure is created if *ax* is ``None``.
+        face_color : str, optional
+            Fill colour.  When ``None`` the colour is chosen automatically by
+            vertex count to match the panel UI palette
+            (3 → pink, 4 → blue, 5 → yellow, 6 → green).
+        edge_color : str
+            Outline colour.
+        alpha : float
+            Fill transparency.
+        show_vertices : bool
+            Draw a dot at each tile vertex.
+        show_vertex_labels : bool
+            Annotate each vertex with its 0-based index.
+        linewidth : float
+            Outline width in points.
+
+        Returns
+        -------
+        PrototilePlotResult
+            Named result with ``ax``, ``fig``, ``tile`` (the patch), and
+            ``vertices`` (scatter artist, or ``None``).
+        """
+        return _plot_polygon_tile(
+            self.canonical_tile,
+            ax,
+            face_color,
+            edge_color,
+            alpha,
+            show_vertices,
+            show_vertex_labels,
+            linewidth,
+            n_vertices=self._n_base_vertices,
+        )
 
     @property
     @abstractmethod
@@ -280,6 +533,75 @@ class Tiling(ABC):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _plot_polygon_tile(
+    polygon: Polygon,
+    ax,
+    face_color: str | None,
+    edge_color: str,
+    alpha: float,
+    show_vertices: bool,
+    show_vertex_labels: bool,
+    linewidth: float,
+    n_vertices: int | None = None,
+):
+    """Shared matplotlib renderer for a single tile polygon.
+
+    Used by both :meth:`Tiling.plot_tile` and :meth:`TilingResult.plot_tile`.
+    All matplotlib imports are lazy so the dependency remains optional.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Polygon as MplPolygon
+
+    from .plot_results import PrototilePlotResult
+
+    _VERTEX_COLORS = {3: "#f5b7b1", 4: "#aed6f1", 5: "#f9e79f", 6: "#abebc6"}
+
+    coords = list(polygon.exterior.coords[:-1])  # drop closing duplicate
+
+    if face_color is None:
+        # Use n_vertices when supplied (curved tiles have many interpolated
+        # points in exterior.coords that don't reflect the topological count).
+        n_verts = n_vertices if n_vertices is not None else len(coords)
+        face_color = _VERTEX_COLORS.get(n_verts, "#d5d8dc")
+
+    if ax is None:
+        fig, ax = plt.subplots()
+        ax.set_aspect("equal")
+    else:
+        fig = ax.get_figure()
+
+    patch = MplPolygon(
+        coords,
+        closed=True,
+        facecolor=face_color,
+        edgecolor=edge_color,
+        linewidth=linewidth,
+        alpha=alpha,
+    )
+    ax.add_patch(patch)
+
+    vertices_artist = None
+    if show_vertices or show_vertex_labels:
+        xs, ys = zip(*coords)
+        if show_vertices:
+            vertices_artist = ax.scatter(xs, ys, color=edge_color, s=30, zorder=5)
+        if show_vertex_labels:
+            for i, (x, y) in enumerate(coords):
+                ax.annotate(
+                    str(i),
+                    (x, y),
+                    fontsize=8,
+                    ha="center",
+                    va="bottom",
+                    xytext=(0, 6),
+                    textcoords="offset points",
+                )
+
+    ax.autoscale_view()
+    ax.axis("off")
+    return PrototilePlotResult(ax=ax, fig=fig, tile=patch, vertices=vertices_artist)
 
 
 def _apply_margin(bounds: tuple[float, float, float, float], margin: float) -> tuple[float, float, float, float]:
@@ -442,14 +764,13 @@ class SquareTiling(Tiling):
 
     def generate(
         self,
-        bounds: tuple[float, float, float, float],
+        bounds: tuple[float, float, float, float] = DEFAULT_BOUNDS,
         n_tiles: int | None = None,
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
     ) -> TilingResult:
-        if tile_size is None and n_tiles is None:
-            raise ValueError("Must specify either n_tiles or tile_size")
+        bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
         minx, miny, maxx, maxy = _apply_margin(bounds, margin)
         width = maxx - minx
@@ -553,14 +874,13 @@ class HexagonTiling(Tiling):
 
     def generate(
         self,
-        bounds: tuple[float, float, float, float],
+        bounds: tuple[float, float, float, float] = DEFAULT_BOUNDS,
         n_tiles: int | None = None,
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
     ) -> TilingResult:
-        if tile_size is None and n_tiles is None:
-            raise ValueError("Must specify either n_tiles or tile_size")
+        bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
         minx, miny, maxx, maxy = _apply_margin(bounds, margin)
         width = maxx - minx
@@ -738,14 +1058,13 @@ class TriangleTiling(Tiling):
 
     def generate(
         self,
-        bounds: tuple[float, float, float, float],
+        bounds: tuple[float, float, float, float] = DEFAULT_BOUNDS,
         n_tiles: int | None = None,
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
     ) -> TilingResult:
-        if tile_size is None and n_tiles is None:
-            raise ValueError("Must specify either n_tiles or tile_size")
+        bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
         minx, miny, maxx, maxy = _apply_margin(bounds, margin)
         width = maxx - minx
@@ -987,14 +1306,13 @@ class QuadrilateralTiling(Tiling):
 
     def generate(
         self,
-        bounds: tuple[float, float, float, float],
+        bounds: tuple[float, float, float, float] = DEFAULT_BOUNDS,
         n_tiles: int | None = None,
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
     ) -> TilingResult:
-        if tile_size is None and n_tiles is None:
-            raise ValueError("Must specify either n_tiles or tile_size")
+        bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
         minx, miny, maxx, maxy = _apply_margin(bounds, margin)
         width = maxx - minx
@@ -1328,6 +1646,11 @@ class IsohedralTiling(Tiling):
     def canonical_tile(self) -> Polygon:
         """Unit-area prototile centered at origin."""
         return self._unit_tile
+
+    @property
+    def _n_base_vertices(self) -> int:
+        """Topological vertex count of the prototile (ignores curve interpolation points)."""
+        return self._ih.num_vertices
 
     def canonical_symbol(self) -> Symbol:
         """Return an IsohedralTileSymbol with this tiling's parameters and curves."""
@@ -2200,15 +2523,14 @@ class IsohedralTiling(Tiling):
 
     def generate(
         self,
-        bounds: tuple[float, float, float, float],
+        bounds: tuple[float, float, float, float] = DEFAULT_BOUNDS,
         n_tiles: int | None = None,
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
         compute_adjacency: bool = True,
     ) -> TilingResult:
-        if tile_size is None and n_tiles is None:
-            raise ValueError("Must specify either n_tiles or tile_size")
+        bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
         minx, miny, maxx, maxy = _apply_margin(bounds, margin)
         width = maxx - minx
@@ -2348,6 +2670,7 @@ class IsohedralTiling(Tiling):
             tile_size=tile_size,
             inscribed_radius=inscribed_r,
             canonical_tile=scaled_proto,
+            n_base_vertices=self._ih.num_vertices,
         )
 
 

@@ -32,6 +32,7 @@ def create_symbol_cartogram(
     size_scale: Literal["sqrt", "linear", "log"] = "sqrt",
     size_max_value: float | None = None,
     size_clip: bool = True,
+    size_normalization: Literal["max", "total"] = "max",
     adjacency_mode: AdjacencyMode = AdjacencyMode.BINARY,
     adjacency: NDArray | None = None,
     distance_tolerance: float | None = None,
@@ -67,6 +68,14 @@ def create_symbol_cartogram(
         Reference max value for consistent scaling across cartograms.
     size_clip : bool
         Whether to clip values exceeding size_max_value.
+    size_normalization : str
+        How to normalise symbol sizes relative to original geometry areas:
+
+        - ``"max"`` *(default)*: the largest symbol has area equal to the mean
+          geometry area.
+        - ``"total"``: all sizes are scaled so that the total symbol area equals
+          the total original geometry area.  Useful when you want circle area-sum
+          to match the geographic area-sum (standard for Dorling cartograms).
     adjacency_mode : AdjacencyMode
         How to compute adjacency: BINARY, WEIGHTED, or AREA_WEIGHTED.
     adjacency : np.ndarray, optional
@@ -123,6 +132,7 @@ def create_symbol_cartogram(
         size_scale=size_scale,
         size_max_value=size_max_value,
         size_clip=size_clip,
+        size_normalization=size_normalization,
         adjacency_mode=adjacency_mode,
         adjacency=adjacency,
         distance_tolerance=distance_tolerance,
@@ -156,6 +166,7 @@ def create_layout(
     size_scale: Literal["sqrt", "linear", "log"] = "sqrt",
     size_max_value: float | None = None,
     size_clip: bool = True,
+    size_normalization: Literal["max", "total"] = "max",
     adjacency_mode: AdjacencyMode = AdjacencyMode.BINARY,
     adjacency: NDArray | None = None,
     distance_tolerance: float | None = None,
@@ -183,6 +194,13 @@ def create_layout(
         Reference max value for consistent scaling across cartograms.
     size_clip : bool
         Whether to clip values exceeding size_max_value.
+    size_normalization : str
+        How to normalise symbol sizes relative to original geometry areas:
+
+        - ``"max"`` *(default)*: the largest symbol has area equal to the mean
+          geometry area.
+        - ``"total"``: all sizes are scaled so that the total symbol area equals
+          the total original geometry area.
     adjacency_mode : AdjacencyMode
         How to compute adjacency: BINARY, WEIGHTED, or AREA_WEIGHTED.
     adjacency : np.ndarray, optional
@@ -230,6 +248,7 @@ def create_layout(
         size_scale=size_scale,
         size_max_value=size_max_value,
         size_clip=size_clip,
+        size_normalization=size_normalization,
         adjacency_mode=adjacency_mode,
         distance_tolerance=distance_tolerance,
     )

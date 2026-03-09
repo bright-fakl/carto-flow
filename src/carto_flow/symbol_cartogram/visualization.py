@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002
 """Visualization functions for symbol cartograms."""
 
 from __future__ import annotations
@@ -11,9 +12,19 @@ import numpy as np
 if TYPE_CHECKING:
     import geopandas as gpd
     import matplotlib.pyplot as plt
+    from matplotlib.collections import PatchCollection
+    from matplotlib.colorbar import Colorbar
     from matplotlib.colors import Normalize
+    from matplotlib.legend import Legend
     from numpy.typing import NDArray
 
+    from .layout_result import LayoutResult
+    from .plot_results import (
+        AdjacencyHeatmapResult,
+        ComparisonPlotResult,
+        DisplacementPlotResult,
+        SymbolsPlotResult,
+    )
     from .result import SymbolCartogram
 
 # Default hatch patterns cycled when auto-assigning hatches to categories.
@@ -26,7 +37,7 @@ def plot_comparison(
     column: str | None = None,
     figsize: tuple[float, float] = (14, 6),
     **kwargs: Any,
-) -> tuple[plt.Figure, tuple[plt.Axes, plt.Axes]]:
+) -> ComparisonPlotResult:
     """Side-by-side comparison of original geometries and symbols.
 
     Parameters
@@ -44,29 +55,39 @@ def plot_comparison(
 
     Returns
     -------
-    fig, (ax1, ax2)
-        Figure and axes.
+    ComparisonPlotResult
+        Result with figure, axes, and captured artists.
 
     """
     import matplotlib.pyplot as plt
 
+    from .plot_results import ComparisonPlotResult
+
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
 
-    # Plot original
+    # Plot original — capture collections added by geopandas
+    before = len(ax1.collections)
     if column and column in original_gdf.columns:
         original_gdf.plot(ax=ax1, column=column, legend=True, **kwargs)
     else:
         original_gdf.plot(ax=ax1, **kwargs)
+    original_collections = list(ax1.collections[before:])
     ax1.set_aspect("equal")
     ax1.set_axis_off()
     ax1.set_title("Original")
 
     # Plot symbols
-    result.plot(ax=ax2, column=column, **kwargs)
+    symbols_result = result.plot(ax=ax2, column=column, **kwargs)
     ax2.set_title(f"Symbol Cartogram ({result.status.value})")
 
     plt.tight_layout()
-    return fig, (ax1, ax2)
+    return ComparisonPlotResult(
+        fig=fig,
+        ax_original=ax1,
+        ax_cartogram=ax2,
+        symbols=symbols_result,
+        original_collections=original_collections,
+    )
 
 
 def plot_displacement(
@@ -77,7 +98,7 @@ def plot_displacement(
     arrow_alpha: float = 0.7,
     show_symbols: bool = True,
     **kwargs: Any,
-) -> plt.Axes:
+) -> DisplacementPlotResult:
     """Plot displacement arrows from original centroids to symbol centers.
 
     Parameters
@@ -99,17 +120,20 @@ def plot_displacement(
 
     Returns
     -------
-    plt.Axes
-        The axes with the plot.
+    DisplacementPlotResult
+        Result with the axes and captured artists.
 
     """
     import matplotlib.pyplot as plt
 
+    from .plot_results import DisplacementPlotResult
+
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(10, 8))
 
+    symbols_result = None
     if show_symbols:
-        result.plot(ax=ax, **kwargs)
+        symbols_result = result.plot(ax=ax, **kwargs)
 
     # Get displacement vectors
     displacements = result.get_displacement_vectors()
@@ -127,7 +151,7 @@ def plot_displacement(
         raise ValueError("No original positions available for displacement plot")
 
     # Plot arrows
-    ax.quiver(
+    quiver_artist = ax.quiver(
         origins[:, 0],
         origins[:, 1],
         displacements[:, 0],
@@ -144,7 +168,7 @@ def plot_displacement(
     ax.set_axis_off()
     ax.set_title("Displacement Vectors")
 
-    return ax
+    return DisplacementPlotResult(ax=ax, arrows=quiver_artist, symbols=symbols_result)
 
 
 def plot_adjacency(
@@ -159,6 +183,9 @@ def plot_adjacency(
     node_size: float = 20,
     show_symbols: bool = True,
     show_original: bool = False,
+    use_original_positions: bool = False,
+    colorbar: bool = True,
+    colorbar_kwds: dict | None = None,
     **kwargs: Any,
 ) -> plt.Axes:
     """Visualize the adjacency graph overlaid on the cartogram.
@@ -172,6 +199,8 @@ def plot_adjacency(
         Symbol cartogram result.
     original_gdf : gpd.GeoDataFrame, optional
         Original GeoDataFrame for underlay when ``show_original=True``.
+        Also used as the node position source when
+        ``use_original_positions=True``.
     adjacency : np.ndarray, optional
         Adjacency matrix of shape ``(n, n)``. If None, uses the matrix
         stored in the result (``result.layout_result.adjacency``).
@@ -192,18 +221,36 @@ def plot_adjacency(
         Whether to show symbol polygons underneath.
     show_original : bool
         Whether to show original geometry boundaries.
+    use_original_positions : bool
+        When ``True``, draw graph nodes at the centroids of the original
+        geometries instead of the cartogram symbol centers.  Position
+        lookup order: ``original_gdf`` (if provided) →
+        ``result.layout_result.positions`` → ``result._source_gdf``.
+        Raises ``ValueError`` when no original positions can be found.
+        Default ``False``.
+    colorbar : bool
+        Whether to attach a colorbar for edge weights when ``edge_color``
+        is ``None`` (i.e. edges are colored by weight via ``edge_cmap``).
+        The colorbar range is fixed to ``[0, 1]`` (the valid range for all
+        adjacency modes) so it is comparable across datasets.  Default ``True``.
+    colorbar_kwds : dict, optional
+        Keyword arguments forwarded to ``Figure.colorbar()``.  Common keys:
+        ``shrink``, ``label``, ``orientation``, ``pad``.  Defaults to
+        ``{"shrink": 0.6, "label": "adjacency weight"}``.
     **kwargs
         Passed to ``result.plot()`` if ``show_symbols=True``.
 
     Returns
     -------
-    plt.Axes
-        The axes with the plot.
+    AdjacencyPlotResult
+        Result with the axes and captured artists.
 
     """
     import matplotlib.pyplot as plt
     from matplotlib.collections import LineCollection
     from matplotlib.colors import Normalize
+
+    from .plot_results import AdjacencyPlotResult
 
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(10, 8))
@@ -220,30 +267,57 @@ def plot_adjacency(
             "the result was created with adjacency computation.",
         )
 
-    # Show underlay
+    # Show underlay — capture original geometry collections
+    original_collections: list = []
     if show_original and original_gdf is not None:
+        before = len(ax.collections)
         original_gdf.plot(ax=ax, facecolor="none", edgecolor="lightgray", linewidth=0.5)
+        original_collections = list(ax.collections[before:])
 
+    symbols_result = None
     if show_symbols:
-        result.plot(ax=ax, **kwargs)
+        symbols_result = result.plot(ax=ax, **kwargs)
 
-    # Get symbol centers
-    centers = np.column_stack([
-        result.symbols["_symbol_x"].values,
-        result.symbols["_symbol_y"].values,
-    ])
+    # Get node positions
+    if use_original_positions:
+        if original_gdf is not None:
+            geoms = original_gdf.geometry
+            centers = np.array([[g.centroid.x, g.centroid.y] for g in geoms])
+        elif result.layout_result is not None:
+            centers = result.layout_result.positions
+        elif result._source_gdf is not None:
+            source_geoms = (
+                result._source_gdf.loc[result._valid_mask].geometry
+                if result._valid_mask is not None
+                else result._source_gdf.geometry
+            )
+            centers = np.array([[g.centroid.x, g.centroid.y] for g in source_geoms])
+        else:
+            raise ValueError(
+                "No original positions available. Pass original_gdf or ensure the "
+                "result was created from a GeoDataFrame."
+            )
+    else:
+        centers = np.column_stack([
+            result.symbols["_symbol_x"].values,
+            result.symbols["_symbol_y"].values,
+        ])
     n = len(centers)
 
     # Collect edges
     segments = []
     weights = []
+    edge_pairs: list[tuple[int, int]] = []
     for i in range(n):
         for j in range(i + 1, n):
             w = max(adj[i, j], adj[j, i])  # handle asymmetric matrices
             if w > 0:
                 segments.append([centers[i], centers[j]])
                 weights.append(w)
+                edge_pairs.append((i, j))
 
+    edge_collection = None
+    colorbar_art = None
     if segments:
         segments_arr = np.array(segments)
         weights_arr = np.array(weights)
@@ -256,20 +330,29 @@ def plot_adjacency(
                 linewidths=edge_width,
             )
         else:
-            norm = Normalize(vmin=weights_arr.min(), vmax=weights_arr.max())
-            cmap = plt.get_cmap(edge_cmap)
-            colors = cmap(norm(weights_arr))
+            # All adjacency weights are in [0, 1]; fix the norm to that range
+            # so the colorbar is comparable across datasets and modes.
+            norm = Normalize(vmin=0.0, vmax=1.0)
+            cmap_obj = plt.get_cmap(edge_cmap)
+            colors = cmap_obj(norm(weights_arr))
             lc = LineCollection(
                 segments_arr,
                 colors=colors,
                 alpha=edge_alpha,
                 linewidths=edge_width,
             )
+            if colorbar:
+                sm = plt.cm.ScalarMappable(cmap=cmap_obj, norm=norm)
+                sm.set_array([])
+                _cb_kwds = {"ax": ax, "shrink": 0.6, "label": "adjacency weight", **(colorbar_kwds or {})}
+                colorbar_art = ax.get_figure().colorbar(sm, **_cb_kwds)
         ax.add_collection(lc)
+        edge_collection = lc
 
     # Plot nodes
+    node_collection = None
     if node_size > 0:
-        ax.scatter(
+        node_collection = ax.scatter(
             centers[:, 0],
             centers[:, 1],
             s=node_size,
@@ -281,7 +364,298 @@ def plot_adjacency(
     ax.set_axis_off()
     ax.set_title("Adjacency Graph")
 
-    return ax
+    return AdjacencyPlotResult(
+        ax=ax,
+        edges=edge_collection,
+        edge_pairs=edge_pairs,
+        nodes=node_collection,
+        colorbar=colorbar_art,
+        original_collections=original_collections,
+        symbols=symbols_result,
+    )
+
+
+def plot_adjacency_heatmap(
+    source: SymbolCartogram | LayoutResult | NDArray,
+    labels: str | Sequence | None = None,
+    sort_by: str | Sequence | None = None,
+    *,
+    ax: plt.Axes | None = None,
+    figsize: tuple[float, float] | None = None,
+    cmap: str = "YlOrRd",
+    vmin: float | None = None,
+    vmax: float | None = None,
+    show_values: bool = False,
+    value_fmt: str = ".2g",
+    colorbar: bool = True,
+    colorbar_kwds: dict | None = None,
+    title: str | None = "Adjacency Matrix",
+    source_gdf: gpd.GeoDataFrame | None = None,
+    tick_fontsize: float | None = None,
+) -> AdjacencyHeatmapResult:
+    """Render the adjacency matrix as a heatmap for weight and structure inspection.
+
+    Parameters
+    ----------
+    source : SymbolCartogram, LayoutResult, or ndarray
+        Input containing the adjacency matrix.  Accepts:
+
+        * ``SymbolCartogram`` – adjacency taken from
+          ``source.layout_result.adjacency``.
+        * ``LayoutResult`` – adjacency taken from ``source.adjacency``.
+        * ``numpy.ndarray`` of shape ``(n, n)`` – used directly.
+    labels : str, sequence of str, or None
+        Row/column tick labels.
+
+        * ``None`` (default) – integer indices ``0 … n-1``.
+        * Column name string – looked up via internal column resolver; requires
+          *source* to be a ``SymbolCartogram``.
+        * Sequence of strings of length *n* – used directly.
+    sort_by : None, str, or sequence
+        Reorder rows and columns before plotting.
+
+        * ``None`` (default) – original order.
+        * ``"label"`` – alphabetical sort by resolved label strings.
+        * Other column name string – ascending sort by that column's values;
+          requires *source* to be a ``SymbolCartogram``.
+        * Sequence of strings – one sort value per region; regions are sorted
+          alphabetically ascending by these values
+          (e.g. ``["high", "low", "medium", "high"]``).
+        * Sequence of ints – explicit permutation of row/column indices.
+    ax : plt.Axes, optional
+        Axes to draw on.  Created when not provided.
+    figsize : tuple, optional
+        Figure size when creating a new figure.  Defaults to an auto-scaled
+        value based on *n* (capped between 4 and 16 inches per side).
+    cmap : str
+        Colormap name.  Default ``"YlOrRd"``.
+    vmin, vmax : float, optional
+        Colormap data limits.  Defaults to the observed min/max of the matrix.
+    show_values : bool
+        Annotate non-zero cells with their formatted value.  Default ``False``.
+    value_fmt : str
+        Python format spec for cell annotations (e.g. ``".2g"``, ``"d"``).
+        Default ``".2g"``.
+    colorbar : bool
+        Attach a colorbar to the axes.  Default ``True``.
+    colorbar_kwds : dict, optional
+        Keyword arguments forwarded to ``Figure.colorbar()``.  Common keys:
+        ``shrink``, ``label``, ``orientation``, ``pad``.  Defaults to
+        ``{"shrink": 0.8, "label": "weight"}``.
+    title : str or None
+        Axes title.  Default ``"Adjacency Matrix"``.
+    source_gdf : gpd.GeoDataFrame, optional
+        External GeoDataFrame for column lookups when *labels* or *sort_by*
+        is a column name string.
+    tick_fontsize : float, optional
+        Font size for the row and column tick labels.  When not provided,
+        the size is auto-scaled based on *n* (between 5 and 9 pt).
+
+    Returns
+    -------
+    AdjacencyHeatmapResult
+        Result with the axes and captured artists.
+
+    Raises
+    ------
+    ValueError
+        If the adjacency matrix cannot be resolved, if *labels*/*sort_by*
+        are column name strings but *source* is not a ``SymbolCartogram``,
+        or if sequence lengths do not match *n*.
+
+    Examples
+    --------
+    >>> # Basic usage with a SymbolCartogram
+    >>> plot_adjacency_heatmap(result)
+
+    >>> # Label rows/columns from a data column, sorted alphabetically
+    >>> plot_adjacency_heatmap(result, labels="name", sort_by="label")
+
+    >>> # Annotate non-zero cells
+    >>> plot_adjacency_heatmap(result, show_values=True, value_fmt=".0f")
+
+    >>> # Pass a LayoutResult directly
+    >>> plot_adjacency_heatmap(result.layout_result)
+
+    >>> # Pass a raw matrix with explicit labels
+    >>> import numpy as np
+    >>> plot_adjacency_heatmap(np.eye(5) * 2, labels=list("ABCDE"))
+
+    >>> # Sort by a numeric data column
+    >>> plot_adjacency_heatmap(result, labels="name", sort_by="population")
+
+    >>> # Sort by string category values (alphabetical ascending)
+    >>> plot_adjacency_heatmap(result, labels="name",
+    ...     sort_by=["high", "low", "medium", "high"])
+
+    >>> # Override tick font size
+    >>> plot_adjacency_heatmap(result, labels="name", tick_fontsize=11)
+
+    """
+    import matplotlib.colors as mc
+    import matplotlib.pyplot as plt
+
+    from .plot_results import AdjacencyHeatmapResult
+
+    # ------------------------------------------------------------------
+    # A. Duck-type source and extract adjacency matrix
+    # ------------------------------------------------------------------
+    _result_for_labels: SymbolCartogram | None = None
+
+    if isinstance(source, np.ndarray):
+        adj = source.astype(float)
+    elif hasattr(source, "symbols"):
+        # SymbolCartogram duck: has .symbols (GeoDataFrame) and .layout_result
+        if source.layout_result is None:
+            raise ValueError(
+                "No adjacency matrix available: source.layout_result is None. "
+                "Ensure the cartogram was created with adjacency computation."
+            )
+        adj = np.asarray(source.layout_result.adjacency, dtype=float)
+        _result_for_labels = source
+    else:
+        # LayoutResult duck: has .adjacency, no .symbols
+        adj = np.asarray(source.adjacency, dtype=float)
+
+    n = adj.shape[0]
+    if adj.ndim != 2 or adj.shape[1] != n:
+        raise ValueError(f"Adjacency must be a square 2-D array, got shape {adj.shape}.")
+
+    # ------------------------------------------------------------------
+    # B. Resolve tick labels
+    # ------------------------------------------------------------------
+    tick_labels: list[str] = [str(i) for i in range(n)]
+
+    if labels is not None:
+        if isinstance(labels, str):
+            if _result_for_labels is None:
+                raise ValueError("labels as a column name string is only supported when source is a SymbolCartogram.")
+            col_vals = _find_column(labels, _result_for_labels, source_gdf)
+            tick_labels = [str(v) for v in col_vals]
+        else:
+            tick_labels = [str(v) for v in labels]
+            if len(tick_labels) != n:
+                raise ValueError(f"labels length {len(tick_labels)} does not match matrix size {n}.")
+
+    # ------------------------------------------------------------------
+    # C. Resolve sort_by into a permutation
+    # ------------------------------------------------------------------
+    perm = np.arange(n)
+
+    if sort_by is None:
+        pass
+    elif isinstance(sort_by, str) and sort_by == "label":
+        perm = np.array(sorted(range(n), key=lambda i: tick_labels[i]))
+    elif isinstance(sort_by, str):
+        if _result_for_labels is None:
+            raise ValueError("sort_by as a column name is only supported when source is a SymbolCartogram.")
+        sort_vals = _find_column(sort_by, _result_for_labels, source_gdf)
+        perm = np.argsort(sort_vals, kind="stable")
+    else:
+        seq = list(sort_by)
+        if len(seq) != n:
+            raise ValueError(f"sort_by sequence length {len(seq)} does not match matrix size {n}.")
+        if seq and isinstance(seq[0], str):
+            # Sequence of string sort values → sort regions alphabetically by these values
+            perm = np.array(np.argsort(seq, kind="stable"))
+        else:
+            perm = np.asarray(seq, dtype=int)
+        if len(set(perm.tolist())) != n:
+            raise ValueError("sort_by sequence contains duplicate entries.")
+
+    # ------------------------------------------------------------------
+    # D. Apply permutation to matrix and labels
+    # ------------------------------------------------------------------
+    adj_sorted = adj[np.ix_(perm, perm)]
+    sorted_labels = [tick_labels[i] for i in perm]
+
+    # ------------------------------------------------------------------
+    # E. Create axes (auto-scale figsize based on n)
+    # ------------------------------------------------------------------
+    if ax is None:
+        if figsize is None:
+            side = max(4.0, min(0.4 * n + 2.0, 16.0))
+            figsize = (side + 1.5, side)  # extra width for colorbar
+        _, ax = plt.subplots(figsize=figsize)
+
+    # ------------------------------------------------------------------
+    # F. vmin / vmax with all-zeros guard
+    # ------------------------------------------------------------------
+    _vmin = vmin if vmin is not None else float(adj_sorted.min())
+    _vmax = vmax if vmax is not None else float(adj_sorted.max())
+    if _vmin == _vmax:
+        _vmax = _vmin + 1.0
+
+    # ------------------------------------------------------------------
+    # G. Draw the image
+    # ------------------------------------------------------------------
+    im = ax.imshow(
+        adj_sorted,
+        cmap=cmap,
+        vmin=_vmin,
+        vmax=_vmax,
+        aspect="equal",
+        interpolation="nearest",
+    )
+
+    # ------------------------------------------------------------------
+    # H. Tick labels (font size scales down for large n, or uses override)
+    # ------------------------------------------------------------------
+    fs = float(tick_fontsize) if tick_fontsize is not None else max(5.0, min(9.0, 10.0 - 0.15 * n))
+    ax.set_xticks(range(n))
+    ax.set_yticks(range(n))
+    if n > 6:
+        ax.set_xticklabels(sorted_labels, rotation=45, ha="right", rotation_mode="anchor", fontsize=fs)
+    else:
+        ax.set_xticklabels(sorted_labels, rotation=0, ha="center", fontsize=fs)
+    ax.set_yticklabels(sorted_labels, fontsize=fs)
+
+    # ------------------------------------------------------------------
+    # I. Optional cell value annotations (non-zero only to avoid clutter)
+    # ------------------------------------------------------------------
+    annotation_artists: list = []
+    if show_values:
+        cmap_obj = plt.get_cmap(cmap)
+        norm_obj = mc.Normalize(vmin=_vmin, vmax=_vmax)
+        ann_fs = max(4.0, fs - 1.0)
+        for row in range(n):
+            for col in range(n):
+                val = float(adj_sorted[row, col])
+                if val == 0:
+                    continue
+                rgba = cmap_obj(norm_obj(val))
+                lum = 0.299 * rgba[0] + 0.587 * rgba[1] + 0.114 * rgba[2]
+                t = ax.text(
+                    col,
+                    row,
+                    format(val, value_fmt),
+                    ha="center",
+                    va="center",
+                    fontsize=ann_fs,
+                    color="white" if lum < 0.45 else "black",
+                )
+                annotation_artists.append(t)
+
+    # ------------------------------------------------------------------
+    # J. Optional colorbar
+    # ------------------------------------------------------------------
+    colorbar_art = None
+    if colorbar:
+        _cb_kwds = {"shrink": 0.8, "label": "weight", **(colorbar_kwds or {})}
+        colorbar_art = ax.get_figure().colorbar(im, ax=ax, **_cb_kwds)
+
+    # ------------------------------------------------------------------
+    # K. Title and return
+    # ------------------------------------------------------------------
+    if title is not None:
+        ax.set_title(title)
+
+    return AdjacencyHeatmapResult(
+        ax=ax,
+        image=im,
+        annotations=annotation_artists,
+        colorbar=colorbar_art,
+    )
 
 
 def plot_tiling(
@@ -329,8 +703,8 @@ def plot_tiling(
 
     Returns
     -------
-    plt.Axes
-        The axes with the plot.
+    TilingPlotResult
+        Result with the axes and captured artists.
 
     Raises
     ------
@@ -341,6 +715,8 @@ def plot_tiling(
     import matplotlib.pyplot as plt
     from matplotlib.collections import PatchCollection
     from matplotlib.patches import Polygon as MplPolygon
+
+    from .plot_results import TilingPlotResult
 
     tiling_result = getattr(result, "_tiling_result", None)
     assignments = getattr(result, "_assignments", None)
@@ -366,6 +742,7 @@ def plot_tiling(
         else:
             unassigned_patches.append(patch)
 
+    pc_unassigned = None
     if show_unassigned and unassigned_patches:
         pc_unassigned = PatchCollection(
             unassigned_patches,
@@ -376,6 +753,7 @@ def plot_tiling(
         )
         ax.add_collection(pc_unassigned)
 
+    pc_assigned = None
     if show_assigned and assigned_patches:
         pc_assigned = PatchCollection(
             assigned_patches,
@@ -386,8 +764,9 @@ def plot_tiling(
         )
         ax.add_collection(pc_assigned)
 
+    symbols_result = None
     if show_symbols:
-        result.plot(ax=ax, **kwargs)
+        symbols_result = result.plot(ax=ax, **kwargs)
 
     # Auto-scale to tile bounds
     all_coords = np.vstack([np.array(poly.exterior.coords) for poly in tiling_result.polygons])
@@ -398,7 +777,12 @@ def plot_tiling(
     ax.set_axis_off()
     ax.set_title("Tiling Grid")
 
-    return ax
+    return TilingPlotResult(
+        ax=ax,
+        assigned_tiles=pc_assigned,
+        unassigned_tiles=pc_unassigned,
+        symbols=symbols_result,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -709,7 +1093,7 @@ def _add_legend(
     legend_kwds: dict,
     color_map: dict[str, Any] | None,
     role: str = "face",
-) -> None:
+) -> Colorbar | Legend:
     """Attach a colorbar (numeric) or patch legend (categorical) to *ax*.
 
     Parameters
@@ -736,6 +1120,7 @@ def _add_legend(
         cbar = ax.get_figure().colorbar(sm, ax=ax, **cbar_kwds)
         label = legend_kwds.get("title", col_name or "")
         cbar.set_label(label)
+        return cbar
     else:
         import matplotlib.patches as mpatches
 
@@ -764,6 +1149,7 @@ def _add_legend(
         if existing is not None:
             ax.add_artist(existing)
         ax.legend(handles=handles, **legend_patch_kwds)
+        return ax.get_legend()
 
 
 def _add_hatch_legend(
@@ -771,7 +1157,7 @@ def _add_hatch_legend(
     cat_hatch_map: dict[str, str],
     col_name: str | None,
     legend_kwds: dict,
-) -> None:
+) -> Legend:
     """Attach a patch legend showing hatch-pattern ↔ category mappings.
 
     Parameters
@@ -814,6 +1200,7 @@ def _add_hatch_legend(
     if existing is not None:
         ax.add_artist(existing)
     ax.legend(handles=handles, **legend_kw)
+    return ax.get_legend()
 
 
 # ---------------------------------------------------------------------------
@@ -861,7 +1248,7 @@ def plot_symbols(
     # Other
     zorder: int = 1,
     title: str | None = None,
-) -> plt.Axes:
+) -> SymbolsPlotResult:
     """Plot a symbol cartogram with rich, per-symbol visual styling.
 
     Every visual property can be specified in three ways:
@@ -1071,6 +1458,8 @@ def plot_symbols(
     from matplotlib.collections import PatchCollection
     from matplotlib.patches import Polygon as MplPolygon
 
+    from .plot_results import SymbolsPlotResult
+
     symbols = result.symbols
     n = len(symbols)
 
@@ -1151,6 +1540,8 @@ def plot_symbols(
         patches.append(MplPolygon(coords, closed=True))
 
     # --- Render ---
+    symbol_collections: list[PatchCollection] = []
+
     if hatch_list is None:
         # Single PatchCollection - most efficient path
         pc = PatchCollection(
@@ -1162,6 +1553,7 @@ def plot_symbols(
             zorder=zorder,
         )
         ax.add_collection(pc)
+        symbol_collections.append(pc)
     else:
         # Per-patch hatching requires one PatchCollection per unique hatch
         # because matplotlib applies a single hatch per collection.
@@ -1191,10 +1583,13 @@ def plot_symbols(
                 zorder=zorder,
             )
             ax.add_collection(pc)
+            symbol_collections.append(pc)
 
     # --- Legend / colorbar for facecolor ---
+    face_colorbar = None
+    face_legend = None
     if legend and is_mapped and col_values is not None:
-        _add_legend(
+        art = _add_legend(
             ax,
             col_values,
             col_name,
@@ -1206,19 +1601,28 @@ def plot_symbols(
             color_map,
             role="face",
         )
+        from matplotlib.colorbar import Colorbar as _Colorbar
+
+        if isinstance(art, _Colorbar):
+            face_colorbar = art
+        else:
+            face_legend = art
 
     # --- Legend for hatch patterns (only when column-driven) ---
+    hatch_legend_art = None
     if hatch_legend and hatch_is_mapped and cat_hatch_map:
-        _add_hatch_legend(ax, cat_hatch_map, hatch_col_name, hatch_legend_kwds or {})
+        hatch_legend_art = _add_hatch_legend(ax, cat_hatch_map, hatch_col_name, hatch_legend_kwds or {})
 
     # --- Legend for edgecolor (only when mapped from a different column) ---
+    edge_colorbar = None
+    edge_legend_art = None
     if (
         edge_legend
         and edge_is_mapped
         and edge_col_values is not None
         and edge_col_name != col_name  # skip if same column already has a legend
     ):
-        _add_legend(
+        art = _add_legend(
             ax,
             edge_col_values,
             edge_col_name,
@@ -1230,8 +1634,15 @@ def plot_symbols(
             None,
             role="edge",
         )
+        from matplotlib.colorbar import Colorbar as _Colorbar
+
+        if isinstance(art, _Colorbar):
+            edge_colorbar = art
+        else:
+            edge_legend_art = art
 
     # --- Per-symbol labels ---
+    label_artists: list[Any] = []
     if label is not None:
         # Resolve label texts
         if isinstance(label, str) and _is_column(label, result, source_gdf):
@@ -1280,7 +1691,7 @@ def plot_symbols(
 
         for i, (x, y, text) in enumerate(zip(xs, ys, label_texts)):
             fs_i = float(fs_arr[i]) if fs_arr is not None else float(fs_val)  # type: ignore[arg-type]
-            ax.text(
+            t = ax.text(
                 x,
                 y,
                 text,
@@ -1289,6 +1700,7 @@ def plot_symbols(
                 zorder=zorder + 1,
                 **_lkw,
             )
+            label_artists.append(t)
 
     ax.autoscale_view()
     ax.set_aspect("equal")
@@ -1297,4 +1709,13 @@ def plot_symbols(
     if title is not None:
         ax.set_title(title)
 
-    return ax
+    return SymbolsPlotResult(
+        ax=ax,
+        collections=symbol_collections,
+        labels=label_artists,
+        colorbar=face_colorbar,
+        edge_colorbar=edge_colorbar,
+        legend=face_legend,
+        hatch_legend=hatch_legend_art,
+        edge_legend=edge_legend_art,
+    )

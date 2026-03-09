@@ -1,3 +1,4 @@
+# ruff: noqa: RUF002
 """Data preparation for symbol cartogram layouts.
 
 This module provides utilities to prepare GeoDataFrame data for layout
@@ -139,6 +140,7 @@ def prepare_layout_data(
     size_clip: bool = True,
     adjacency_mode: Literal["binary", "weighted", "area_weighted"] = "binary",
     distance_tolerance: float | None = None,
+    size_normalization: Literal["max", "total"] = "max",
 ) -> LayoutData:
     """Prepare data for layout algorithms.
 
@@ -170,6 +172,16 @@ def prepare_layout_data(
         or "area_weighted" (neighbor area fraction).
     distance_tolerance : float, optional
         Buffer for adjacency detection.
+    size_normalization : str
+        How to normalise symbol sizes relative to original geometry areas:
+
+        - ``"max"`` *(default)*: the largest symbol has area equal to the mean
+          geometry area (``π × unit_cell_radius²``).  Relative proportions
+          mirror the data values.
+        - ``"total"``: all sizes are scaled by a single global factor so that
+          ``Σ(π × size²) = Σ(geometry_area)``.  Relative proportions are
+          preserved; total symbol area equals total original area.  For
+          uniform sizing (no *value_column*) the two modes are identical.
 
     Returns
     -------
@@ -210,6 +222,13 @@ def prepare_layout_data(
     else:
         # Uniform sizing: all symbols same as unit cell
         sizes = np.full(n, unit_cell_radius)
+
+    # 3b. Apply total-area normalization if requested
+    if size_normalization == "total":
+        current_total = float(np.pi * np.sum(sizes**2))
+        target_total = float(np.sum(geometry_areas))
+        if current_total > 0:
+            sizes = sizes * float(np.sqrt(target_total / current_total))
 
     # 4. Compute adjacency
     adjacency = compute_adjacency(

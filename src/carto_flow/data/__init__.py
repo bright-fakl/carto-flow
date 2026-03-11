@@ -14,7 +14,158 @@ of carto-flow. These dependencies include:
 
 If these dependencies are not installed, functions that require them will raise
 a clear ImportError with instructions on how to install the missing packages.
+
+State-Region and State-Division Mappings
+---------------------------------------
+The following dictionaries provide mappings between US states (identified by their
+2-digit FIPS codes) and their respective census regions and divisions, as defined
+by the US Census Bureau:
+
+- `STATE_REGIONS`: Maps state FIPS codes to region codes (1-4)
+- `STATE_DIVISIONS`: Maps state FIPS codes to division codes (1-9)
+- `REGION_NAMES`: Maps region codes to human-readable region names
+- `DIVISION_NAMES`: Maps division codes to human-readable division names
+- `REGION_DIVISIONS`: Maps region codes to lists of division codes within that region
 """
+
+# US Census Bureau region definitions
+REGION_NAMES = {
+    "1": "Northeast",
+    "2": "Midwest",
+    "3": "South",
+    "4": "West"
+}
+
+DIVISION_NAMES = {
+    "1": "New England",
+    "2": "Middle Atlantic",
+    "3": "East North Central",
+    "4": "West North Central",
+    "5": "South Atlantic",
+    "6": "East South Central",
+    "7": "West South Central",
+    "8": "Mountain",
+    "9": "Pacific"
+}
+
+REGION_DIVISIONS = {
+    "1": ["1", "2"],    # Northeast: New England, Middle Atlantic
+    "2": ["3", "4"],    # Midwest: East North Central, West North Central
+    "3": ["5", "6", "7"],  # South: South Atlantic, East South Central, West South Central
+    "4": ["8", "9"]     # West: Mountain, Pacific
+}
+
+# State to Region mapping (FIPS code to region code)
+STATE_REGIONS = {
+    "01": "3",  # Alabama: South
+    "02": "4",  # Alaska: West
+    "04": "4",  # Arizona: West
+    "05": "3",  # Arkansas: South
+    "06": "4",  # California: West
+    "08": "4",  # Colorado: West
+    "09": "1",  # Connecticut: Northeast
+    "10": "3",  # Delaware: South
+    "11": "3",  # District of Columbia: South
+    "12": "3",  # Florida: South
+    "13": "3",  # Georgia: South
+    "15": "4",  # Hawaii: West
+    "16": "4",  # Idaho: West
+    "17": "2",  # Illinois: Midwest
+    "18": "2",  # Indiana: Midwest
+    "19": "2",  # Iowa: Midwest
+    "20": "2",  # Kansas: Midwest
+    "21": "3",  # Kentucky: South
+    "22": "3",  # Louisiana: South
+    "23": "1",  # Maine: Northeast
+    "24": "3",  # Maryland: South
+    "25": "1",  # Massachusetts: Northeast
+    "26": "2",  # Michigan: Midwest
+    "27": "2",  # Minnesota: Midwest
+    "28": "3",  # Mississippi: South
+    "29": "2",  # Missouri: Midwest
+    "30": "4",  # Montana: West
+    "31": "2",  # Nebraska: Midwest
+    "32": "4",  # Nevada: West
+    "33": "1",  # New Hampshire: Northeast
+    "34": "1",  # New Jersey: Northeast
+    "35": "4",  # New Mexico: West
+    "36": "1",  # New York: Northeast
+    "37": "3",  # North Carolina: South
+    "38": "2",  # North Dakota: Midwest
+    "39": "2",  # Ohio: Midwest
+    "40": "3",  # Oklahoma: South
+    "41": "4",  # Oregon: West
+    "42": "1",  # Pennsylvania: Northeast
+    "44": "1",  # Rhode Island: Northeast
+    "45": "3",  # South Carolina: South
+    "46": "2",  # South Dakota: Midwest
+    "47": "3",  # Tennessee: South
+    "48": "3",  # Texas: South
+    "49": "4",  # Utah: West
+    "50": "1",  # Vermont: Northeast
+    "51": "3",  # Virginia: South
+    "53": "4",  # Washington: West
+    "54": "3",  # West Virginia: South
+    "55": "2",  # Wisconsin: Midwest
+    "56": "4",  # Wyoming: West
+    "72": None  # Puerto Rico: Not part of any census region
+}
+
+# State to Division mapping (FIPS code to division code)
+STATE_DIVISIONS = {
+    "01": "6",  # Alabama: East South Central
+    "02": "9",  # Alaska: Pacific
+    "04": "8",  # Arizona: Mountain
+    "05": "6",  # Arkansas: East South Central
+    "06": "9",  # California: Pacific
+    "08": "8",  # Colorado: Mountain
+    "09": "1",  # Connecticut: New England
+    "10": "5",  # Delaware: South Atlantic
+    "11": "5",  # District of Columbia: South Atlantic
+    "12": "5",  # Florida: South Atlantic
+    "13": "5",  # Georgia: South Atlantic
+    "15": "9",  # Hawaii: Pacific
+    "16": "8",  # Idaho: Mountain
+    "17": "3",  # Illinois: East North Central
+    "18": "3",  # Indiana: East North Central
+    "19": "4",  # Iowa: West North Central
+    "20": "4",  # Kansas: West North Central
+    "21": "6",  # Kentucky: East South Central
+    "22": "7",  # Louisiana: West South Central
+    "23": "1",  # Maine: New England
+    "24": "5",  # Maryland: South Atlantic
+    "25": "1",  # Massachusetts: New England
+    "26": "3",  # Michigan: East North Central
+    "27": "4",  # Minnesota: West North Central
+    "28": "6",  # Mississippi: East South Central
+    "29": "4",  # Missouri: West North Central
+    "30": "8",  # Montana: Mountain
+    "31": "4",  # Nebraska: West North Central
+    "32": "8",  # Nevada: Mountain
+    "33": "1",  # New Hampshire: New England
+    "34": "2",  # New Jersey: Middle Atlantic
+    "35": "8",  # New Mexico: Mountain
+    "36": "2",  # New York: Middle Atlantic
+    "37": "5",  # North Carolina: South Atlantic
+    "38": "4",  # North Dakota: West North Central
+    "39": "3",  # Ohio: East North Central
+    "40": "7",  # Oklahoma: West South Central
+    "41": "9",  # Oregon: Pacific
+    "42": "2",  # Pennsylvania: Middle Atlantic
+    "44": "1",  # Rhode Island: New England
+    "45": "5",  # South Carolina: South Atlantic
+    "46": "4",  # South Dakota: West North Central
+    "47": "6",  # Tennessee: East South Central
+    "48": "7",  # Texas: West South Central
+    "49": "8",  # Utah: Mountain
+    "50": "1",  # Vermont: New England
+    "51": "5",  # Virginia: South Atlantic
+    "53": "9",  # Washington: Pacific
+    "54": "5",  # West Virginia: South Atlantic
+    "55": "3",  # Wisconsin: East North Central
+    "56": "8",  # Wyoming: Mountain
+    "72": None  # Puerto Rico: Not part of any census division
+}
 
 import importlib.metadata
 from importlib.resources import files
@@ -203,6 +354,8 @@ def load_us_census(
         gdf = gdf[~gdf["State Name"].isin(["Alaska", "Hawaii", "Puerto Rico"])]
 
     gdf["State Abbreviation"] = gdf["STATE"].map(censusdis.states.ABBREVIATIONS_FROM_IDS)
+    gdf["Region"] = gdf["STATE"].map(lambda x: REGION_NAMES.get(STATE_REGIONS.get(x), None))
+    gdf["Division"] = gdf["STATE"].map(lambda x: DIVISION_NAMES.get(STATE_DIVISIONS.get(x), None))
 
     if simplify is not None:
         from carto_flow.geo_utils.simplification import simplify_coverage
@@ -227,4 +380,9 @@ __all__ = [
     "load_us_census",
     "load_us_states",
     "load_world",
+    "REGION_NAMES",
+    "DIVISION_NAMES",
+    "REGION_DIVISIONS",
+    "STATE_REGIONS",
+    "STATE_DIVISIONS",
 ]

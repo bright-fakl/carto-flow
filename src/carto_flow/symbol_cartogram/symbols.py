@@ -371,6 +371,155 @@ class HexagonSymbol(Symbol):
         return HexagonSymbol(pointy_top=pointy_top)
 
 
+class TriangleSymbol(Symbol):
+    """Equilateral triangle inscribed in unit circle (radius = 0.5).
+
+    Parameters
+    ----------
+    pointing_up : bool
+        If True (default), triangle points upward. If False, points downward.
+
+    """
+
+    def __init__(self, pointing_up: bool = True) -> None:
+        self.pointing_up = pointing_up
+
+    def unit_polygon(self) -> Polygon:
+        offset = np.pi / 2 if self.pointing_up else -np.pi / 2
+        angles = np.linspace(0, 2 * np.pi, 4)[:-1] + offset
+        x = 0.5 * np.cos(angles)
+        y = 0.5 * np.sin(angles)
+        return Polygon(zip(x, y, strict=True))
+
+    @property
+    def bounding_radius(self) -> float:
+        return 0.5
+
+    def modify(self, pointing_up: bool | None = None, **params) -> TriangleSymbol:
+        """Return new symbol with modified orientation.
+
+        Parameters
+        ----------
+        pointing_up : bool or None
+            If provided, set the orientation.
+
+        """
+        if pointing_up is None or pointing_up == self.pointing_up:
+            return self
+        return TriangleSymbol(pointing_up=pointing_up)
+
+
+class DiamondSymbol(Symbol):
+    """Diamond (square rotated 45°) inscribed in unit circle (radius = 0.5)."""
+
+    def unit_polygon(self) -> Polygon:
+        return Polygon([(0, 0.5), (0.5, 0), (0, -0.5), (-0.5, 0)])
+
+    @property
+    def bounding_radius(self) -> float:
+        return 0.5
+
+    @property
+    def inscribed_radius(self) -> float:
+        return float(np.sqrt(2) / 4)  # ≈ 0.354, distance from center to edge
+
+    def modify(self, **params) -> DiamondSymbol:
+        """Return self (diamond has no modifiable parameters)."""
+        return self
+
+
+class PentagonSymbol(Symbol):
+    """Regular pentagon inscribed in unit circle (radius = 0.5).
+
+    Parameters
+    ----------
+    pointy_top : bool
+        If True (default), pentagon has a vertex at top.
+        If False, has a flat edge at top.
+
+    """
+
+    def __init__(self, pointy_top: bool = True) -> None:
+        self.pointy_top = pointy_top
+
+    def unit_polygon(self) -> Polygon:
+        offset = np.pi / 2 if self.pointy_top else 0
+        angles = np.linspace(0, 2 * np.pi, 6)[:-1] + offset
+        x = 0.5 * np.cos(angles)
+        y = 0.5 * np.sin(angles)
+        return Polygon(zip(x, y, strict=True))
+
+    @property
+    def bounding_radius(self) -> float:
+        return 0.5
+
+    def modify(self, pointy_top: bool | None = None, **params) -> PentagonSymbol:
+        """Return new symbol with modified orientation.
+
+        Parameters
+        ----------
+        pointy_top : bool or None
+            If provided, set the orientation.
+
+        """
+        if pointy_top is None or pointy_top == self.pointy_top:
+            return self
+        return PentagonSymbol(pointy_top=pointy_top)
+
+
+class StarSymbol(Symbol):
+    """N-pointed star inscribed in unit circle (outer radius = 0.5).
+
+    Parameters
+    ----------
+    n_points : int
+        Number of star points. Default is 5.
+    inner_radius_ratio : float
+        Ratio of inner (valley) radius to outer radius. Default is 0.4.
+
+    """
+
+    def __init__(self, n_points: int = 5, inner_radius_ratio: float = 0.4) -> None:
+        self.n_points = n_points
+        self.inner_radius_ratio = inner_radius_ratio
+
+    def unit_polygon(self) -> Polygon:
+        n = self.n_points
+        outer = 0.5
+        inner = 0.5 * self.inner_radius_ratio
+        angles = np.linspace(np.pi / 2, np.pi / 2 + 2 * np.pi, 2 * n, endpoint=False)
+        radii = np.where(np.arange(2 * n) % 2 == 0, outer, inner)
+        x = radii * np.cos(angles)
+        y = radii * np.sin(angles)
+        return Polygon(zip(x, y, strict=True))
+
+    @property
+    def bounding_radius(self) -> float:
+        return 0.5
+
+    def modify(
+        self,
+        n_points: int | None = None,
+        inner_radius_ratio: float | None = None,
+        **params,
+    ) -> StarSymbol:
+        """Return new symbol with modified parameters.
+
+        Parameters
+        ----------
+        n_points : int or None
+            New number of points. If None, keeps current.
+        inner_radius_ratio : float or None
+            New inner radius ratio. If None, keeps current.
+
+        """
+        new_n = n_points if n_points is not None else self.n_points
+        new_ir = inner_radius_ratio if inner_radius_ratio is not None else self.inner_radius_ratio
+        if new_n == self.n_points and new_ir == self.inner_radius_ratio:
+            return self
+        return StarSymbol(n_points=new_n, inner_radius_ratio=new_ir)
+
+
 class TileSymbol(Symbol):
     """Symbol whose shape matches a tiling's canonical tile.
 
@@ -624,6 +773,10 @@ BUILTIN_SYMBOLS: dict[str, Symbol] = {
     "circle": CircleSymbol(),
     "square": SquareSymbol(),
     "hexagon": HexagonSymbol(),
+    "triangle": TriangleSymbol(),
+    "diamond": DiamondSymbol(),
+    "pentagon": PentagonSymbol(),
+    "star": StarSymbol(),
 }
 
 # Type aliases

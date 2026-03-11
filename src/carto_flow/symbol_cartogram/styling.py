@@ -686,7 +686,8 @@ class Styling:
         Parameters
         ----------
         symbol : str
-            String shorthand ("circle", "hexagon", "square").
+            Built-in symbol name: ``"circle"``, ``"square"``, ``"hexagon"``,
+            ``"triangle"``, ``"diamond"``, ``"pentagon"``, ``"star"``.
 
         Returns
         -------
@@ -699,16 +700,9 @@ class Styling:
             If symbol string is not recognized.
 
         """
-        from .symbols import CircleSymbol, HexagonSymbol, SquareSymbol
+        from .symbols import resolve_symbol
 
-        symbols: dict[str, Symbol] = {
-            "circle": CircleSymbol(),
-            "square": SquareSymbol(),
-            "hexagon": HexagonSymbol(),
-        }
-        if symbol.lower() not in symbols:
-            raise ValueError(f"Unknown symbol: {symbol!r}. Valid symbols: {', '.join(sorted(symbols.keys()))}")
-        return symbols[symbol.lower()]
+        return resolve_symbol(symbol)
 
     def __repr__(self) -> str:
         """Return string representation of Styling."""

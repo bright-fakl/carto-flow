@@ -166,6 +166,14 @@ class MorphOptions:
     show_progress: bool = True
     progress_message: Optional[str] = None
 
+    # Stall detection
+    stall_patience: Optional[int] = 5
+    """Maximum number of iterations to allow error to increase before considering algorithm stalled.
+
+    If None, stall detection is disabled and the algorithm will run until convergence or
+    maximum iterations. If 0, algorithm will stall immediately if error increases.
+    """
+
     def get_grid(self, bounds: tuple[float, float, float, float]) -> "Grid":
         """Get the Grid object for computation with clear precedence.
 
@@ -297,6 +305,7 @@ class MorphOptions:
             "show_progress",
             "progress_message",
             "prescale_components",
+            "stall_patience",
         ]
 
         for field_name in field_names:
@@ -380,6 +389,14 @@ class MorphOptions:
                 return "show_progress must be a boolean"
         elif field_name == "progress_message" and value is not None and not isinstance(value, str):
             return "progress_message must be a string or None"
+
+        # Stall detection options
+        elif field_name == "stall_patience":
+            if value is not None:
+                if not isinstance(value, int):
+                    return "stall_patience must be an integer or None"
+                elif value < 0:
+                    return "stall_patience must be a non-negative integer or None"
 
         # Outer-boundary distortion reduction options
         elif field_name == "prescale_components" and not isinstance(value, bool):

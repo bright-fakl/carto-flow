@@ -174,16 +174,16 @@ def _normalize_coordinates(coords, format_type=None):
         format_type, _ = _detect_coordinate_format(coords)
 
     if format_type == "points":
-        # Already in correct format
-        return np.asarray(coords)
+        # Already in correct format - create copy to prevent in-place modification
+        return np.asarray(coords).copy()
     elif format_type == "grid":
-        # Convert meshgrid to point coordinates
+        # Convert meshgrid to point coordinates - create copy
         X, Y = coords
-        return np.column_stack([X.ravel(), Y.ravel()])
+        return np.column_stack([X.ravel(), Y.ravel()]).copy()
     elif format_type == "mesh":
-        # Convert mesh format to points
+        # Convert mesh format to points - create copy
         coords_array = np.asarray(coords)
-        return coords_array.reshape(-1, 2)
+        return coords_array.reshape(-1, 2).copy()
     else:
         raise ValueError(f"Unknown displacement_coords_format: {format_type}")
 
@@ -291,7 +291,7 @@ def morph_geometries(
     """
 
     # --- Start timing ---
-    start_time = time.time()
+    start_time = time.perf_counter()
 
     # --- Handle options ---
     if options is None:
@@ -452,7 +452,7 @@ def morph_geometries(
         # Check convergence using log2-converted thresholds
         converged = mean_error < log2_mean_tol and max_error < log2_max_tol
         stalled_acc += mean_error > last_mean_error
-        stalled = stalled_acc > 5  # 5 is an arbitrary patience parameter
+        stalled = options.stall_patience is not None and stalled_acc > options.stall_patience
 
         last_mean_error = mean_error
 
@@ -507,7 +507,7 @@ def morph_geometries(
         convergence=convergence,
         status=status,
         niterations=snapshots.latest().iteration,
-        duration=time.time() - start_time,
+        duration=time.perf_counter() - start_time,
         options=options,
         grid=grid,
         target_density=target_density,

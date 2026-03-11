@@ -56,6 +56,11 @@ class SymbolsPlotResult:
     edge_colorbar : Colorbar or None
         Colorbar for the edgecolor channel.  Present when *edgecolor* maps a
         numeric column **different** from *facecolor*.
+    alpha_colorbar : Colorbar or None
+        Colorbar for the alpha channel.  Present when *alpha* maps a numeric
+        column **and** *facecolor* is a constant colour (not data-driven).
+        The colorbar shows the constant colour ramping from transparent to
+        opaque across the data range.
     legend : Legend or None
         Patch legend for the facecolor channel.  Present when *facecolor*
         maps a categorical column.
@@ -65,6 +70,16 @@ class SymbolsPlotResult:
     edge_legend : Legend or None
         Patch legend for the edgecolor channel.  Present when *edgecolor*
         maps a categorical column **different** from *facecolor*.
+    linewidth_legend : Legend or None
+        Discrete line-sample legend for the linewidth channel.  Present when
+        *linewidth* maps a numeric column.  Shows ~5 representative values
+        as grey line segments of increasing thickness.
+    label_colorbar : Colorbar or None
+        Colorbar for the label_color channel.  Present when *label_color*
+        maps a numeric column **different** from *facecolor*.
+    label_legend : Legend or None
+        Patch legend for the label_color channel.  Present when *label_color*
+        maps a categorical column **different** from *facecolor*.
     """
 
     ax: plt.Axes
@@ -72,9 +87,13 @@ class SymbolsPlotResult:
     labels: list[Text] = field(default_factory=list)
     colorbar: Colorbar | None = None
     edge_colorbar: Colorbar | None = None
+    alpha_colorbar: Colorbar | None = None
+    label_colorbar: Colorbar | None = None
     legend: Legend | None = None
     hatch_legend: Legend | None = None
     edge_legend: Legend | None = None
+    linewidth_legend: Legend | None = None
+    label_legend: Legend | None = None
 
 
 @dataclass

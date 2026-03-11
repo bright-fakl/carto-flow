@@ -205,7 +205,7 @@ class SymbolCartogram:
     def plot(
         self,
         column: str | None = None,
-        cmap: str = "viridis",
+        cmap: str | dict[str, Any] = "viridis",
         norm: Any | None = None,
         vmin: float | None = None,
         vmax: float | None = None,
@@ -215,11 +215,10 @@ class SymbolCartogram:
         figsize: tuple[float, float] = (10, 8),
         source_gdf: Any | None = None,
         facecolor: Any = None,
-        color_map: dict[str, Any] | None = None,
         alpha: Any = 0.9,
         alpha_range: tuple[float, float] = (0.2, 1.0),
         edgecolor: Any = "none",
-        edge_cmap: str | None = None,
+        edge_cmap: str | dict[str, Any] | None = None,
         linewidth: Any = 0.5,
         linewidth_range: tuple[float, float] = (0.5, 3.0),
         hatch: Any = None,
@@ -229,9 +228,16 @@ class SymbolCartogram:
         edge_legend_kwds: dict[str, Any] | None = None,
         hatch_legend: bool = True,
         hatch_legend_kwds: dict[str, Any] | None = None,
+        linewidth_legend: bool = True,
+        linewidth_legend_kwds: dict[str, Any] | None = None,
+        alpha_legend: bool = True,
+        alpha_legend_kwds: dict[str, Any] | None = None,
         # Labels
         label: Any = None,
         label_color: Any = "black",
+        label_cmap: str | dict[str, Any] | None = None,
+        label_legend: bool = True,
+        label_legend_kwds: dict[str, Any] | None = None,
         label_fontsize: Any = 8,
         label_fontsize_range: tuple[float, float] = (6.0, 14.0),
         label_kwargs: dict[str, Any] | None = None,
@@ -250,8 +256,13 @@ class SymbolCartogram:
             Convenience shorthand for ``facecolor=column``.  Kept for
             backward compatibility.  When both *column* and *facecolor* are
             provided, *facecolor* takes precedence.
-        cmap : str
-            Colormap name for numeric data columns.  Default ``"viridis"``.
+        cmap : str or dict
+            Colormap for data-driven *facecolor*.  Pass a **colormap name**
+            string for numeric columns (e.g. ``"viridis"``, ``"plasma"``), or
+            a **dict** of ``{category: colour}`` for categorical columns
+            (e.g. ``{"Europe": "#2ca02c", "Africa": "#d62728"}``).
+            Unspecified categories receive auto-assigned ``"tab10"`` colours.
+            Default ``"viridis"``.
         norm : matplotlib Normalize, optional
             Custom normalisation for the colour mapping.
         vmin, vmax : float, optional
@@ -277,16 +288,12 @@ class SymbolCartogram:
             * A matplotlib colour string (``"steelblue"``).
             * A **column name** → numeric: mapped via *cmap* / *norm*;
               categorical: auto-assigned from the ``"tab10"`` palette
-              (override with *color_map*).
+              (pass a dict to *cmap* to override specific categories).
             * A 1-D numeric array → mapped via *cmap* / *norm*.
             * An ``(n, 3)`` or ``(n, 4)`` float array (RGB / RGBA).
             * A list of colour strings or RGBA tuples.
 
             Defaults to ``"steelblue"`` when ``None``.
-        color_map : dict, optional
-            Per-category colour overrides when *facecolor* maps a categorical
-            column.  Unspecified categories receive auto-assigned colours.
-            Example: ``{"Europe": "#2ca02c", "Africa": "#d62728"}``.
         alpha : float, column name, or array-like, optional
             Symbol opacity (0 = transparent, 1 = opaque).  A column name is
             linearly interpolated into *alpha_range*.  Default ``0.9``.
@@ -296,8 +303,10 @@ class SymbolCartogram:
         edgecolor : color, column name, or array-like, optional
             Symbol edge colour.  Same forms as *facecolor*.
             Default ``"none"`` (no visible border).
-        edge_cmap : str, optional
-            Colormap for edge colour column mapping.  Falls back to *cmap*.
+        edge_cmap : str or dict, optional
+            Colormap for edge colour column mapping.  Accepts the same forms
+            as *cmap* (string name for numeric, dict for categorical).
+            Falls back to *cmap* (string only) when ``None``.
         linewidth : float, column name, or array-like, optional
             Edge line width.  A column name is linearly interpolated into
             *linewidth_range*.  Default ``0.5``.
@@ -327,6 +336,21 @@ class SymbolCartogram:
         hatch_legend_kwds : dict, optional
             ``Axes.legend()`` kwargs for the hatch legend, plus an optional
             nested ``"patch_kw"`` dict controlling legend-patch appearance.
+        linewidth_legend : bool
+            Show a discrete line-sample legend when *linewidth* is data-driven.
+            Displays ~5 representative values as grey lines of increasing
+            thickness.  Default ``True``.
+        linewidth_legend_kwds : dict, optional
+            ``Axes.legend()`` kwargs for the linewidth legend.
+            Use ``"title"`` to override the legend title.
+        alpha_legend : bool
+            Show a colorbar for *alpha* when it is data-driven and *facecolor*
+            is a constant colour.  The colorbar displays the constant colour
+            ramping from transparent to opaque across the data range.
+            Default ``True``.
+        alpha_legend_kwds : dict, optional
+            Extra keyword arguments forwarded to ``Figure.colorbar()``.
+            Use ``"title"`` to override the colorbar label.
         label : str, column name, or sequence, optional
             Per-symbol text labels.  A column name uses the string
             representation of each value; a list / array provides explicit
@@ -334,6 +358,9 @@ class SymbolCartogram:
         label_color : color, column name, or array-like, optional
             Text colour for labels.  Accepts the same forms as *facecolor*.
             Default ``"black"``.
+        label_cmap : str or dict, optional
+            Colormap for data-driven *label_color*.  Accepts the same forms
+            as *cmap*.  Defaults to *cmap* (string only) when ``None``.
         label_fontsize : float, column name, or array-like, optional
             Label font size.  A column name is linearly interpolated into
             *label_fontsize_range*.  Default ``8``.
@@ -410,7 +437,6 @@ class SymbolCartogram:
             norm=norm,
             vmin=vmin,
             vmax=vmax,
-            color_map=color_map,
             alpha=alpha,
             alpha_range=alpha_range,
             edgecolor=edgecolor,
@@ -425,8 +451,15 @@ class SymbolCartogram:
             edge_legend_kwds=edge_legend_kwds,
             hatch_legend=hatch_legend,
             hatch_legend_kwds=hatch_legend_kwds,
+            linewidth_legend=linewidth_legend,
+            linewidth_legend_kwds=linewidth_legend_kwds,
+            alpha_legend=alpha_legend,
+            alpha_legend_kwds=alpha_legend_kwds,
             label=label,
             label_color=label_color,
+            label_cmap=label_cmap,
+            label_legend=label_legend,
+            label_legend_kwds=label_legend_kwds,
             label_fontsize=label_fontsize,
             label_fontsize_range=label_fontsize_range,
             label_kwargs=label_kwargs,

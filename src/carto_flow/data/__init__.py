@@ -95,18 +95,12 @@ def load_us_states() -> "geopandas.GeoDataFrame":
     >>> from carto_flow.data import load_us_states
     >>> gdf = load_us_states()
     >>> print(gdf.shape)
-    (52, ...)
+    (51, ...)
     """
-    try:
-        gpd = _import_optional_module("geopandas", "geopandas", "loading geographic data")
-        geodatasets = _import_optional_module("geodatasets", "geodatasets", "loading US states dataset")
-        return gpd.read_file(geodatasets.get_path("naturalearth_us_states"))
-    except Exception as e:
-        raise ImportError(
-            "Failed to load US states dataset. Please ensure you have the required dependencies installed.\n"
-            "You can install them with:\n"
-            "pip install carto-flow[data]"
-        ) from e
+    import geopandas as gpd
+
+    path = files("carto_flow.data").joinpath("us_states.geojson")
+    return gpd.read_file(path)
 
 
 def load_sample_cities() -> "geopandas.GeoDataFrame":
@@ -127,16 +121,10 @@ def load_sample_cities() -> "geopandas.GeoDataFrame":
     >>> print(gdf.shape)
     (200, ...)
     """
-    try:
-        gpd = _import_optional_module("geopandas", "geopandas", "loading geographic data")
-        geodatasets = _import_optional_module("geodatasets", "geodatasets", "loading cities dataset")
-        return gpd.read_file(geodatasets.get_path("naturalearth_cities"))
-    except Exception as e:
-        raise ImportError(
-            "Failed to load cities dataset. Please ensure you have the required dependencies installed.\n"
-            "You can install them with:\n"
-            "pip install carto-flow[data]"
-        ) from e
+    import geopandas as gpd
+
+    path = files("carto_flow.data").joinpath("cities.geojson")
+    return gpd.read_file(path)
 
 
 def load_us_census(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .layout_result import Transform
@@ -154,7 +154,7 @@ class Symbol(ABC):
 
         """
         p = self.unit_polygon()
-        if isinstance(size, (tuple, list, np.ndarray)):
+        if isinstance(size, tuple | list | np.ndarray):
             sx, sy = float(size[0]) * 2, float(size[1]) * 2
         else:
             sx = sy = float(size) * 2
@@ -780,8 +780,8 @@ BUILTIN_SYMBOLS: dict[str, Symbol] = {
 }
 
 # Type aliases
-SymbolSpec = Union[str, Symbol]
-SymbolParam = Union[SymbolSpec, Sequence[SymbolSpec]]
+SymbolSpec = str | Symbol
+SymbolParam = SymbolSpec | Sequence[SymbolSpec]
 
 
 def resolve_symbol(spec: SymbolSpec) -> Symbol:

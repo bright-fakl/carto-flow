@@ -9,7 +9,6 @@ Optional Dependencies
 ---------------------
 This module has optional dependencies that are not required for the core functionality
 of carto-flow. These dependencies include:
-- geodatasets: For accessing example datasets from the geodatasets library
 - censusdis: For accessing US census data (optional, for demographic examples)
 
 If these dependencies are not installed, functions that require them will raise
@@ -28,13 +27,15 @@ by the US Census Bureau:
 - `REGION_DIVISIONS`: Maps region codes to lists of division codes within that region
 """
 
+import importlib.metadata
+from importlib.resources import files
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import geopandas
+
 # US Census Bureau region definitions
-REGION_NAMES = {
-    "1": "Northeast",
-    "2": "Midwest",
-    "3": "South",
-    "4": "West"
-}
+REGION_NAMES = {"1": "Northeast", "2": "Midwest", "3": "South", "4": "West"}
 
 DIVISION_NAMES = {
     "1": "New England",
@@ -45,14 +46,14 @@ DIVISION_NAMES = {
     "6": "East South Central",
     "7": "West South Central",
     "8": "Mountain",
-    "9": "Pacific"
+    "9": "Pacific",
 }
 
 REGION_DIVISIONS = {
-    "1": ["1", "2"],    # Northeast: New England, Middle Atlantic
-    "2": ["3", "4"],    # Midwest: East North Central, West North Central
+    "1": ["1", "2"],  # Northeast: New England, Middle Atlantic
+    "2": ["3", "4"],  # Midwest: East North Central, West North Central
     "3": ["5", "6", "7"],  # South: South Atlantic, East South Central, West South Central
-    "4": ["8", "9"]     # West: Mountain, Pacific
+    "4": ["8", "9"],  # West: Mountain, Pacific
 }
 
 # State to Region mapping (FIPS code to region code)
@@ -108,7 +109,7 @@ STATE_REGIONS = {
     "54": "3",  # West Virginia: South
     "55": "2",  # Wisconsin: Midwest
     "56": "4",  # Wyoming: West
-    "72": None  # Puerto Rico: Not part of any census region
+    "72": None,  # Puerto Rico: Not part of any census region
 }
 
 # State to Division mapping (FIPS code to division code)
@@ -164,15 +165,8 @@ STATE_DIVISIONS = {
     "54": "5",  # West Virginia: South Atlantic
     "55": "3",  # Wisconsin: East North Central
     "56": "8",  # Wyoming: Mountain
-    "72": None  # Puerto Rico: Not part of any census division
+    "72": None,  # Puerto Rico: Not part of any census division
 }
-
-import importlib.metadata
-from importlib.resources import files
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import geopandas
 
 
 def _check_optional_dependency(package_name: str, purpose: str) -> None:
@@ -376,13 +370,13 @@ def load_us_census(
 
 
 __all__ = [
+    "DIVISION_NAMES",
+    "REGION_DIVISIONS",
+    "REGION_NAMES",
+    "STATE_DIVISIONS",
+    "STATE_REGIONS",
     "load_sample_cities",
     "load_us_census",
     "load_us_states",
     "load_world",
-    "REGION_NAMES",
-    "DIVISION_NAMES",
-    "REGION_DIVISIONS",
-    "STATE_REGIONS",
-    "STATE_DIVISIONS",
 ]

@@ -1,7 +1,7 @@
 site_name: carto-flow
 repo_url: https://github.com/fkloosterman/carto-flow
 site_url: https://fkloosterman.github.io/carto-flow
-site_description: This is a library for creating cartographs.
+site_description: A Python library for creating flow-based contiguous cartograms and proportional shape visualizations.
 site_author: FKloosterman
 edit_uri: edit/main/docs/
 repo_name: fkloosterman/carto-flow
@@ -9,17 +9,131 @@ copyright: Maintained by <a href="https://fkloosterman.com">fkloosterman</a>.
 
 nav:
   - Home: index.md
-  - Modules: modules.md
+  - Gallery: generated/gallery/index.md
+  - Tutorials:
+    - Overview: tutorials/index.md
+    - Getting Started:
+      - Flow-Based Cartograms: tutorials/basic-flow-cartogram.ipynb
+      - Proportional Cartograms: tutorials/basic-proportional-cartogram.ipynb
+      - Symbol Cartograms: tutorials/basic-symbol-cartogram.ipynb
+    - Advanced Tutorials:
+      - Multi-Resolution Cartograms: tutorials/multiresolution-flow-cartogram.ipynb
+  - How-to:
+    - Overview: how-to/index.md
+    - Flow Cartogram:
+      - Diagnose and Improve Convergence: how-to/diagnose-convergence.ipynb
+      - Save and Export Results: how-to/save-and-export-results.ipynb
+      - Reduce Boundary Distortion: how-to/reduce-boundary-distortion.ipynb
+      - Animate the Morphing Process: how-to/create-animation.ipynb
+      - Co-Morph Landmarks and Coordinates: how-to/co-morph-landmarks-and-coordinates.ipynb
+    - Proportional Cartogram:
+      - Apply Partitions to a Flow Cartogram: how-to/partitions-on-flow-cartogram.ipynb
+    - Symbol Cartogram:
+      - Style Symbols by Category: how-to/style-symbols-by-category.ipynb
+  - Reference:
+    - Overview: reference/index.md
+    - Flow Cartogram:
+        - Overview: reference/flow_cartogram/index.md
+        - Main Interface:
+            - API: reference/flow_cartogram/api.md
+            - Options: reference/flow_cartogram/options.md
+            - Cartogram: reference/flow_cartogram/cartogram.md
+            - Workflow: reference/flow_cartogram/workflow.md
+            - Errors: reference/flow_cartogram/errors.md
+        - Computation:
+            - Algorithm: reference/flow_cartogram/algorithm.md
+            - Grid: reference/flow_cartogram/grid.md
+            - Density: reference/flow_cartogram/density.md
+            - Velocity: reference/flow_cartogram/velocity.md
+            - Displacement: reference/flow_cartogram/displacement.md
+            - Anisotropy: reference/flow_cartogram/anisotropy.md
+        - Analysis:
+            - History: reference/flow_cartogram/history.md
+            - Metrics: reference/flow_cartogram/metrics.md
+            - Comparison: reference/flow_cartogram/comparison.md
+        - Output:
+            - Visualization: reference/flow_cartogram/visualization.md
+            - Animation: reference/flow_cartogram/animation.md
+            - Serialization: reference/flow_cartogram/serialization.md
+    - Proportional Cartogram:
+        - Overview: reference/proportional_cartogram/index.md
+        - Main Interface:
+            - Splitting: reference/proportional_cartogram/splitting.md
+            - Shrinking: reference/proportional_cartogram/shrinking.md
+            - Partition: reference/proportional_cartogram/partition.md
+            - Visualization: reference/proportional_cartogram/visualization.md
+            - Dot Density: reference/proportional_cartogram/dot_density.md
+    - Symbol Cartogram:
+        - Overview: reference/symbol_cartogram/index.md
+        - Main Interface:
+            - API: reference/symbol_cartogram/api.md
+            - Layout: reference/symbol_cartogram/layout.md
+            - LayoutResult: reference/symbol_cartogram/layout_result.md
+            - Result: reference/symbol_cartogram/result.md
+            - Styling: reference/symbol_cartogram/styling.md
+        - Configuration:
+            - Options: reference/symbol_cartogram/options.md
+            - Presets: reference/symbol_cartogram/presets.md
+        - Symbols and Tiling:
+            - Symbols: reference/symbol_cartogram/symbols.md
+            - Tiling: reference/symbol_cartogram/tiling.md
+        - Computation:
+            - Placement: reference/symbol_cartogram/placement.md
+        - Output:
+            - Visualization: reference/symbol_cartogram/visualization.md
+    - Geo Utilities:
+        - Overview: reference/geo_utils/index.md
+        - API: reference/geo_utils/geo_utils.md
+    - Data (Optional):
+        - Overview: reference/data/index.md
+        - API: reference/data/api.md
+  - Explanations:
+    - Overview: explanations/index.md
+    - Flow Cartogram:
+        - Algorithm: explanations/flow-cartogram-algorithm.md
+        - History and Snapshot System: explanations/flow-cartogram-history.md
+        - Workflow System: explanations/flow-cartogram-workflow.md
+    - Proportional Cartogram:
+        - Splitting and Shrinking: explanations/proportional-cartogram.md
+    - Symbol Cartogram:
+        - Pipeline Overview: explanations/symbol-cartogram-pipeline.md
+        - Grid Layout Algorithm: explanations/symbol-cartogram-grid-layout.md
+        - Circle Packing Layout Algorithm: explanations/symbol-cartogram-circle-packing.md
+        - Tiling System: explanations/tiling-system.md
 plugins:
   - search
+  - gallery:
+      examples_dirs: docs/examples
+      gallery_dirs: docs/generated/gallery
+      matplotlib_animations: true
+  - mkdocs-jupyter:
+      include: ["*.ipynb"]
+      ignore_h1_titles: true
+      include_source: true
   - mkdocstrings:
       handlers:
         python:
           paths: ["src/carto_flow"]
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            summary: true
+            docstring_options:
+              ignore_init_summary: true
+            merge_init_into_class: true
+            docstring_section_style: list
+            separate_signature: true
+            show_signature_annotations: true
 theme:
   name: material
-  feature:
-    tabs: true
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.path
+    - navigation.top
+    - navigation.indexes
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -37,6 +151,7 @@ theme:
         name: Switch to light mode
   icon:
     repo: fontawesome/brands/github
+  custom_dir: docs/overrides
 
 extra:
   social:
@@ -44,9 +159,29 @@ extra:
       link: https://github.com/fkloosterman/carto-flow
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/carto-flow
+  version: 0.9.2
+
+extra_css:
+  - stylesheets/jupyter.css
+
+extra_javascript:
+  - javascripts/mathjax-config.js
+  - https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js
 
 markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.arithmatex:
       generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - admonition
+  - pymdownx.details

@@ -6,69 +6,67 @@
 [![Commit activity](https://img.shields.io/github/commit-activity/m/fkloosterman/carto-flow)](https://img.shields.io/github/commit-activity/m/fkloosterman/carto-flow)
 [![License](https://img.shields.io/github/license/fkloosterman/carto-flow)](https://img.shields.io/github/license/fkloosterman/carto-flow)
 
-This is a library for creating cartographs.
+A Python library for creating cartograms from geographic data.
 
-- **Github repository**: <https://github.com/fkloosterman/carto-flow/>
-- **Documentation** <https://fkloosterman.github.io/carto-flow/>
+## Overview
 
-## Getting started with your project
+carto-flow transforms geographic vector data into cartograms — maps where region sizes or symbols are scaled to represent a data variable such as population, GDP, or election results. It supports three cartogram styles:
 
-### 1. Create a New Repository
+- **Flow cartograms** — regions are continuously deformed so their areas are proportional to a variable, while preserving shape and topology as much as possible (diffusion-based algorithm).
+- **Symbol cartograms** — regions are replaced by proportional symbols (circles, squares, hexagons, or custom isohedral tiles) arranged using physics-based or grid-based layout.
+- **Proportional cartograms** — region polygons are split or shrunk to show sub-group proportions within each geographic unit.
 
-First, create a repository on GitHub with the same name as this project, and then run the following commands:
+## Features
 
-```bash
-git init -b main
-git add .
-git commit -m "init commit"
-git remote add origin git@github.com:fkloosterman/carto-flow.git
-git push -u origin main
-```
+- Diffusion-based flow cartogram morphing with FFT-accelerated Poisson solver
+- Multi-resolution processing for large datasets
+- Physics-based symbol placement with overlap resolution and topology preservation
+- Isohedral tile support for custom symbol shapes
+- Split and shrink operations for proportional cartograms
+- Dot density cartogram support
+- Rich visualization utilities built on matplotlib and geopandas
 
-### 2. Set Up Your Development Environment
-
-Then, install the environment and the pre-commit hooks with
-
-```bash
-make install
-```
-
-This will also generate your `uv.lock` file
-
-### 3. Run the pre-commit hooks
-
-Initially, the CI/CD pipeline might be failing due to formatting issues. To resolve those run:
+## Installation
 
 ```bash
-uv run pre-commit run -a
+pip install carto-flow
 ```
 
-### 4. Commit the changes
-
-Lastly, commit the changes made by the two steps above to your repository.
+Or with [uv](https://github.com/astral-sh/uv):
 
 ```bash
-git add .
-git commit -m 'Fix formatting issues'
-git push origin main
+uv add carto-flow
 ```
 
-You are now ready to start development on your project!
-The CI/CD pipeline will be triggered when you open a pull request, merge to main, or when you create a new release.
+Requires Python 3.10+.
 
-To finalize the set-up for publishing to PyPI, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/publishing/#set-up-for-pypi).
-For activating the automatic documentation with MkDocs, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/mkdocs/#enabling-the-documentation-on-github).
-To enable the code coverage reports, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/codecov/).
+## Quick example
 
-## Releasing a new version
+```python
+import geopandas as gpd
+from carto_flow.flow_cartogram import morph_gdf
 
-- Create an API Token on [PyPI](https://pypi.org/).
-- Add the API Token to your projects secrets with the name `PYPI_TOKEN` by visiting [this page](https://github.com/fkloosterman/carto-flow/settings/secrets/actions/new).
-- Create a [new release](https://github.com/fkloosterman/carto-flow/releases/new) on Github.
-- Create a new tag in the form `*.*.*`.
+gdf = gpd.read_file("countries.gpkg")
+result = morph_gdf(gdf, values=gdf["population"])
+result.cartogram_gdf.plot()
+```
 
-For more details, see [here](https://fpgmaas.github.io/cookiecutter-uv/features/cicd/#how-to-trigger-a-release).
+```python
+from carto_flow.symbol_cartogram import create_symbol_cartogram
 
----
+layout = create_symbol_cartogram(gdf, values=gdf["population"])
+layout.plot()
+```
 
-Repository initiated with [fpgmaas/cookiecutter-uv](https://github.com/fpgmaas/cookiecutter-uv).
+## Documentation
+
+Full documentation is available at **<https://fkloosterman.github.io/carto-flow/>**, including:
+
+- [Tutorials](https://fkloosterman.github.io/carto-flow/tutorials/) — step-by-step guides for each cartogram type
+- [How-to guides](https://fkloosterman.github.io/carto-flow/how-to/) — task-focused recipes
+- [Reference](https://fkloosterman.github.io/carto-flow/reference/) — full API reference
+- [Explanations](https://fkloosterman.github.io/carto-flow/explanations/) — background on algorithms and design
+
+## License
+
+See [LICENSE](LICENSE).

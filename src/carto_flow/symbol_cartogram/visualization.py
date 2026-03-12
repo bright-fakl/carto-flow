@@ -1050,7 +1050,7 @@ def _resolve_scalar(
     if param is None:
         return default, False
 
-    if isinstance(param, (int, float)):
+    if isinstance(param, int | float):
         return float(param), False
 
     if isinstance(param, str):
@@ -1713,7 +1713,7 @@ def plot_symbols(
         lw_steps = np.linspace(lo_lw, hi_lw, n_steps)
         handles = [
             mlines.Line2D([], [], color="gray", linewidth=float(lw), label=f"{dv:.3g}")
-            for dv, lw in zip(data_vals, lw_steps)
+            for dv, lw in zip(data_vals, lw_steps, strict=False)
         ]
         _lkwds = dict(linewidth_legend_kwds or {})
         if "title" not in _lkwds:
@@ -1811,7 +1811,7 @@ def plot_symbols(
         ys = result.symbols["_symbol_y"].values
         _lkw = {"ha": "center", "va": "center", **(label_kwargs or {})}
 
-        for i, (x, y, text) in enumerate(zip(xs, ys, label_texts)):
+        for i, (x, y, text) in enumerate(zip(xs, ys, label_texts, strict=False)):
             fs_i = float(fs_arr[i]) if fs_arr is not None else float(fs_val)
             t = ax.text(
                 x,

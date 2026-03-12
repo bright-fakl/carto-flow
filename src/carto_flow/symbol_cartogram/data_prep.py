@@ -1,4 +1,3 @@
-# ruff: noqa: RUF002
 """Data preparation for symbol cartogram layouts.
 
 This module provides utilities to prepare GeoDataFrame data for layout
@@ -12,6 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+import pandas as pd
 from numpy.typing import ArrayLike, NDArray
 
 from .adjacency import compute_adjacency
@@ -44,6 +44,9 @@ class LayoutData:
         Mean area of input geometries (unit cell area).
     source_gdf : gpd.GeoDataFrame
         Original input geometries.
+    valid_mask : NDArray[np.bool_] | None
+        Boolean mask indicating which rows had valid (non-null) values.
+        None if all values were valid.
 
     """
 
@@ -53,6 +56,7 @@ class LayoutData:
     bounds: tuple[float, float, float, float]
     mean_area: float
     source_gdf: gpd.GeoDataFrame
+    valid_mask: NDArray[np.bool_] | None = None
 
 
 def compute_symbol_sizes(
@@ -143,6 +147,12 @@ def prepare_layout_data(
     distance_tolerance: float | None = None,
     size_normalization: Literal["max", "total"] = "max",
 ) -> LayoutData:
+    """Prepare data for layout algorithms."""
+    if len(gdf) == 0:
+        raise ValueError("GeoDataFrame is empty")
+
+    if value_column is not None and value_column not in gdf.columns:
+        raise ValueError(f"Column '{value_column}' not found in GeoDataFrame")
     """Prepare data for layout algorithms.
 
     This function:
@@ -177,10 +187,10 @@ def prepare_layout_data(
         How to normalise symbol sizes relative to original geometry areas:
 
         - ``"max"`` *(default)*: the largest symbol has area equal to the mean
-          geometry area (``π × unit_cell_radius²``).  Relative proportions
+          geometry area (``π x unit_cell_radius²``).  Relative proportions
           mirror the data values.
         - ``"total"``: all sizes are scaled by a single global factor so that
-          ``Σ(π × size²) = Σ(geometry_area)``.  Relative proportions are
+          ``Σ(π x size²) = Σ(geometry_area)``.  Relative proportions are
           preserved; total symbol area equals total original area.  For
           uniform sizing (no *value_column*) the two modes are identical.
 
@@ -210,9 +220,25 @@ def prepare_layout_data(
     positions = np.array([[g.centroid.x, g.centroid.y] for g in gdf.geometry])
 
     # 3. Compute symbol sizes
+    valid_mask = np.ones(len(gdf), dtype=bool)
     if value_column is not None:
         # Proportional sizing
         values = gdf[value_column].values
+
+        # Handle null values
+        null_mask = pd.isnull(values)
+        if np.any(null_mask):
+            import warnings
+
+            n_null = np.sum(null_mask)
+            warnings.warn(f"Skipping {n_null} rows with null values", UserWarning, stacklevel=2)
+            valid_mask = ~null_mask
+            # Keep only non-null values
+            values = values[valid_mask]
+            positions = positions[valid_mask]
+            geometry_areas = geometry_areas[valid_mask]
+            gdf = gdf[valid_mask]
+
         sizes = compute_symbol_sizes(
             values,
             scale=size_scale,
@@ -245,4 +271,5 @@ def prepare_layout_data(
         bounds=tuple(gdf.total_bounds),
         mean_area=mean_area,
         source_gdf=gdf,
+        valid_mask=valid_mask if np.any(~valid_mask) else None,
     )

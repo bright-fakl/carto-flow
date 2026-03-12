@@ -97,7 +97,7 @@ class Styling:
 
             if isinstance(value, Symbol):
                 return False
-        return hasattr(value, "__len__") and not isinstance(value, (str, bytes))
+        return hasattr(value, "__len__") and not isinstance(value, str | bytes)
 
     def _mask_to_indices(self, mask: list[bool] | np.ndarray) -> list[int]:
         """Convert boolean mask to list of True indices."""
@@ -113,7 +113,7 @@ class Styling:
         reflection: bool = False,
         fit_mode: FitMode | Literal["inside", "area", "fill"] = FitMode.INSIDE,
     ):
-        self._global_symbol: Symbol | str | None = symbol
+        self._global_symbol: Symbol | str | None = None
         self._global_params: dict[str, Any] = {}
         # Convert rotation from degrees to radians for internal use
         self._global_transform = Transform(
@@ -127,6 +127,16 @@ class Styling:
         if isinstance(fit_mode, str):
             fit_mode = FitMode(fit_mode)
         self._fit_mode = fit_mode
+
+        # Handle symbol parameter
+        if symbol is not None:
+            if self._is_array_like(symbol):
+                # Array of values (positional)
+                for i, sym in enumerate(symbol):  # type: ignore[arg-type]
+                    self._per_geometry.setdefault(i, {})["symbol"] = sym
+            else:
+                # Single global symbol
+                self._global_symbol = symbol
 
     def set_symbol(
         self,
@@ -475,6 +485,10 @@ class Styling:
             "displacement_std": float(np.std(displacements)),
         }
 
+        # Add n_skipped metric if valid_mask is provided
+        if layout_result.valid_mask is not None:
+            metrics["n_skipped"] = int(np.sum(~layout_result.valid_mask))
+
         # Add algorithm-specific metrics
         if layout_result.algorithm_info and "info" in layout_result.algorithm_info:
             info = layout_result.algorithm_info["info"]
@@ -496,6 +510,7 @@ class Styling:
             _tiling_result=tiling_result,
             _assignments=assignments,
             simulation_history=layout_result.simulation_history,
+            _valid_mask=layout_result.valid_mask,
         )
 
     def _compute_fit(self, canonical: Symbol, styled: Symbol) -> tuple[float, tuple[float, float]]:

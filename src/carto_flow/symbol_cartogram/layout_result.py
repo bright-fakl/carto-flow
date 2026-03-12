@@ -122,6 +122,7 @@ class LayoutResult:
     crs: str | None = None  # WKT string to preserve projection info
     algorithm_info: dict[str, Any] = field(default_factory=dict)
     simulation_history: Any = None
+    valid_mask: NDArray[np.bool_] | None = None
 
     def style(
         self,
@@ -205,7 +206,9 @@ class LayoutResult:
         # Filter algorithm_info to only JSON-safe scalar values.
         # Non-serializable objects (TilingResult, numpy arrays) are stripped here
         # and handled separately at the SymbolCartogram level.
-        safe_info = {k: v for k, v in self.algorithm_info.items() if isinstance(v, (str, int, float, bool, type(None)))}
+        safe_info = {
+            k: v for k, v in self.algorithm_info.items() if isinstance(v, str | int | float | bool | type(None))
+        }
 
         return {
             "canonical_symbol": {

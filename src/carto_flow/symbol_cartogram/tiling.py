@@ -163,7 +163,7 @@ class TilingResult:
         # Rotate each tile's center and add to its rotation
         new_transforms = []
         new_polygons = []
-        for t, poly in zip(self.transforms, self.polygons):
+        for t, poly in zip(self.transforms, self.polygons, strict=False):
             # Rotate center position
             cx, cy = t.center
             new_cx = cx * cos_a - cy * sin_a
@@ -267,7 +267,7 @@ class TilingResult:
         n = len(self.polygons)
         cmap = plt.get_cmap(colormap)
 
-        coords = [list(zip(*p.exterior.xy)) for p in self.polygons]
+        coords = [list(zip(*p.exterior.xy, strict=False)) for p in self.polygons]
         if color_by == "uniform":
             colors = [face_color] * n
         elif color_by == "aspect":
@@ -584,7 +584,7 @@ def _plot_polygon_tile(
 
     vertices_artist = None
     if show_vertices or show_vertex_labels:
-        xs, ys = zip(*coords)
+        xs, ys = zip(*coords, strict=False)
         if show_vertices:
             vertices_artist = ax.scatter(xs, ys, color=edge_color, s=30, zorder=5)
         if show_vertex_labels:
@@ -1637,7 +1637,7 @@ class IsohedralTiling(Tiling):
                 cs_y = CubicSpline(t, y, bc_type="natural")
                 ys_new = cs_y(t_new)
 
-            return list(zip(xs_new, ys_new))
+            return list(zip(xs_new, ys_new, strict=False))
         except Exception:
             # Fallback to original points if interpolation fails
             return points
@@ -2471,7 +2471,7 @@ class IsohedralTiling(Tiling):
             # Compute centroid to offset labels outward
             cx = sum(vx) / len(vx)
             cy = sum(vy) / len(vy)
-            for i, (x, y) in enumerate(zip(vx, vy)):
+            for i, (x, y) in enumerate(zip(vx, vy, strict=False)):
                 # Nudge label away from centroid
                 dx, dy = x - cx, y - cy
                 dist = math.sqrt(dx * dx + dy * dy) or 1.0
@@ -2640,8 +2640,8 @@ class IsohedralTiling(Tiling):
                     if keep[j] and np.linalg.norm(centers_arr[i] - centers_arr[j]) < dedup_tol:
                         keep[j] = False
             if not keep.all():
-                polygons = [p for p, k in zip(polygons, keep) if k]
-                transforms = [t for t, k in zip(transforms, keep) if k]
+                polygons = [p for p, k in zip(polygons, keep, strict=False) if k]
+                transforms = [t for t, k in zip(transforms, keep, strict=False) if k]
 
         # Adjacency
         if compute_adjacency:

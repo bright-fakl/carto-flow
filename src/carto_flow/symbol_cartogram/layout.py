@@ -181,6 +181,7 @@ def _build_physics_layout_result(
         crs=crs,
         algorithm_info={"type": "physics", "info": info},
         simulation_history=sim_history,
+        valid_mask=data.valid_mask,
     )
 
 
@@ -521,6 +522,7 @@ class GridBasedLayout(Layout):
                 "tiling_result": tiling_result,  # Store for visualization
                 "assignments": assignments,  # Store for visualization
             },
+            valid_mask=data.valid_mask,
         )
 
 
@@ -623,6 +625,7 @@ class CentroidLayout(Layout):
             bounds=data.bounds,
             crs=crs,
             algorithm_info={"type": "centroid", "info": info},
+            valid_mask=data.valid_mask,
         )
 
 

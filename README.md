@@ -16,6 +16,8 @@ carto-flow transforms geographic vector data into cartograms — maps where regi
 - **Symbol cartograms** — regions are replaced by proportional symbols (circles, squares, hexagons, or custom isohedral tiles) arranged using physics-based or grid-based layout.
 - **Proportional cartograms** — region polygons are split or shrunk to show sub-group proportions within each geographic unit.
 
+![Example Flow Cartogram showing population distribution](cartogram-example.png)
+
 ## Features
 
 - Diffusion-based flow cartogram morphing with FFT-accelerated Poisson solver

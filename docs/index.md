@@ -1,9 +1,10 @@
 # carto-flow
 
-[![Release](https://img.shields.io/github/v/release/bright-fakl/carto-flow)](https://img.shields.io/github/v/release/bright-fakl/carto-flow)
-[![Build status](https://img.shields.io/github/actions/workflow/status/bright-fakl/carto-flow/main.yml?branch=main)](https://github.com/bright-fakl/carto-flow/actions/workflows/main.yml?query=branch%3Amain)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/bright-fakl/carto-flow)](https://img.shields.io/github/commit-activity/m/bright-fakl/carto-flow)
-[![License](https://img.shields.io/github/license/bright-fakl/carto-flow)](https://img.shields.io/github/license/bright-fakl/carto-flow)
+[![Release](https://img.shields.io/github/v/release/bright-fakl/carto-flow)](https://github.com/bright-fakl/carto-flow/releases)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/bright-fakl/carto-flow/main.yml?branch=main&label=build)](https://github.com/bright-fakl/carto-flow/actions/workflows/main.yml)
+[![codecov](https://codecov.io/gh/bright-fakl/carto-flow/branch/main/graph/badge.svg)](https://codecov.io/gh/bright-fakl/carto-flow)
+[![Commit Activity](https://img.shields.io/github/commit-activity/m/bright-fakl/carto-flow)](https://github.com/bright-fakl/carto-flow/graphs/commit-activity)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/bright-fakl/carto-flow/blob/main/LICENSE)
 
 **A Python library for creating diverse types of cartograms and proportional spatial visualizations.**
 

@@ -9,7 +9,7 @@ The flow cartogram module provides two API levels:
 
 The two are related as follows: each call to `CartogramWorkflow.morph()` invokes `morph_geometries()` internally and wraps the result in a `Cartogram` stored on the workflow.
 
-Relevant source files: [workflow.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/workflow.py), [cartogram.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/cartogram.py), [serialization.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/serialization.py).
+Relevant source files: [workflow.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/workflow.py), [cartogram.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/cartogram.py), [serialization.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/serialization.py).
 
 ---
 

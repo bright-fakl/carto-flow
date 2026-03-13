@@ -6,7 +6,7 @@ A symbol cartogram replaces each polygon region with a proportionally-sized symb
 
 The pipeline has four stages: data preprocessing produces a `LayoutData` object from a GeoDataFrame; a layout algorithm computes symbol positions and stores them in an immutable `LayoutResult`; a `Styling` object maps symbol shape and transform decisions onto the layout; and the final `SymbolCartogram` contains the symbol geometries and quality metrics.
 
-Source: [api.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/api.py)
+Source: [api.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/api.py)
 
 ```mermaid
 flowchart LR
@@ -25,7 +25,7 @@ flowchart LR
 
 ## Data Preprocessing
 
-Source: [data_prep.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/data_prep.py)
+Source: [data_prep.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/data_prep.py)
 
 `prepare_layout_data(gdf, value_column, ...)` takes a GeoDataFrame of polygon regions and returns a `LayoutData` dataclass with four fields:
 
@@ -68,7 +68,7 @@ The adjacency matrix is used by layout algorithms to keep geographically adjacen
 
 ## Layout System
 
-Source: [layout.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layout.py), [layout_result.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layout_result.py)
+Source: [layout.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layout.py), [layout_result.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layout_result.py)
 
 ### Layout ABC
 
@@ -133,7 +133,7 @@ class Transform:
 
 ## Styling System
 
-Source: [styling.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/styling.py), [symbols.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/symbols.py)
+Source: [styling.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/styling.py), [symbols.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/symbols.py)
 
 `Styling` collects symbol shape, transform overrides, and fit-mode decisions. `styling.apply(layout_result)` maps these decisions onto the transforms in a `LayoutResult` to produce a `SymbolCartogram`. The layout itself is not re-run.
 
@@ -184,7 +184,7 @@ The fluent API supports method chaining: `Styling().set_symbol("hexagon").transf
 
 ## SymbolCartogram Result
 
-Source: [result.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/result.py)
+Source: [result.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/result.py)
 
 `SymbolCartogram` is the final result object returned by the pipeline.
 

@@ -1,11 +1,11 @@
 site_name: carto-flow
-repo_url: https://github.com/fkloosterman/carto-flow
-site_url: https://fkloosterman.github.io/carto-flow
+repo_url: https://github.com/bright-fakl/carto-flow
+site_url: https://bright-fakl.github.io/carto-flow
 site_description: A Python library for creating flow-based contiguous cartograms and proportional shape visualizations.
 site_author: FKloosterman
 edit_uri: edit/main/docs/
-repo_name: fkloosterman/carto-flow
-copyright: Maintained by <a href="https://fkloosterman.com">fkloosterman</a>.
+repo_name: bright-fakl/carto-flow
+copyright: Maintained by FKloosterman.
 
 nav:
   - Home: index.md
@@ -156,7 +156,7 @@ theme:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/fkloosterman/carto-flow
+      link: https://github.com/bright-fakl/carto-flow
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/carto-flow
   version: 0.0.1

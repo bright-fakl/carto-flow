@@ -35,9 +35,9 @@ dependencies = [
 data = ["censusdis>=1.2.4"]
 
 [project.urls]
-Homepage = "https://fkloosterman.github.io/carto-flow/"
-Repository = "https://github.com/fkloosterman/carto-flow"
-Documentation = "https://fkloosterman.github.io/carto-flow/"
+Homepage = "https://bright-fakl.github.io/carto-flow/"
+Repository = "https://github.com/bright-fakl/carto-flow"
+Documentation = "https://bright-fakl.github.io/carto-flow/"
 
 [dependency-groups]
 dev = [

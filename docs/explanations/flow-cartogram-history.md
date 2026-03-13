@@ -11,7 +11,7 @@ These two mechanisms are independent and serve different purposes: `ConvergenceH
 
 Both are stored on the `Cartogram` result object. A third variant, `CartogramInternalsSnapshot`, captures raw grid-level fields for debugging and is stored separately in `Cartogram.internals`.
 
-Relevant source files: [history.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/history.py), [cartogram.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/cartogram.py).
+Relevant source files: [history.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/history.py), [cartogram.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/cartogram.py).
 
 ---
 

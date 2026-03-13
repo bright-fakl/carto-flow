@@ -4,7 +4,7 @@
 
 The grid-based layout assigns each input region to a tile in a regular grid — square, hexagonal, or any isohedral tiling — such that the total assignment cost is minimized. Unlike the physics-based layouts, it involves no iterative simulation; positions are determined by solving a combinatorial assignment problem using the Hungarian algorithm.
 
-Source: [layout.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layout.py) (`GridBasedLayout`), [placement.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/symbol_cartogram/placement.py) (`assign_to_grid_hungarian`, `fill_internal_holes`, `_fix_island_assignments`)
+Source: [layout.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layout.py) (`GridBasedLayout`), [placement.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/placement.py) (`assign_to_grid_hungarian`, `fill_internal_holes`, `_fix_island_assignments`)
 
 ---
 

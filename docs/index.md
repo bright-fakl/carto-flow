@@ -1,9 +1,9 @@
 # carto-flow
 
-[![Release](https://img.shields.io/github/v/release/fkloosterman/carto-flow)](https://img.shields.io/github/v/release/fkloosterman/carto-flow)
-[![Build status](https://img.shields.io/github/actions/workflow/status/fkloosterman/carto-flow/main.yml?branch=main)](https://github.com/fkloosterman/carto-flow/actions/workflows/main.yml?query=branch%3Amain)
-[![Commit activity](https://img.shields.io/github/commit-activity/m/fkloosterman/carto-flow)](https://img.shields.io/github/commit-activity/m/fkloosterman/carto-flow)
-[![License](https://img.shields.io/github/license/fkloosterman/carto-flow)](https://img.shields.io/github/license/fkloosterman/carto-flow)
+[![Release](https://img.shields.io/github/v/release/bright-fakl/carto-flow)](https://img.shields.io/github/v/release/bright-fakl/carto-flow)
+[![Build status](https://img.shields.io/github/actions/workflow/status/bright-fakl/carto-flow/main.yml?branch=main)](https://github.com/bright-fakl/carto-flow/actions/workflows/main.yml?query=branch%3Amain)
+[![Commit activity](https://img.shields.io/github/commit-activity/m/bright-fakl/carto-flow)](https://img.shields.io/github/commit-activity/m/bright-fakl/carto-flow)
+[![License](https://img.shields.io/github/license/bright-fakl/carto-flow)](https://img.shields.io/github/license/bright-fakl/carto-flow)
 
 **A Python library for creating diverse types of cartograms and proportional spatial visualizations.**
 
@@ -64,8 +64,8 @@ Conceptual guides that explain the underlying principles and design decisions be
 
 ## Contributing
 
-We welcome contributions! See our [Contributing Guide](https://github.com/fkloosterman/carto-flow/blob/main/CONTRIBUTING.md) for details on how to get started.
+We welcome contributions! See our [Contributing Guide](https://github.com/bright-fakl/carto-flow/blob/main/CONTRIBUTING.md) for details on how to get started.
 
 ## License
 
-This project is licensed under the terms specified in the [LICENSE](https://github.com/fkloosterman/carto-flow/blob/main/LICENSE) file.
+This project is licensed under the terms specified in the [LICENSE](https://github.com/bright-fakl/carto-flow/blob/main/LICENSE) file.

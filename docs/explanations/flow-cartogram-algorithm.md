@@ -4,7 +4,7 @@
 
 The flow cartogram algorithm deforms polygon geometries so that each region's area becomes proportional to an associated data value while maintaining spatial contiguity and approximate shape recognition. The approach follows Gastner and Newman's diffusion-based density-equalizing map method \[1\]: high-density regions expand and low-density regions contract until all regions reach a uniform equilibrium density.
 
-The algorithm is implemented in `morph_geometries()` ([algorithm.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/algorithm.py)). The high-level API is `CartogramWorkflow` ([workflow.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/workflow.py)).
+The algorithm is implemented in `morph_geometries()` ([algorithm.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/algorithm.py)). The high-level API is `CartogramWorkflow` ([workflow.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/workflow.py)).
 
 ## Mathematical Foundation
 
@@ -148,7 +148,7 @@ Scalar error metrics are recorded in `ConvergenceHistory` at every iteration. Fu
 
 ## Grid
 
-`Grid` ([grid.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/grid.py)) defines the spatial discretization for the FFT computation.
+`Grid` ([grid.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/grid.py)) defines the spatial discretization for the FFT computation.
 
 | Constructor parameter | Type | Description |
 |---|---|---|
@@ -174,13 +174,13 @@ The algorithm exposes two extension points for modifying the density and velocit
 - **`DensityModulator`**: transforms the density grid after rasterization. Multiple modulators can be chained with `+`. The `density_mod` parameter in `MorphOptions` accepts a modulator or chain.
 - **`VelocityModulator`**: transforms the velocity field after the FFT solve. Supplied via the `anisotropy` parameter in `MorphOptions`.
 
-Both are defined as abstract base classes in [anisotropy.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/anisotropy.py). The primary use case is reducing outer-boundary distortion: for example, `DensityBorderExtension` inpaints interior densities outward so the density gradient at the boundary is less abrupt. See the [Reduce Boundary Distortion](../how-to/reduce-boundary-distortion.ipynb) how-to for practical guidance.
+Both are defined as abstract base classes in [anisotropy.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/anisotropy.py). The primary use case is reducing outer-boundary distortion: for example, `DensityBorderExtension` inpaints interior densities outward so the density gradient at the boundary is less abrupt. See the [Reduce Boundary Distortion](../how-to/reduce-boundary-distortion.ipynb) how-to for practical guidance.
 
 ---
 
 ## MorphOptions
 
-`MorphOptions` ([options.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/flow_cartogram/options.py)) is a validated dataclass that controls all algorithm parameters.
+`MorphOptions` ([options.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/options.py)) is a validated dataclass that controls all algorithm parameters.
 
 | Parameter | Default | Description |
 |---|---|---|

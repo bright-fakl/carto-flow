@@ -1,12 +1,12 @@
 # carto-flow
 
-[![Release](https://img.shields.io/github/v/release/fkloosterman/carto-flow)](https://github.com/fkloosterman/carto-flow/releases)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/fkloosterman/carto-flow/main.yml?branch=main&label=build)](https://github.com/fkloosterman/carto-flow/actions/workflows/main.yml)
-[![Release Status](https://img.shields.io/github/actions/workflow/status/fkloosterman/carto-flow/on-release-main.yml?branch=main&label=release)](https://github.com/fkloosterman/carto-flow/actions/workflows/on-release-main.yml)
-[![Bump Version](https://img.shields.io/github/actions/workflow/status/fkloosterman/carto-flow/bump-version.yml?branch=main&label=bump-version)](https://github.com/fkloosterman/carto-flow/actions/workflows/bump-version.yml)
-[![codecov](https://codecov.io/gh/fkloosterman/carto-flow/branch/main/graph/badge.svg)](https://codecov.io/gh/fkloosterman/carto-flow)
-[![Commit Activity](https://img.shields.io/github/commit-activity/m/fkloosterman/carto-flow)](https://github.com/fkloosterman/carto-flow/graphs/commit-activity)
-[![License](https://img.shields.io/github/license/fkloosterman/carto-flow)](https://github.com/fkloosterman/carto-flow/blob/main/LICENSE)
+[![Release](https://img.shields.io/github/v/release/bright-fakl/carto-flow)](https://github.com/bright-fakl/carto-flow/releases)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/bright-fakl/carto-flow/main.yml?branch=main&label=build)](https://github.com/bright-fakl/carto-flow/actions/workflows/main.yml)
+[![Release Status](https://img.shields.io/github/actions/workflow/status/bright-fakl/carto-flow/on-release-main.yml?branch=main&label=release)](https://github.com/bright-fakl/carto-flow/actions/workflows/on-release-main.yml)
+[![Bump Version](https://img.shields.io/github/actions/workflow/status/bright-fakl/carto-flow/bump-version.yml?branch=main&label=bump-version)](https://github.com/bright-fakl/carto-flow/actions/workflows/bump-version.yml)
+[![codecov](https://codecov.io/gh/bright-fakl/carto-flow/branch/main/graph/badge.svg)](https://codecov.io/gh/bright-fakl/carto-flow)
+[![Commit Activity](https://img.shields.io/github/commit-activity/m/bright-fakl/carto-flow)](https://github.com/bright-fakl/carto-flow/graphs/commit-activity)
+[![License](https://img.shields.io/github/license/bright-fakl/carto-flow)](https://github.com/bright-fakl/carto-flow/blob/main/LICENSE)
 
 A Python library for creating cartograms from geographic data.
 
@@ -62,12 +62,12 @@ layout.plot()
 
 ## Documentation
 
-Full documentation is available at **<https://fkloosterman.github.io/carto-flow/>**, including:
+Full documentation is available at **<https://bright-fakl.github.io/carto-flow/>**, including:
 
-- [Tutorials](https://fkloosterman.github.io/carto-flow/tutorials/) — step-by-step guides for each cartogram type
-- [How-to guides](https://fkloosterman.github.io/carto-flow/how-to/) — task-focused recipes
-- [Reference](https://fkloosterman.github.io/carto-flow/reference/) — full API reference
-- [Explanations](https://fkloosterman.github.io/carto-flow/explanations/) — background on algorithms and design
+- [Tutorials](https://bright-fakl.github.io/carto-flow/tutorials/) — step-by-step guides for each cartogram type
+- [How-to guides](https://bright-fakl.github.io/carto-flow/how-to/) — task-focused recipes
+- [Reference](https://bright-fakl.github.io/carto-flow/reference/) — full API reference
+- [Explanations](https://bright-fakl.github.io/carto-flow/explanations/) — background on algorithms and design
 
 ## License
 

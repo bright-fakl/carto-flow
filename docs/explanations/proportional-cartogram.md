@@ -4,7 +4,7 @@
 
 The proportional cartogram submodule provides two geometric operations for dividing polygon areas according to numeric fractions: **splitting** partitions a polygon into N disjoint, non-overlapping parts using planar cuts; **shrinking** peels a polygon into N concentric shells using negative buffering. Both operations accept a geometry and a list of fractions that sum to 1, and both locate the dividing boundary numerically via root finding. `partition_geometries()` applies either operation to all rows of a GeoDataFrame.
 
-Relevant source files: [splitting.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/proportional_cartogram/splitting.py), [shrinking.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/proportional_cartogram/shrinking.py), [partition.py](https://github.com/fkloosterman/carto-flow/blob/main/src/carto_flow/proportional_cartogram/partition.py).
+Relevant source files: [splitting.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/proportional_cartogram/splitting.py), [shrinking.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/proportional_cartogram/shrinking.py), [partition.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/proportional_cartogram/partition.py).
 
 ---
 

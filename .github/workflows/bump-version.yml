@@ -49,18 +49,14 @@ jobs:
           git commit -m "Bump version to ${{ inputs.version }}"
           git push
 
-      - name: Generate changelog
-        id: changelog
-        uses: scottbrenner/generate-changelog-action@v1
-        if: ${{ inputs.release_notes == '' }}
-
       - name: Create GitHub Release
         id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.version }}
           name: Version ${{ inputs.version }}
-          body: ${{ inputs.release_notes || steps.changelog.outputs.changelog }}
+          body: ${{ inputs.release_notes }}
+          generate_release_notes: ${{ inputs.release_notes == '' }}
           draft: false
           prerelease: ${{ contains(inputs.version, '-') }}
         env:

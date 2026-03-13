@@ -1,6 +1,6 @@
 [project]
 name = "carto-flow"
-version = "0.0.1"
+version = "1.0.0"
 description = "This is a library for creating cartographs."
 authors = [{ name = "FKloosterman", email = "devfakl@gmail.com" }]
 readme = "README.md"

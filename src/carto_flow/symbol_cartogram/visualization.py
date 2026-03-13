@@ -544,26 +544,26 @@ def plot_adjacency_heatmap(
     # ------------------------------------------------------------------
     # C. Resolve sort_by into a permutation
     # ------------------------------------------------------------------
-    perm = np.arange(n)
+    perm: NDArray[np.intp] = np.arange(n)
 
     if sort_by is None:
         pass
     elif isinstance(sort_by, str) and sort_by == "label":
-        perm = np.array(sorted(range(n), key=lambda i: tick_labels[i]))
+        perm = np.array(sorted(range(n), key=lambda i: tick_labels[i]), dtype=np.intp)
     elif isinstance(sort_by, str):
         if _result_for_labels is None:
             raise ValueError("sort_by as a column name is only supported when source is a SymbolCartogram.")
         sort_vals = _find_column(sort_by, _result_for_labels, source_gdf)
-        perm = np.argsort(sort_vals, kind="stable")
+        perm = np.argsort(sort_vals, kind="stable").astype(np.intp)
     else:
         seq = list(sort_by)
         if len(seq) != n:
             raise ValueError(f"sort_by sequence length {len(seq)} does not match matrix size {n}.")
         if seq and isinstance(seq[0], str):
             # Sequence of string sort values → sort regions alphabetically by these values
-            perm = np.array(np.argsort(seq, kind="stable"))
+            perm = np.argsort(seq, kind="stable").astype(np.intp)
         else:
-            perm = np.asarray(seq, dtype=int)
+            perm = np.asarray(seq, dtype=np.intp)
         if len(set(perm.tolist())) != n:
             raise ValueError("sort_by sequence contains duplicate entries.")
 

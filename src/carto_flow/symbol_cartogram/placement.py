@@ -1353,7 +1353,7 @@ class ExponentialMovingStats:
         a = max(self.alpha, 1.0 / self._k) if self._adaptive else self.alpha
         delta = x - self.mean
         self.mean += a * delta
-        self.var = (1 - a) * (self.var + a * delta**2)
+        self.var[:] = (1 - a) * (self.var + a * delta**2)
 
     @property
     def mean_magnitude(self) -> NDArray[np.floating]:

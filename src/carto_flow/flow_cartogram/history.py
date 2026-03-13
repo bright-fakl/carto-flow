@@ -348,11 +348,11 @@ class ConvergenceHistory:
     def __init__(self, capacity: int | None = None):
         """Initialize with optional pre-allocated capacity."""
         cap = capacity if capacity is not None else 0
-        self._iterations = np.empty(cap, dtype=np.int64)
-        self._mean_log_errors = np.empty(cap, dtype=np.float64)
-        self._max_log_errors = np.empty(cap, dtype=np.float64)
-        self._mean_errors_pct = np.empty(cap, dtype=np.float64)
-        self._max_errors_pct = np.empty(cap, dtype=np.float64)
+        self._iterations: np.ndarray = np.empty(cap, dtype=np.int64)
+        self._mean_log_errors: np.ndarray = np.empty(cap, dtype=np.float64)
+        self._max_log_errors: np.ndarray = np.empty(cap, dtype=np.float64)
+        self._mean_errors_pct: np.ndarray = np.empty(cap, dtype=np.float64)
+        self._max_errors_pct: np.ndarray = np.empty(cap, dtype=np.float64)
         self._size = 0
 
     def add(self, iteration: int, errors: MorphErrors) -> None:

@@ -176,32 +176,12 @@ class MorphOptions:
     """
 
     # Parallel computation options
-    threads: int | None = None
-    """Number of threads for parallel computation.
+    parallel: bool | int = True
+    """Control parallel computation across all subsystems.
 
-    If None, uses max(1, cpu_count()-1) threads. Set to a positive integer to use that many threads.
-    For FFT computations, more threads can improve performance on large grids.
-    """
-
-    use_parallel: bool = False
-    """Whether to use parallel computation for geometry operations like area calculation.
-
-    This uses numba's parallelization for certain operations. Note that parallelization
-    can add overhead for small datasets and may not always improve performance.
-    """
-
-    use_parallel_density: bool = False
-    """Whether to use parallel computation for density field calculation.
-
-    This uses joblib's parallelization to distribute the work of calculating the density
-    field across multiple cores. This can significantly improve performance for datasets
-    with many small geometries.
-    """
-
-    density_n_jobs: int | None = None
-    """Number of parallel jobs to use for density field calculation.
-
-    If None, uses all available cores. Set to a positive integer to use that many jobs.
+    - True (default): use all available cores (max(cpu_count()-1, 1) for FFT, all cores for density/areas)
+    - False: serial everywhere (1 FFT thread, no parallel density or area computation)
+    - N (int > 1): use exactly N threads/jobs for FFT, density, and area computation
     """
 
     # Stall detection
@@ -344,10 +324,7 @@ class MorphOptions:
             "progress_message",
             "prescale_components",
             "stall_patience",
-            "threads",
-            "use_parallel",
-            "use_parallel_density",
-            "density_n_jobs",
+            "parallel",
         ]
 
         for field_name in field_names:
@@ -372,18 +349,11 @@ class MorphOptions:
         elif field_name == "use_bounding_box_filter":
             if not isinstance(value, bool):
                 return "use_bounding_box_filter must be a boolean"
-        elif field_name == "threads":
-            if value is not None and (not isinstance(value, int) or value <= 0):
-                return "threads must be a positive integer or None"
-        elif field_name == "use_parallel":
-            if not isinstance(value, bool):
-                return "use_parallel must be a boolean"
-        elif field_name == "use_parallel_density":
-            if not isinstance(value, bool):
-                return "use_parallel_density must be a boolean"
-        elif field_name == "density_n_jobs":
-            if value is not None and (not isinstance(value, int) or (value <= 0 and value != -1)):
-                return "density_n_jobs must be a positive integer, -1 (all cores), or None"
+        elif field_name == "parallel":
+            if not isinstance(value, (bool, int)) or (
+                isinstance(value, int) and not isinstance(value, bool) and value <= 0
+            ):
+                return "parallel must be True, False, or a positive integer"
 
         # Computation parameters
         elif field_name == "dt":

@@ -325,7 +325,7 @@ def morph_geometries(
     flat_geoms = unpack_geometries(geometries)
     # Resolve grid using options
     grid = options.get_grid(options._calculate_bounds_from_geometries(geometries))
-    velocity_computer = VelocityComputerFFTW(grid, Dx=options.Dx, Dy=options.Dy)
+    velocity_computer = VelocityComputerFFTW(grid, Dx=options.Dx, Dy=options.Dy, threads=options.threads)
 
     # Handle landmarks
     flat_landmarks_geoms = unpack_geometries(landmarks) if landmarks is not None else None
@@ -356,7 +356,9 @@ def morph_geometries(
     stalled_acc = 0
 
     msg = "Morph geometries" if options.progress_message is None else options.progress_message
-    pbar = tqdm.trange(options.n_iter, desc=msg, disable=not options.show_progress, miniters=1, mininterval=0)
+    pbar = tqdm.trange(
+        options.n_iter, desc=msg, disable=not options.show_progress, miniters=20, mininterval=2.0, maxinterval=5.0
+    )
 
     for step in pbar:
         # 1. Compute density field
@@ -369,6 +371,9 @@ def morph_geometries(
                 grid,
                 unscaled_target_density,
                 return_geometry_mask=True,
+                use_bounding_box_filter=options.use_bounding_box_filter,
+                use_parallel=options.use_parallel_density,
+                n_jobs=options.density_n_jobs,
             )
             rho /= options.area_scale  # convert to display units (values / display-area)
 
@@ -436,7 +441,7 @@ def morph_geometries(
             )
 
         # 3. Convergence stats
-        current_areas = flat_geoms.compute_areas(use_parallel=True)
+        current_areas = flat_geoms.compute_areas(use_parallel=options.use_parallel)
 
         # Compute error metrics using the structured MorphErrors object
         error_metrics = compute_error_metrics(current_areas, target_areas)

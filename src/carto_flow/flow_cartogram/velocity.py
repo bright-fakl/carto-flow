@@ -239,7 +239,7 @@ class VelocityComputerFFTW:
         if threads is None:
             import multiprocessing
 
-            threads = max(1, multiprocessing.cpu_count() - 1)
+            threads = max(multiprocessing.cpu_count() - 1, 1)
 
         self.ny, self.nx = grid.sy, grid.sx
         self.grid = grid

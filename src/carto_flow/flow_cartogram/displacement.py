@@ -30,7 +30,7 @@ Examples
 from __future__ import annotations
 
 import numpy as np
-from numba import jit, prange
+from numba import njit, prange
 from scipy.ndimage import gaussian_filter, zoom
 from shapely.geometry import MultiPolygon, Polygon
 
@@ -96,7 +96,7 @@ def displace_coords(coords: np.ndarray, grid: Grid, vx: np.ndarray, vy: np.ndarr
 
 
 # Option 1: Numba JIT compilation with uniform grid
-@jit(nopython=True, parallel=True, fastmath=True)
+@njit(parallel=True, fastmath=True, cache=True)
 def displace_coords_numba(
     coords: np.ndarray,
     x_coords: np.ndarray,

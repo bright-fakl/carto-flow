@@ -276,16 +276,16 @@ def load_us_census(
     population: bool = True,
     race: bool = False,
     poverty: bool = False,
+    level: str = "state",
     simplify: float | None = None,
     vintage: int = 2020,
     contiguous_only: bool = True,
 ) -> "geopandas.GeoDataFrame":
     """
-    Load US state boundaries with ACS demographic data from the US Census Bureau.
+    Load US boundaries with ACS demographic data from the US Census Bureau.
 
-    Downloads American Community Survey (ACS) 5-year estimates for US states,
-    projected to the Albers equal-area projection (ESRI:102008). Alaska, Hawaii,
-    and Puerto Rico are excluded.
+    Downloads American Community Survey (ACS) 5-year estimates, projected to the
+    Albers equal-area projection (ESRI:102008).
 
     Parameters
     ----------
@@ -300,29 +300,44 @@ def load_us_census(
         Include poverty status. Adds columns:
         - ``Total Poverty``, ``Below Poverty Level``, ``Above Poverty Level``,
           ``Below Poverty Level %``, ``Above Poverty Level %``
+    level : str, default "state"
+        Geographic level of detail. One of:
+        - ``"state"`` — one row per US state. Adds column ``State Name``.
+        - ``"congressional_district"`` — one row per congressional district.
+          Adds columns ``District Name`` and ``State Name``.
     simplify : float or None, default None
         If given, simplify geometries using this tolerance in meters (units of
         ESRI:102008). A value of 1000 gives a good balance of detail vs. speed.
         ``None`` keeps full-resolution geometries.
     vintage : int, default 2020
         ACS 5-year vintage year.
+    contiguous_only : bool, default True
+        Exclude Alaska, Hawaii, Puerto Rico, and DC.
 
     Returns
     -------
     geopandas.GeoDataFrame
-        US states dataset in ESRI:102008 (Albers equal-area, meters).
+        Dataset in ESRI:102008 (Albers equal-area, meters). Both levels include
+        ``State Abbreviation``, ``Region``, and ``Division`` columns.
 
     Examples
     --------
     >>> from carto_flow.data import load_us_census
     >>> gdf = load_us_census(population=True, race=True, simplify=1000)
     >>> print(gdf["State Name"].head())
+
+    >>> gdf_dist = load_us_census(level="congressional_district", population=True)
+    >>> print(gdf_dist["District Name"].head())
     """
+    if level not in ("state", "congressional_district"):
+        raise ValueError(f"level must be 'state' or 'congressional_district', got {level!r}")
+
     _check_optional_dependency("censusdis", "loading US Census data")
     import censusdis
     import censusdis.data as ced
 
-    variables: dict[str, str] = {"NAME": "State Name"}
+    name_col = "State Name" if level == "state" else "District Name"
+    variables: dict[str, str] = {"NAME": name_col}
     if population:
         variables |= {"B01003_001E": "Population"}
     if poverty:
@@ -340,14 +355,36 @@ def load_us_census(
             "B03002_013E": "Hispanic or Latino",
         }
 
-    gdf = ced.download("acs/acs5", vintage, list(variables.keys()), state="*", with_geometry=True)
-    gdf.rename(columns=variables, inplace=True)
-    gdf = gdf.to_crs("ESRI:102008")
+    if level == "state":
+        gdf = ced.download("acs/acs5", vintage, list(variables.keys()), state="*", with_geometry=True)
+        gdf.rename(columns=variables, inplace=True)
+        gdf = gdf.to_crs("ESRI:102008")
 
-    if contiguous_only:
-        gdf = gdf[~gdf["State Name"].isin(["Alaska", "Hawaii", "Puerto Rico"])]
+        if contiguous_only:
+            gdf = gdf[~gdf["State Name"].isin(["Alaska", "Hawaii", "Puerto Rico"])]
 
-    gdf["State Abbreviation"] = gdf["STATE"].map(censusdis.states.ABBREVIATIONS_FROM_IDS)
+        gdf["State Abbreviation"] = gdf["STATE"].map(censusdis.states.ABBREVIATIONS_FROM_IDS)
+    else:
+        gdf = ced.download(
+            "acs/acs5",
+            vintage,
+            list(variables.keys()),
+            state="*",
+            congressional_district="*",
+            with_geometry=True,
+        )
+        gdf.rename(columns=variables, inplace=True)
+        gdf = gdf.to_crs("ESRI:102008")
+
+        gdf["State Abbreviation"] = gdf["STATE"].map(censusdis.states.ABBREVIATIONS_FROM_IDS)
+        gdf["State Name"] = gdf["STATE"].map(censusdis.states.NAMES_FROM_IDS)
+
+        # Remove non-geographic placeholder districts
+        gdf = gdf[gdf["CONGRESSIONAL_DISTRICT"] != "ZZ"]
+
+        if contiguous_only:
+            gdf = gdf[~gdf["State Abbreviation"].isin(["AK", "HI", "PR", "DC"])]
+
     gdf["Region"] = gdf["STATE"].map(lambda x: REGION_NAMES.get(STATE_REGIONS.get(x or "", ""), None))  # type: ignore[arg-type]
     gdf["Division"] = gdf["STATE"].map(lambda x: DIVISION_NAMES.get(STATE_DIVISIONS.get(x or "", ""), None))  # type: ignore[arg-type]
 

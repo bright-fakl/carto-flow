@@ -49,6 +49,7 @@ Examples
 from typing import Any
 
 import numpy as np
+import shapely
 from numba import jit, prange
 from shapely.geometry import (
     GeometryCollection,
@@ -83,7 +84,7 @@ __all__ = [
 # ============================================================================
 
 
-@jit(nopython=True, fastmath=True)
+@jit(nopython=True, fastmath=True, cache=True)
 def compute_polygon_area_numba(coords: np.ndarray, start: int = 0, size: int = -1) -> float:
     """
     Compute area of a polygon ring using the shoelace formula.
@@ -128,7 +129,7 @@ def compute_polygon_area_numba(coords: np.ndarray, start: int = 0, size: int = -
     return abs(area) * 0.5
 
 
-@jit(nopython=True, parallel=True, fastmath=True)
+@jit(nopython=True, parallel=True, fastmath=True, cache=True)
 def compute_complex_polygon_areas_numba(coords: np.ndarray, polygon_ring_info: np.ndarray) -> np.ndarray:
     """
     Compute areas for polygons with holes and MultiPolygons in parallel.
@@ -471,6 +472,8 @@ class GeometryCoordinateInfo:
         metadata: list[dict],
         ring_info: np.ndarray | None = None,
         polygon_indices: np.ndarray | None = None,
+        ragged_geometry_type: int | None = None,
+        ragged_offsets: tuple | None = None,
     ):
         self.coords = coords
         self.metadata = metadata
@@ -478,6 +481,8 @@ class GeometryCoordinateInfo:
         self._polygon_indices = polygon_indices
         self._cached_areas: np.ndarray | None = None
         self._n_geometries = len(metadata)
+        self.ragged_geometry_type = ragged_geometry_type
+        self.ragged_offsets = ragged_offsets
 
     @property
     def ring_info(self) -> np.ndarray:
@@ -779,23 +784,22 @@ def unpack_geometries(geometries: list[BaseGeometry], precompute_ring_info: bool
         Object containing flattened coordinates, reconstruction metadata,
         and optionally precomputed ring info for area calculations.
     """
-    all_coords = []
-    all_metadata = []
+    geom_array = np.asarray(geometries, dtype=object)
+    geometry_type, flat_coords, offsets = shapely.to_ragged_array(geom_array)
 
+    all_metadata = []
     for geom in geometries:
-        coords, metadata = unpack_geometry(geom)
-        all_coords.append(coords)
+        _, metadata = unpack_geometry(geom)
         all_metadata.append(metadata)
 
-    # Stack all coordinates into single array
-    flat_coords = np.vstack(all_coords) if all_coords else np.empty((0, 2))
+    coord_info = GeometryCoordinateInfo(
+        flat_coords,
+        all_metadata,
+        ragged_geometry_type=int(geometry_type),
+        ragged_offsets=offsets,
+    )
 
-    # Create coordinate info object
-    coord_info = GeometryCoordinateInfo(flat_coords, all_metadata)
-
-    # Precompute ring info if requested
     if precompute_ring_info:
-        # This triggers the lazy computation and caches it
         _ = coord_info.ring_info
 
     return coord_info

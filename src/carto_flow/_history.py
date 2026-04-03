@@ -16,9 +16,11 @@ from __future__ import annotations
 from abc import ABC
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 __all__ = ["BaseSnapshot", "History"]
+
+S = TypeVar("S", bound="BaseSnapshot")
 
 
 @dataclass
@@ -64,7 +66,7 @@ class BaseSnapshot(ABC):
 
 
 @dataclass
-class History:
+class History(Generic[S]):
     """Manages a collection of :class:`BaseSnapshot` objects.
 
     Provides list-like index access, iteration-based lookup, and
@@ -73,17 +75,17 @@ class History:
 
     Attributes
     ----------
-    snapshots : list[BaseSnapshot]
+    snapshots : list[S]
         Snapshots in chronological order.
     """
 
-    snapshots: list[BaseSnapshot] = field(default_factory=list)
+    snapshots: list[S] = field(default_factory=list)
 
-    def add_snapshot(self, snapshot: BaseSnapshot) -> None:
+    def add_snapshot(self, snapshot: S) -> None:
         """Append *snapshot* to the history."""
         self.snapshots.append(snapshot)
 
-    def get_snapshot(self, iteration: int) -> BaseSnapshot | None:
+    def get_snapshot(self, iteration: int) -> S | None:
         """Return the snapshot for *iteration*, or None if not found."""
         for snapshot in self.snapshots:
             if snapshot.iteration == iteration:
@@ -114,7 +116,7 @@ class History:
             raise ValueError(f"No snapshot found for iteration {iteration}")
         return snapshot.get_variable(variable_name)
 
-    def latest(self) -> BaseSnapshot | None:
+    def latest(self) -> S | None:
         """Return the most recent snapshot, or None if empty."""
         return self.snapshots[-1] if self.snapshots else None
 
@@ -147,10 +149,10 @@ class History:
     def __len__(self) -> int:
         return len(self.snapshots)
 
-    def __getitem__(self, index: int | slice) -> BaseSnapshot | list[BaseSnapshot]:
+    def __getitem__(self, index: int | slice) -> S | list[S]:
         return self.snapshots[index]
 
-    def __iter__(self) -> Iterator[BaseSnapshot]:
+    def __iter__(self) -> Iterator[S]:
         return iter(self.snapshots)
 
     def __repr__(self) -> str:

@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
     from .errors import MorphErrors
     from .grid import Grid
-    from .history import CartogramSnapshot, ConvergenceHistory, ErrorRecord, History
+    from .history import CartogramInternalsSnapshot, CartogramSnapshot, ConvergenceHistory, ErrorRecord, History
     from .options import MorphOptions, MorphStatus
     from .plot_results import CartogramPlotResult
 
@@ -80,17 +80,16 @@ class Cartogram:
     """
 
     # Core results
-    snapshots: "History"
+    snapshots: "History[CartogramSnapshot]"
     convergence: Optional["ConvergenceHistory"] = None
     status: "MorphStatus" = None  # type: ignore[assignment]
-
     # Computation metadata
     niterations: int = 0
     duration: float = 0.0
     options: Optional["MorphOptions"] = None
     grid: Optional["Grid"] = None
     target_density: float | None = None
-    internals: Optional["History"] = None
+    internals: Optional["History[CartogramInternalsSnapshot]"] = None
 
     # Source references for GeoDataFrame reconstruction (not shown in repr)
     _source_gdf: Any | None = field(default=None, repr=False)
@@ -128,7 +127,7 @@ class Cartogram:
         if iteration is None:
             snapshot = self.snapshots.latest() if self.snapshots else None
         else:
-            snapshot = self.snapshots.get_snapshot(iteration)  # type: ignore[assignment]
+            snapshot = self.snapshots.get_snapshot(iteration)
         return snapshot.errors if snapshot else None
 
     def get_convergence_errors(self, iteration: int | None = None) -> Optional["ErrorRecord"]:
@@ -171,7 +170,7 @@ class Cartogram:
         if iteration is None:
             snapshot = self.snapshots.latest() if self.snapshots else None
         else:
-            snapshot = self.snapshots.get_snapshot(iteration)  # type: ignore[assignment]
+            snapshot = self.snapshots.get_snapshot(iteration)
         return snapshot.geometry if snapshot else None
 
     def get_density(self, iteration: int | None = None) -> np.ndarray | None:
@@ -190,7 +189,7 @@ class Cartogram:
         if iteration is None:
             snapshot = self.snapshots.latest() if self.snapshots else None
         else:
-            snapshot = self.snapshots.get_snapshot(iteration)  # type: ignore[assignment]
+            snapshot = self.snapshots.get_snapshot(iteration)
         return snapshot.density if snapshot else None
 
     def get_landmarks(self, iteration: int | None = None) -> Any:
@@ -209,7 +208,7 @@ class Cartogram:
         if iteration is None:
             snapshot = self.snapshots.latest() if self.snapshots else None
         else:
-            snapshot = self.snapshots.get_snapshot(iteration)  # type: ignore[assignment]
+            snapshot = self.snapshots.get_snapshot(iteration)
         return snapshot.landmarks if snapshot else None
 
     def get_coords(self, iteration: int | None = None) -> Any:
@@ -228,7 +227,7 @@ class Cartogram:
         if iteration is None:
             snapshot = self.snapshots.latest() if self.snapshots else None
         else:
-            snapshot = self.snapshots.get_snapshot(iteration)  # type: ignore[assignment]
+            snapshot = self.snapshots.get_snapshot(iteration)
         return snapshot.coords if snapshot else None
 
     # ========================================================================
@@ -282,12 +281,12 @@ class Cartogram:
             raise ValueError(f"No snapshot found for iteration {iteration}")
 
         output = self._source_gdf.copy()
-        output.geometry = snapshot.geometry  # type: ignore[attr-defined]
+        output.geometry = snapshot.geometry
 
-        if include_errors and snapshot.errors is not None:  # type: ignore[attr-defined]
-            output["_morph_error_pct"] = snapshot.errors.errors_pct  # type: ignore[attr-defined]
-        if include_density and snapshot.density is not None:  # type: ignore[attr-defined]
-            output["_morph_density"] = snapshot.density  # type: ignore[attr-defined]
+        if include_errors and snapshot.errors is not None:
+            output["_morph_error_pct"] = snapshot.errors.errors_pct
+        if include_density and snapshot.density is not None:
+            output["_morph_density"] = snapshot.density
 
         return output
 

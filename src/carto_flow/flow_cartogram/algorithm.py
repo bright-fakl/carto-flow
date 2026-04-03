@@ -362,9 +362,9 @@ def morph_geometries(
         flat_coords = _normalize_coordinates(coords, coords_format)
 
     # 5. Main algorithm loop with snapshotting
-    snapshots = History()
+    snapshots: History[CartogramSnapshot] = History()
     convergence = ConvergenceHistory(capacity=options.n_iter)
-    internals = History() if options.save_internals else None
+    internals: History[CartogramInternalsSnapshot] | None = History() if options.save_internals else None
 
     # Pre-compute log2 thresholds from user-specified percentage tolerances
     # User specifies tolerance as percentage (e.g., 0.02 for 2%)

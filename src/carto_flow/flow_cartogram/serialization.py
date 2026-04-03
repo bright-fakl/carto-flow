@@ -211,7 +211,7 @@ def load_cartogram(path: str | Path) -> "Cartogram":
         errors=errors,
         density=density,
     )
-    history = History()
+    history: History[CartogramSnapshot] = History()
     history.add_snapshot(snapshot)
 
     # Source GeoDataFrame

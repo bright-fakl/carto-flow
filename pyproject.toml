@@ -60,6 +60,7 @@ dev = [
     "censusdis>=1.2.4",
     "mkdocs-gallery>=0.10.4",
     "nbstripout>=0.8.1",
+    "seaborn>=0.13.0",
 ]
 data = [
     "censusdis>=1.2.4",

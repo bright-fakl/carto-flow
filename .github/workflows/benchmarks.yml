@@ -1,0 +1,40 @@
+name: Update Benchmarks
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Install benchmark dependencies
+        run: uv sync --group benchmark
+
+      - name: Run benchmarks
+        run: |
+          uv run pytest benchmarks/ \
+            --benchmark-enable \
+            --benchmark-json=docs/explanations/benchmark_results.json \
+            --benchmark-sort=name \
+            --benchmark-min-rounds=1 \
+            --benchmark-max-time=600 \
+            -q
+
+      - name: Commit updated benchmark results
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add docs/explanations/benchmark_results.json
+          git diff --cached --quiet || \
+            (git commit -m "chore: update benchmark results" && git push)

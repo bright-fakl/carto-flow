@@ -165,6 +165,13 @@ class MorphOptions:
     save_internals: bool = False
     show_progress: bool = True
     progress_message: str | None = None
+    benchmark: bool = False
+    """Record per-phase wall-clock time inside the morphing loop.
+
+    When True, a Benchmark object is attached to the returned Cartogram
+    as ``cartogram.benchmark``.  Useful for diagnosing which phase
+    dominates runtime and whether parallelism overhead outweighs its benefit.
+    """
 
     # Parallel computation options
     parallel_fft: bool | int = False
@@ -334,6 +341,7 @@ class MorphOptions:
             "save_internals",
             "show_progress",
             "progress_message",
+            "benchmark",
             "prescale_components",
             "stall_patience",
             "parallel_fft",
@@ -426,6 +434,8 @@ class MorphOptions:
                 return "show_progress must be a boolean"
         elif field_name == "progress_message" and value is not None and not isinstance(value, str):
             return "progress_message must be a string or None"
+        elif field_name == "benchmark" and not isinstance(value, bool):
+            return "benchmark must be a boolean"
 
         # Stall detection options
         elif field_name == "stall_patience":

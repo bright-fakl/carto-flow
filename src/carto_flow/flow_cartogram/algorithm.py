@@ -347,7 +347,18 @@ def morph_geometries(
         _parallel_density = True
         _ndensity = min(options.parallel_density, _mp.cpu_count() - 1)
 
+    import time as _time
+
+    from .timings import Benchmark
+
+    _pt: Benchmark | None = Benchmark() if options.benchmark else None
+
     velocity_computer = VelocityComputerFFTW(grid, Dx=options.Dx, Dy=options.Dy, threads=_nfft)
+    if _pt is not None:
+        import os as _os
+
+        _pt.fft_threads = _nfft
+        _pt.density_threads = _ndensity if _ndensity is not None else _os.cpu_count() or 1
 
     # Handle landmarks
     flat_landmarks_geoms = unpack_geometries(landmarks) if landmarks is not None else None
@@ -361,10 +372,19 @@ def morph_geometries(
         coords_format, coords_sz = _detect_coordinate_format(coords)
         flat_coords = _normalize_coordinates(coords, coords_format)
 
+    if _pt is not None:
+        _pt.n_geometries = len(flat_geoms.metadata)
+        _pt.n_vertices = len(flat_geoms.coords)
+        _pt.n_landmark_vertices = len(flat_landmarks_geoms.coords) if flat_landmarks_geoms is not None else 0
+        _pt.n_coord_points = len(flat_coords) if flat_coords is not None else 0
+
     # 5. Main algorithm loop with snapshotting
     snapshots: History[CartogramSnapshot] = History()
     convergence = ConvergenceHistory(capacity=options.n_iter)
     internals: History[CartogramInternalsSnapshot] | None = History() if options.save_internals else None
+
+    if _pt is not None:
+        _pt.setup_s = _time.perf_counter() - start_time
 
     # Pre-compute log2 thresholds from user-specified percentage tolerances
     # User specifies tolerance as percentage (e.g., 0.02 for 2%)
@@ -391,6 +411,8 @@ def morph_geometries(
             # call (~1 ms) vs the Python-loop reconstruct_geometries (~13 ms).
             # Offsets (topology) were computed once in unpack_geometries and
             # remain valid because morphing changes coordinate values only.
+            if _pt is not None:
+                _t0 = _time.perf_counter()
             current_geoms = list(
                 shapely.from_ragged_array(
                     flat_geoms.ragged_geometry_type,
@@ -408,6 +430,9 @@ def morph_geometries(
                 use_parallel=_parallel_density,
                 n_jobs=_ndensity,
             )
+            if _pt is not None:
+                _pt.density_s += _time.perf_counter() - _t0
+                _pt.density_calls += 1
             rho /= options.area_scale  # convert to display units (values / display-area)
 
             # 1b. Optional density modulation (e.g., border extension)
@@ -415,7 +440,11 @@ def morph_geometries(
                 rho = options.density_mod(rho, grid, geom_mask, target_density)
 
             # 1c. Compute baseline velocity field
+            if _pt is not None:
+                _t0 = _time.perf_counter()
             vx, vy = velocity_computer.compute(rho)
+            if _pt is not None:
+                _pt.velocity_s += _time.perf_counter() - _t0
 
             # 1d. Normalize for stability
             vmax = max_velocity_magnitude(vx, vy)
@@ -451,6 +480,8 @@ def morph_geometries(
                 internals.add_snapshot(snapshot)
 
         # 2. Displace geometries
+        if _pt is not None:
+            _t0 = _time.perf_counter()
         max_v = max(max_abs_velocity(vx, vy), 1e-8)
         dt_prime = options.dt * min(grid.dx, grid.dy) / max_v
 
@@ -497,11 +528,22 @@ def morph_geometries(
                 use_parallel=False,
             )
 
+        if _pt is not None:
+            _pt.displacement_s += _time.perf_counter() - _t0
+
         # 3. Convergence stats
+        if _pt is not None:
+            _t0 = _time.perf_counter()
         current_areas = flat_geoms.compute_areas(use_parallel=False)
+        if _pt is not None:
+            _pt.areas_s += _time.perf_counter() - _t0
 
         # Compute error metrics using the structured MorphErrors object
+        if _pt is not None:
+            _t0 = _time.perf_counter()
         error_metrics = compute_error_metrics(current_areas, target_areas)
+        if _pt is not None:
+            _pt.errors_s += _time.perf_counter() - _t0
 
         # Record scalar error metrics for every iteration (lightweight)
         convergence.add(step + 1, error_metrics)
@@ -536,6 +578,8 @@ def morph_geometries(
             or (step + 1) == options.n_iter
             or (options.snapshot_every is not None and step % options.snapshot_every == 0)
         ):
+            if _pt is not None:
+                _t0 = _time.perf_counter()
             snapshot_data = CartogramSnapshot(
                 iteration=step + 1,
                 geometry=reconstruct_geometries(flat_geoms),
@@ -547,6 +591,8 @@ def morph_geometries(
                 density=values_array / (current_areas * options.area_scale),
             )
             snapshots.add_snapshot(snapshot_data)
+            if _pt is not None:
+                _pt.snapshot_s += _time.perf_counter() - _t0
 
         # 5. Display progress using structured error metrics
         pbar.set_postfix_str(
@@ -562,16 +608,38 @@ def morph_geometries(
     # Finalize convergence history (convert to arrays, free list memory)
     convergence.finalize()
 
+    elapsed = time.perf_counter() - start_time
+    if _pt is not None:
+        _pt.total_s = elapsed
+        _pt.niterations = snapshots.latest().iteration  # type: ignore[union-attr]
+        _pt.other_s = max(
+            0.0,
+            _pt.total_s
+            - _pt.setup_s
+            - _pt.density_s
+            - _pt.velocity_s
+            - _pt.displacement_s
+            - _pt.areas_s
+            - _pt.errors_s
+            - _pt.snapshot_s,
+        )
+
     # Create result object
     result = Cartogram(
         snapshots=snapshots,
         convergence=convergence,
         status=status,
         niterations=snapshots.latest().iteration,  # type: ignore[union-attr]
-        duration=time.perf_counter() - start_time,
+        duration=elapsed,
         options=options,
         grid=grid,
         target_density=target_density,
         internals=internals,
+        benchmark=_pt,
     )
+    if _pt is not None:
+        _pt.status = str(status)
+        errors = result.get_errors()
+        _pt.mean_error_pct = round(errors.mean_error_pct, 4) if errors else None
+        _pt.max_error_pct = round(errors.max_error_pct, 4) if errors else None
     return result

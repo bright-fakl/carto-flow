@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from .history import CartogramInternalsSnapshot, CartogramSnapshot, ConvergenceHistory, ErrorRecord, History
     from .options import MorphOptions, MorphStatus
     from .plot_results import CartogramPlotResult
+    from .timings import Benchmark
 
 __all__ = ["Cartogram"]
 
@@ -90,6 +91,7 @@ class Cartogram:
     grid: Optional["Grid"] = None
     target_density: float | None = None
     internals: Optional["History[CartogramInternalsSnapshot]"] = None
+    benchmark: Optional["Benchmark"] = None
 
     # Source references for GeoDataFrame reconstruction (not shown in repr)
     _source_gdf: Any | None = field(default=None, repr=False)

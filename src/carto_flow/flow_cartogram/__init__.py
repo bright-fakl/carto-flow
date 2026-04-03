@@ -175,11 +175,13 @@ from .plot_results import (
     VelocityFieldResult,
     WorkflowConvergencePlotResult,
 )
+from .timings import Benchmark
 from .visualization import DensityPlotOptions, VelocityPlotOptions
 from .workflow import CartogramWorkflow
 
 # Define public API for explicit control over what is exported
 __all__ = [
+    "Benchmark",
     "BoundaryDecay",
     "BoundaryNormalDecay",
     "Cartogram",
@@ -197,7 +199,6 @@ __all__ = [
     "DensitySmooth",
     "DirectionalTensor",
     "ErrorRecord",
-    "Harmonic",
     "LocalizedTensor",
     "ModulatorPreviewResult",
     "MorphErrors",

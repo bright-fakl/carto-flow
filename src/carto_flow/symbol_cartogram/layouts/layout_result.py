@@ -6,14 +6,71 @@ of layout algorithms, and the Transform dataclass for per-geometry transforms.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 if TYPE_CHECKING:
-    from .symbols import Symbol
+    from ..symbols import Symbol
+    from ..tiling import TilingResult
+
+
+@dataclass
+class AlgorithmMetrics:
+    """Final scalar summaries common to all layouts.
+
+    Attributes
+    ----------
+    converged : bool or None
+        Whether the algorithm met its convergence criterion.
+    iterations : int or None
+        Number of iterations executed.
+    final_overlaps : int or None
+        Number of overlapping nearest-neighbour pairs at termination.
+    algorithm : Any
+        Algorithm-specific final scalars (PhysicsMetrics, PackingMetrics,
+        FlowDensityMetrics, CentroidMetrics, GridMetrics, etc.).
+    """
+
+    converged: bool | None = None
+    iterations: int | None = None
+    final_overlaps: int | None = None
+    algorithm: Any = None
+
+
+@dataclass
+class SimulationHistory:
+    """Per-iteration arrays common to all iterative layouts.
+
+    Attributes
+    ----------
+    positions : list[np.ndarray] | None
+        Position snapshots, each of shape ``(n, 2)``.  Only populated
+        when ``save_history=True``.
+    overlaps : np.ndarray | None
+        Per-iteration overlap count.  Shape: ``(n_iters,)``.
+    algorithm : Any
+        Algorithm-specific per-iteration arrays (PhysicsHistory,
+        PackingHistory, or FlowDensityHistory depending on the layout used).
+    """
+
+    positions: list[NDArray[np.floating]] | None = None
+    overlaps: NDArray[np.intp] | None = None
+    algorithm: Any = None
+
+    def __len__(self) -> int:
+        """Number of recorded iterations."""
+        if self.overlaps is not None:
+            return len(self.overlaps)
+        if self.algorithm is not None:
+            for arr in vars(self.algorithm).values():
+                if hasattr(arr, "__len__"):
+                    return len(arr)
+        if self.positions is not None:
+            return len(self.positions)
+        return 0
 
 
 @dataclass(frozen=True)
@@ -105,10 +162,14 @@ class LayoutResult:
         Geographic bounds (xmin, ymin, xmax, ymax).
     crs : str | None
         CRS information as WKT string from source GeoDataFrame.
-    algorithm_info : dict
-        Algorithm-specific metadata.
-    simulation_history : SimulationHistory | None
+    layout_type : str
+        Identifier for the layout algorithm used (e.g. ``"grid"``, ``"physics"``).
+    metrics : AlgorithmMetrics | None
+        Final scalar summaries (converged, iterations, overlaps, algorithm-specific).
+        Populated by all layout types.
+    history : SimulationHistory | None
         Per-iteration diagnostics and optional position snapshots.
+        Only populated by iterative layouts (physics, packing, flow).
 
     """
 
@@ -119,10 +180,30 @@ class LayoutResult:
     sizes: NDArray[np.floating]
     adjacency: NDArray[np.floating]
     bounds: tuple[float, float, float, float]
-    crs: str | None = None  # WKT string to preserve projection info
-    algorithm_info: dict[str, Any] = field(default_factory=dict)
-    simulation_history: Any = None
+    crs: str | None = None
+    layout_type: str = ""
+    metrics: Any = None
+    history: Any = None
     valid_mask: NDArray[np.bool_] | None = None
+    source_indices: NDArray[np.intp] | None = None
+    group_ids: NDArray[np.intp] | None = None
+
+    @property
+    def converged(self) -> bool | None:
+        """Whether the layout algorithm converged."""
+        return self.metrics.converged if self.metrics is not None else None
+
+    @property
+    def iterations(self) -> int | None:
+        """Number of iterations executed."""
+        return self.metrics.iterations if self.metrics is not None else None
+
+    @property
+    def overlaps(self) -> Any:
+        """Per-iteration overlap counts from simulation history."""
+        if self.history is not None:
+            return self.history.overlaps
+        return None
 
     def style(
         self,
@@ -146,7 +227,7 @@ class LayoutResult:
 
         """
         # Import here to avoid circular import
-        from .styling import Styling
+        from ..styling import Styling
 
         if styling is None:
             styling = Styling(**kwargs)
@@ -203,13 +284,6 @@ class LayoutResult:
             if hasattr(self.canonical_symbol, "edge_curves") and self.canonical_symbol.edge_curves:
                 symbol_params["edge_curves"] = self.canonical_symbol.edge_curves
 
-        # Filter algorithm_info to only JSON-safe scalar values.
-        # Non-serializable objects (TilingResult, numpy arrays) are stripped here
-        # and handled separately at the SymbolCartogram level.
-        safe_info = {
-            k: v for k, v in self.algorithm_info.items() if isinstance(v, str | int | float | bool | type(None))
-        }
-
         return {
             "canonical_symbol": {
                 "class": symbol_class,
@@ -222,7 +296,9 @@ class LayoutResult:
             "adjacency": self.adjacency.tolist(),
             "bounds": list(self.bounds),
             "crs": self.crs,
-            "algorithm_info": safe_info,
+            "layout_type": self.layout_type,
+            "source_indices": self.source_indices.tolist() if self.source_indices is not None else None,
+            "group_ids": self.group_ids.tolist() if self.group_ids is not None else None,
         }
 
     @classmethod
@@ -247,7 +323,7 @@ class LayoutResult:
         >>> cartogram = result.style(symbol="circle")
 
         """
-        from .symbols import (
+        from ..symbols import (
             CircleSymbol,
             HexagonSymbol,
             IsohedralTileSymbol,
@@ -301,7 +377,20 @@ class LayoutResult:
         bounds = tuple(data["bounds"])
         crs = data.get("crs")
 
-        return cls(
+        source_indices_raw = data.get("source_indices")
+        source_indices = np.array(source_indices_raw, dtype=np.intp) if source_indices_raw is not None else None
+        group_ids_raw = data.get("group_ids")
+        group_ids = np.array(group_ids_raw, dtype=np.intp) if group_ids_raw is not None else None
+
+        layout_type = data.get("layout_type", "")
+        if layout_type == "grid":
+            result_cls = GridLayoutResult
+        elif layout_type == "mosaic":
+            result_cls = MosaicLayoutResult
+        else:
+            result_cls = LayoutResult
+
+        return result_cls(
             canonical_symbol=canonical_symbol,
             transforms=transforms,
             base_size=data["base_size"],
@@ -310,11 +399,152 @@ class LayoutResult:
             adjacency=adjacency,
             bounds=bounds,
             crs=crs,
-            algorithm_info=data.get("algorithm_info", {}),
+            layout_type=layout_type,
+            source_indices=source_indices,
+            group_ids=group_ids,
         )
+
+
+@dataclass
+class TiledLayoutResult(LayoutResult):
+    """Base for grid and mosaic layouts that carry tiling-specific data.
+
+    Attributes
+    ----------
+    tiling_result : TilingResult | None
+        Tiling polygons, transforms, and adjacency. Set at creation;
+        ``None`` immediately after ``from_serialized()`` until restored by
+        ``SymbolCartogram.load()``.
+    assignments : NDArray[np.intp] | None
+        Per-tile geometry index. Shape ``(n_valid_tiles,)``.
+    """
+
+    tiling_result: TilingResult | None = None
+    assignments: NDArray[np.intp] | None = None
+
+    def plot_tiling(
+        self,
+        cartogram: SymbolCartogram | None = None,
+        ax: plt.Axes | None = None,
+        show_symbols: bool = True,
+        show_assigned: bool = True,
+        show_unassigned: bool = True,
+        assigned_color: str = "#d4e6f1",
+        unassigned_color: str = "#f5f5f5",
+        tile_edgecolor: str = "#999999",
+        tile_linewidth: float = 0.5,
+        tile_alpha: float = 0.5,
+        **kwargs: Any,
+    ) -> TilingPlotResult:
+        """Visualize the tiling grid underlying this layout result.
+
+        Parameters
+        ----------
+        cartogram : SymbolCartogram, optional
+            If provided and ``show_symbols=True``, overlays symbol geometries.
+        ax : plt.Axes, optional
+            Axes to plot on. Created if not provided.
+        show_symbols : bool
+            Overlay symbol geometries. Requires *cartogram*. Default True.
+        show_assigned : bool
+            Show occupied tiles. Default True.
+        show_unassigned : bool
+            Show empty tiles. Default True.
+        **kwargs
+            Forwarded to ``cartogram.plot()`` when ``show_symbols=True``.
+        """
+        import matplotlib.pyplot as plt
+        from matplotlib.collections import PatchCollection
+        from matplotlib.patches import Polygon as MplPolygon
+
+        from ..plot_results import TilingPlotResult
+
+        if self.tiling_result is None:
+            raise ValueError("Tiling data not available (result was deserialised without tiling).")
+
+        if ax is None:
+            _, ax = plt.subplots(1, 1, figsize=(10, 8))
+
+        assigned_set = set(self.assignments.tolist()) if self.assignments is not None else set()
+
+        assigned_patches, unassigned_patches = [], []
+        for i, poly in enumerate(self.tiling_result.polygons):
+            coords = np.array(poly.exterior.coords)
+            patch = MplPolygon(coords, closed=True)
+            (assigned_patches if i in assigned_set else unassigned_patches).append(patch)
+
+        pc_unassigned = None
+        if show_unassigned and unassigned_patches:
+            pc_unassigned = PatchCollection(
+                unassigned_patches,
+                facecolor=unassigned_color,
+                edgecolor=tile_edgecolor,
+                linewidth=tile_linewidth,
+                alpha=tile_alpha,
+            )
+            ax.add_collection(pc_unassigned)
+
+        pc_assigned = None
+        if show_assigned and assigned_patches:
+            pc_assigned = PatchCollection(
+                assigned_patches,
+                facecolor=assigned_color,
+                edgecolor=tile_edgecolor,
+                linewidth=tile_linewidth,
+                alpha=tile_alpha,
+            )
+            ax.add_collection(pc_assigned)
+
+        symbols_result = None
+        if show_symbols and cartogram is not None:
+            symbols_result = cartogram.plot(ax=ax, **kwargs)
+
+        all_coords = np.vstack([np.array(p.exterior.coords) for p in self.tiling_result.polygons])
+        ax.set_xlim(all_coords[:, 0].min(), all_coords[:, 0].max())
+        ax.set_ylim(all_coords[:, 1].min(), all_coords[:, 1].max())
+        ax.set_aspect("equal")
+        ax.set_axis_off()
+        ax.set_title("Tiling Grid")
+
+        return TilingPlotResult(
+            ax=ax,
+            assigned_tiles=pc_assigned,
+            unassigned_tiles=pc_unassigned,
+            symbols=symbols_result,
+        )
+
+
+@dataclass
+class GridLayoutResult(TiledLayoutResult):
+    """Layout result from GridBasedLayout."""
+
+    layout_type: str = "grid"
+
+
+@dataclass
+class MosaicLayoutResult(TiledLayoutResult):
+    """Layout result from MosaicLayout.
+
+    Attributes
+    ----------
+    tiles_gdf : gpd.GeoDataFrame | None
+        Tile-level GeoDataFrame with ``geometry_id`` column.
+    regions_gdf : gpd.GeoDataFrame | None
+        Region-level GeoDataFrame with ``tile_count`` and ``target_count``.
+    counts : NDArray[np.intp] | None
+        Target tile count per geometry, shape ``(n_geometries,)``.
+    """
+
+    layout_type: str = "mosaic"
+    tiles_gdf: Any = None
+    regions_gdf: Any = None
+    counts: NDArray[np.intp] | None = None
 
 
 # Import at end to avoid circular import
 if TYPE_CHECKING:
-    from .result import SymbolCartogram
-    from .styling import Styling
+    import matplotlib.pyplot as plt
+
+    from ..plot_results import TilingPlotResult
+    from ..result import SymbolCartogram
+    from ..styling import Styling

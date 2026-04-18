@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -16,65 +16,9 @@ if TYPE_CHECKING:
     import geopandas as gpd
     import matplotlib.pyplot as plt
 
-    from .layout_result import LayoutResult
-    from .plot_results import SymbolsPlotResult
+    from .layouts import LayoutResult
+    from .plot_results import SymbolsPlotResult, TilingPlotResult
     from .styling import Styling
-
-
-@dataclass
-class SimulationHistory:
-    """Per-iteration diagnostics and optional position snapshots from simulation.
-
-    All array fields share an iteration axis: index *i* corresponds to
-    iteration *i*.  Fields are ``None`` when the simulator does not
-    produce them.
-
-    Attributes
-    ----------
-    positions : list[np.ndarray] | None
-        Position snapshots, each of shape ``(n, 2)``.  Only populated
-        when ``save_history=True``.
-    drift : np.ndarray | None
-        Per-iteration drift (mean relative smoothed displacement).
-        Populated by ``TopologyPreservingSimulator``.  Shape: ``(n_iters,)``.
-    jitter : np.ndarray | None
-        Per-iteration jitter (mean relative displacement std).
-        Populated by ``TopologyPreservingSimulator``.  Shape: ``(n_iters,)``.
-    drift_rate : np.ndarray | None
-        EMA-smoothed derivative of drift (drift[k] - drift[k-1]).
-        Approaches zero when drift plateaus (system converged to stable
-        oscillation).
-        Populated by ``TopologyPreservingSimulator``.  Shape: ``(n_iters,)``.
-    drift_rate_neg_frac : np.ndarray | None
-        Running sign test: EMA of ``1{drift_rate < 0}``.  Approaches 0.5
-        at plateau (equal positive/negative signs), near 1.0 during active
-        convergence (drift predominantly decreasing).
-        Populated by ``TopologyPreservingSimulator``.  Shape: ``(n_iters,)``.
-    velocity : np.ndarray | None
-        Per-iteration max velocity.
-        Populated by ``CirclePhysicsSimulator``.  Shape: ``(n_iters,)``.
-    overlaps : np.ndarray | None
-        Per-iteration overlap count.
-        Populated by both simulators.  Shape: ``(n_iters,)``.
-
-    """
-
-    positions: list[NDArray[np.floating]] | None = None
-    drift: NDArray[np.floating] | None = None
-    jitter: NDArray[np.floating] | None = None
-    drift_rate: NDArray[np.floating] | None = None
-    drift_rate_neg_frac: NDArray[np.floating] | None = None
-    velocity: NDArray[np.floating] | None = None
-    overlaps: NDArray[np.intp] | None = None
-
-    def __len__(self) -> int:
-        """Number of recorded iterations."""
-        for arr in (self.drift, self.jitter, self.drift_rate, self.velocity, self.overlaps):
-            if arr is not None:
-                return len(arr)
-        if self.positions is not None:
-            return len(self.positions)
-        return 0
 
 
 @dataclass
@@ -97,22 +41,16 @@ class SymbolCartogram:
     status : SymbolCartogramStatus
         Computation status (CONVERGED, COMPLETED, ORIGINAL)
 
-    metrics : dict
-        Quality metrics:
+    placement_metrics : dict
+        Placement quality metrics:
         - displacement_mean: Mean distance from original centroid
         - displacement_max: Maximum displacement
         - displacement_std: Standard deviation of displacement
-        - topology_preservation: Fraction of adjacencies preserved (if computed)
-        - iterations: Number of iterations used (free placement)
         - n_skipped: Number of geometries skipped due to null values
-
-    simulation_history : SimulationHistory | None
-        Per-iteration diagnostics and optional position snapshots.
-        ``None`` when no simulation was run (e.g. grid placement).
 
     layout_result : LayoutResult | None
         Immutable layout result (new API). Contains canonical symbol, transforms,
-        and preprocessing data (positions, sizes, adjacency, bounds, crs).
+        preprocessing data, algorithm metrics, and simulation history.
 
     styling : Styling | None
         Styling configuration used (new API).
@@ -124,20 +62,13 @@ class SymbolCartogram:
         Only set when created via create_symbol_cartogram() with the original gdf.
     _valid_mask : np.ndarray | None
         Boolean mask indicating which rows had valid (non-null) values.
-    _tiling_result : Any | None
-        Tiling result for grid layouts (algorithm-specific).
-    _assignments : np.ndarray | None
-        Grid assignments for grid layouts.
 
     """
 
     # Core results
     symbols: gpd.GeoDataFrame
     status: SymbolCartogramStatus = field(default_factory=lambda: SymbolCartogramStatus.COMPLETED)
-    metrics: dict[str, Any] = field(default_factory=dict)
-
-    # Optional simulation history
-    simulation_history: SimulationHistory | None = None
+    placement_metrics: dict[str, Any] = field(default_factory=dict)
 
     # New API fields (layout-styling separation)
     layout_result: LayoutResult | None = field(default=None, repr=False)
@@ -146,8 +77,6 @@ class SymbolCartogram:
     # Source reference (not shown in repr) - for attribute merging
     _source_gdf: Any | None = field(default=None, repr=False)
     _valid_mask: NDArray[np.bool_] | None = field(default=None, repr=False)
-    _tiling_result: Any | None = field(default=None, repr=False)
-    _assignments: NDArray[np.intp] | None = field(default=None, repr=False)
 
     def restyle(
         self,
@@ -203,6 +132,42 @@ class SymbolCartogram:
         new_cartogram._source_gdf = self._source_gdf
         new_cartogram._valid_mask = self._valid_mask
         return new_cartogram
+
+    def plot_tiling(
+        self,
+        ax: plt.Axes | None = None,
+        show_symbols: bool = True,
+        show_assigned: bool = True,
+        show_unassigned: bool = True,
+        assigned_color: str = "#d4e6f1",
+        unassigned_color: str = "#f5f5f5",
+        tile_edgecolor: str = "#999999",
+        tile_linewidth: float = 0.5,
+        tile_alpha: float = 0.5,
+        **kwargs,
+    ) -> TilingPlotResult:
+        """Visualize the tiling grid underlying a grid or mosaic layout.
+
+        Delegates to ``layout_result.plot_tiling()``.  Raises ``ValueError``
+        if the layout is not grid- or mosaic-based.
+        """
+        from .layouts.layout_result import TiledLayoutResult
+
+        if not isinstance(self.layout_result, TiledLayoutResult):
+            raise TypeError("plot_tiling() requires a grid or mosaic layout result.")
+        return self.layout_result.plot_tiling(
+            cartogram=self,
+            ax=ax,
+            show_symbols=show_symbols,
+            show_assigned=show_assigned,
+            show_unassigned=show_unassigned,
+            assigned_color=assigned_color,
+            unassigned_color=unassigned_color,
+            tile_edgecolor=tile_edgecolor,
+            tile_linewidth=tile_linewidth,
+            tile_alpha=tile_alpha,
+            **kwargs,
+        )
 
     def plot(
         self,
@@ -472,6 +437,7 @@ class SymbolCartogram:
     def to_geodataframe(
         self,
         source_gdf: gpd.GeoDataFrame | None = None,
+        level: Literal["tile", "group"] = "tile",
     ) -> gpd.GeoDataFrame:
         """Export symbols as GeoDataFrame with original attributes.
 
@@ -480,18 +446,48 @@ class SymbolCartogram:
         source_gdf : gpd.GeoDataFrame, optional
             Original GeoDataFrame to merge attributes from. If None, uses
             the stored reference from creation time (if available).
+        level : str
+            ``"tile"`` (default): one row per symbol tile, joined to source
+            rows via original_index.
+            ``"group"``: one row per group (requires group_by was used);
+            returns union geometry and tile_count per group.
 
         Returns
         -------
         gpd.GeoDataFrame
             Symbol geometries with original data columns.
 
-        Notes
-        -----
-        If no source_gdf is available (neither passed nor stored), returns
-        just the symbols GeoDataFrame without original attributes.
-
         """
+        import geopandas as gpd
+        from shapely.ops import unary_union
+
+        if level == "group":
+            if "group_index" not in self.symbols.columns:
+                raise ValueError("level='group' requires group_by or tile_count to have been set.")
+            gdf_src = source_gdf if source_gdf is not None else self._source_gdf
+            valid_source = (
+                gdf_src.loc[self._valid_mask].reset_index(drop=True)
+                if (gdf_src is not None and self._valid_mask is not None)
+                else (gdf_src.reset_index(drop=True) if gdf_src is not None else None)
+            )
+            rows = []
+            for g_id in np.unique(self.symbols["group_index"]):
+                mask = self.symbols["group_index"] == g_id
+                geom = unary_union(self.symbols.geometry[mask].values)
+                row: dict = {
+                    "group_index": int(g_id),
+                    "geometry": geom,
+                    "tile_count": int(mask.sum()),
+                }
+                if valid_source is not None:
+                    src_row = valid_source.iloc[int(g_id)]
+                    for col in valid_source.columns:
+                        if col != valid_source.geometry.name:
+                            row[col] = src_row[col]
+                rows.append(row)
+            return gpd.GeoDataFrame(rows, crs=self.symbols.crs)
+
+        # level == "tile" (default)
         # Use provided source_gdf or fall back to stored reference
         gdf = source_gdf if source_gdf is not None else self._source_gdf
 
@@ -500,17 +496,24 @@ class SymbolCartogram:
             return self.symbols.copy()
 
         # Get valid rows from source
-        source_subset = gdf.loc[self._valid_mask].copy() if self._valid_mask is not None else gdf.copy()
+        valid_source = gdf.loc[self._valid_mask].copy() if self._valid_mask is not None else gdf.copy()
+
+        # Join via original_index (supports tile_count expansion)
+        if "original_index" in self.symbols.columns:
+            orig_idx = self.symbols["original_index"].values
+            result = valid_source.iloc[orig_idx].copy()
+        else:
+            result = valid_source.copy()
 
         # Replace geometry with symbols
-        source_subset = source_subset.set_geometry(self.symbols.geometry.values)
+        result = result.set_geometry(self.symbols.geometry.values, crs=self.symbols.crs)
 
         # Add symbol-specific columns
         for col in ["_symbol_x", "_symbol_y", "_symbol_size", "_displacement"]:
             if col in self.symbols.columns:
-                source_subset[col] = self.symbols[col].values
+                result[col] = self.symbols[col].values
 
-        return source_subset
+        return result.reset_index(drop=True)
 
     def save(self, path: str | Path) -> None:
         """Save the symbol cartogram to a JSON file.
@@ -537,7 +540,9 @@ class SymbolCartogram:
 
         data: dict = {
             "status": self.status.value,
-            "metrics": {k: (v.item() if hasattr(v, "item") else v) for k, v in self.metrics.items()},
+            "placement_metrics": {
+                k: (v.item() if hasattr(v, "item") else v) for k, v in self.placement_metrics.items()
+            },
         }
 
         # Symbols GeoDataFrame — stored as GeoJSON FeatureCollection
@@ -568,11 +573,13 @@ class SymbolCartogram:
         if self._valid_mask is not None:
             data["valid_mask"] = self._valid_mask.tolist()
 
-        # Grid layout data: tiling polygons/transforms and symbol assignments.
+        # Grid/mosaic layout data: tiling polygons/transforms and symbol assignments.
         # adjacency is NOT saved — it's only used during assignment (already done)
         # and is not needed by plot_tiling().
-        if self._tiling_result is not None:
-            tr = self._tiling_result
+        from .layouts.layout_result import TiledLayoutResult
+
+        if isinstance(self.layout_result, TiledLayoutResult) and self.layout_result.tiling_result is not None:
+            tr = self.layout_result.tiling_result
             data["tiling_result"] = {
                 "polygons": [p.__geo_interface__ for p in tr.polygons],
                 "transforms": [
@@ -583,8 +590,8 @@ class SymbolCartogram:
                 "canonical_tile": tr.canonical_tile.__geo_interface__,
                 "n_base_vertices": tr.n_base_vertices,
             }
-        if self._assignments is not None:
-            data["assignments"] = self._assignments.tolist()
+            if self.layout_result.assignments is not None:
+                data["assignments"] = self.layout_result.assignments.tolist()
 
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
@@ -621,7 +628,7 @@ class SymbolCartogram:
         import numpy as np
         from shapely.geometry import shape
 
-        from .layout_result import LayoutResult
+        from .layouts import LayoutResult
         from .status import SymbolCartogramStatus
 
         path = Path(path)
@@ -689,15 +696,20 @@ class SymbolCartogram:
         except ValueError:
             status = SymbolCartogramStatus.COMPLETED
 
+        # Restore tiling data onto the layout_result subclass
+        from .layouts.layout_result import TiledLayoutResult
+
+        if tiling_result is not None and isinstance(layout_result, TiledLayoutResult):
+            layout_result.tiling_result = tiling_result
+            layout_result.assignments = assignments
+
         return cls(
             symbols=symbols,
             status=status,
-            metrics=data.get("metrics", {}),
+            placement_metrics=data.get("placement_metrics", data.get("metrics", {})),
             layout_result=layout_result,
             _source_gdf=source_gdf,
             _valid_mask=valid_mask,
-            _tiling_result=tiling_result,
-            _assignments=assignments,
         )
 
     def get_displacement_vectors(self) -> NDArray[np.floating]:

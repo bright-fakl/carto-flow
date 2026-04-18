@@ -3,6 +3,7 @@
 from .base import Layout, _apply_kwargs_to_options, get_layout, register_layout
 from .centroid import CentroidLayout, CentroidLayoutOptions, CentroidMetrics
 from .data_prep import LayoutData, compute_symbol_sizes, prepare_layout_data
+from .flow import FlowDensityHistory, FlowDensityLayout, FlowDensityLayoutOptions, FlowDensityMetrics
 from .grid import GridBasedLayout, GridBasedLayoutOptions, GridMetrics
 from .layout_result import AlgorithmMetrics, LayoutResult, SimulationHistory, Transform
 from .packing import (
@@ -24,6 +25,10 @@ __all__ = [
     "CirclePackingLayoutOptions",
     "CirclePhysicsLayout",
     "CirclePhysicsLayoutOptions",
+    "FlowDensityHistory",
+    "FlowDensityLayout",
+    "FlowDensityLayoutOptions",
+    "FlowDensityMetrics",
     "GridBasedLayout",
     "GridBasedLayoutOptions",
     "GridMetrics",
@@ -44,6 +49,7 @@ __all__ = [
 ]
 
 register_layout("centroid", CentroidLayout)
+register_layout("flow_density", FlowDensityLayout)
 register_layout("grid", GridBasedLayout)
 register_layout("packing", CirclePackingLayout)
 register_layout("physics", CirclePhysicsLayout)

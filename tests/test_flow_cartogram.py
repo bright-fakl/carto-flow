@@ -1,11 +1,14 @@
 """Tests for flow cartogram module."""
 
+import warnings
+
 import geopandas as gpd
 import numpy as np
 import pytest
 from shapely.geometry import box
 
-from carto_flow.flow_cartogram import MorphOptions, morph_gdf
+from carto_flow.flow_cartogram import MorphOptions, morph_gdf, morph_geometries
+from carto_flow.geo_utils import densify_coverage
 
 
 def make_grid_gdf(rows: int = 3, cols: int = 3, seed: int = 42) -> gpd.GeoDataFrame:
@@ -25,6 +28,31 @@ def make_grid_gdf(rows: int = 3, cols: int = 3, seed: int = 42) -> gpd.GeoDataFr
 @pytest.fixture
 def gdf():
     return make_grid_gdf()
+
+
+class TestLongSegmentWarning:
+    """morph_geometries warns about long straight segments (Phase 0.5)."""
+
+    def test_warns_for_coarse_square(self):
+        # A single large square has 1000-unit edges. Default grid_size=256
+        # over these bounds gives cells far smaller than 1000/4, so the
+        # warning should fire.
+        square = [box(0, 0, 1000, 1000)]
+        values = [100]
+        options = MorphOptions(n_iter=1, recompute_every=1)
+
+        with pytest.warns(UserWarning, match="straight segment"):
+            morph_geometries(square, values, options=options)
+
+    def test_no_warning_for_densified_square(self):
+        gdf = gpd.GeoDataFrame(geometry=[box(0, 0, 1000, 1000)])
+        densified = densify_coverage(gdf, max_segment_length=10.0)
+        values = [100]
+        options = MorphOptions(n_iter=1, recompute_every=1)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            morph_geometries(list(densified.geometry), values, options=options)
 
 
 class TestFlowCartogram:

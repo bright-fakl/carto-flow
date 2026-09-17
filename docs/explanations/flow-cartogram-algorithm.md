@@ -216,6 +216,8 @@ Three preset factory methods are available: `MorphOptions.preset_fast()`, `.pres
 
 **Iterative approximation.** The algorithm does not solve the equilibrium condition exactly in one step. Convergence is reached after many iterations, and the result depends on `dt`, `n_iter`, `mean_tol`, and `max_tol`. Tight tolerances may require many iterations; loose tolerances may leave visible residual errors.
 
+**Vertex density.** Because the algorithm displaces vertices rather than edges, a straight segment with no interior vertices cannot bend during the morph. Coverage-simplified input (e.g. `simplify_coverage` at a coarse tolerance) can leave segments many grid cells long, which stalls convergence. `morph_geometries` warns when the longest input segment exceeds 4 grid cells; densify first with `carto_flow.geo_utils.densify_coverage` if you see this warning.
+
 ---
 
 ## References

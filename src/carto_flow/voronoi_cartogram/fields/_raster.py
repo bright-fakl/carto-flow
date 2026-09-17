@@ -513,6 +513,12 @@ class RasterField(BaseField):
                 continue
             poly = polys[0] if len(polys) == 1 else ops_unary_union(polys)
             clipped = sh.intersection(poly, boundary)
+            if clipped.geom_type == "GeometryCollection":
+                # Clipping along the boundary can leave zero-area line/point
+                # parts; keep only the polygonal parts so downstream code
+                # (e.g. shapely.boundary in find_adjacent_pairs) sees a Polygon.
+                parts = [g for g in clipped.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
+                clipped = ops_unary_union(parts) if parts else sh.Polygon()
             cell_polys[i] = clipped if not sh.is_empty(clipped) else Point(self.points[i])
 
         # Smooth pixel staircases: coverage_simplify on shared interior edges only.

@@ -23,6 +23,7 @@ dependencies = [
     "numba>=0.60.0",
     "numpy>=2.0.2",
     "pandas>=2.0.0",
+    "pyarrow>=15",
     "pyfftw>=0.14.0",
     "scipy>=1.13.1",
     "shapely>=2.1.0",
@@ -72,6 +73,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/carto_flow"]
+
+[tool.deptry.per_rule_ignores]
+# pyarrow: used implicitly by geopandas.read_parquet for the bundled datasets.
+# censusdis: only used by scripts/build_census_snapshot.py (extra "data").
+DEP002 = ["pyarrow", "censusdis"]
 
 [tool.mypy]
 files = ["src"]

@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import carto_flow.data as examples
 import carto_flow.symbol_cartogram as smb
 
-us_states = examples.load_us_census(population=True, simplify=200)
+us_states = examples.load_us_census(population=True)
 
 # use a grid-based layout with hexagonal tiling
 # and a square symbol

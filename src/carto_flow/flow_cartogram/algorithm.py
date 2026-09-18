@@ -22,6 +22,7 @@ Examples
 """
 
 import time
+import warnings
 
 import numpy as np
 import shapely
@@ -47,6 +48,30 @@ from .velocity import VelocityComputerFFTW
 __all__ = [
     "morph_geometries",
 ]
+
+
+def _longest_edge_segment_length(geometries) -> float:
+    """Return the longest straight-line segment length across all rings.
+
+    Vectorised over each ring's coordinate array (cheap: only geometries are
+    looped in Python, one ``np.diff``/``np.hypot`` call per ring).
+    """
+    max_len = 0.0
+    for geom in geometries:
+        if geom is None or geom.is_empty:
+            continue
+        polys = geom.geoms if hasattr(geom, "geoms") else [geom]
+        for poly in polys:
+            for ring in (poly.exterior, *poly.interiors):
+                coords = np.asarray(ring.coords)
+                if len(coords) < 2:
+                    continue
+                deltas = np.diff(coords, axis=0)
+                seg_lengths = np.hypot(deltas[:, 0], deltas[:, 1])
+                ring_max = seg_lengths.max()
+                if ring_max > max_len:
+                    max_len = float(ring_max)
+    return max_len
 
 
 # ============================================================================
@@ -326,6 +351,26 @@ def morph_geometries(
     flat_geoms = unpack_geometries(geometries)
     # Resolve grid using options
     grid = options.get_grid(options._calculate_bounds_from_geometries(geometries))
+
+    # Warn if input geometries have segments too long for the grid to bend.
+    # This algorithm moves vertices, not edges, so a straight segment with no
+    # interior vertices cannot bend during the morph. It does not mutate
+    # geometries or add a MorphOptions field: animations rely on vertex
+    # correspondence between snapshots, so densification must be an explicit
+    # pre-processing step (see carto_flow.geo_utils.densify_coverage).
+    _cell_size = max(grid.dx, grid.dy)
+    _longest_segment = _longest_edge_segment_length(geometries)
+    if _longest_segment > 4 * _cell_size:
+        warnings.warn(
+            f"Input geometries contain a straight segment of length "
+            f"{_longest_segment:.1f} (grid units), which exceeds 4 grid cells "
+            f"({_cell_size:.1f} each). Segments with no interior vertices "
+            f"cannot bend during the morph and may prevent convergence. "
+            f"Consider densifying the input with "
+            f"carto_flow.geo_utils.densify_coverage before morphing.",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Resolve parallel settings
     import multiprocessing as _mp

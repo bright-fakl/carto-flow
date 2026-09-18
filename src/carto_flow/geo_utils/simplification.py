@@ -42,7 +42,7 @@ from shapely.geometry import MultiPolygon, Polygon
 if TYPE_CHECKING:
     import geopandas as gpd
 
-__all__ = ["simplify_coverage"]
+__all__ = ["densify_coverage", "simplify_coverage"]
 
 # Minimum Shapely version required for coverage_simplify
 _MIN_SHAPELY_VERSION = (2, 1, 0)
@@ -120,6 +120,7 @@ def simplify_coverage(
     min_island_size: float | None = None,
     min_hole_size: float | None = None,
     simplify_outer: bool = True,
+    max_segment_length: float | None = None,
 ) -> gpd.GeoDataFrame:
     """Simplify polygon geometries while preserving shared boundaries.
 
@@ -149,6 +150,17 @@ def simplify_coverage(
         edges are simplified. If ``False``, only shared interior edges are
         simplified; the outer boundary of the coverage is left unchanged.
         Passed as ``simplify_boundary`` to ``shapely.coverage_simplify``.
+    max_segment_length : float, optional
+        If given, re-densify the simplified geometries with
+        ``shapely.segmentize`` so that no straight segment exceeds this
+        length (CRS linear units). Coverage simplification can leave very
+        long straight edges (e.g. a state border reduced to two or three
+        vertices); algorithms that move vertices rather than edges — such as
+        the flow cartogram morph — cannot bend a segment that has no
+        interior vertices, so long edges stall convergence. ``segmentize``
+        is applied independently per input segment and is deterministic, so
+        edges shared between adjacent polygons stay identical after
+        densification (no new gaps or overlaps are introduced).
 
     Returns
     -------
@@ -214,6 +226,53 @@ def simplify_coverage(
     geom_array = np.array(geoms, dtype=object)
     simplified = shapely.coverage_simplify(geom_array, tolerance, simplify_boundary=simplify_outer)
 
+    if max_segment_length is not None:
+        simplified = shapely.segmentize(simplified, max_segment_length)
+
     result = gdf.copy()
     result.geometry = simplified
+    return result
+
+
+def densify_coverage(gdf: gpd.GeoDataFrame, max_segment_length: float) -> gpd.GeoDataFrame:
+    """Insert vertices so no straight segment exceeds ``max_segment_length``.
+
+    Thin wrapper around ``shapely.segmentize``. Useful after simplification
+    (e.g. ``simplify_coverage``) for algorithms that move vertices rather
+    than edges — such as the flow cartogram morph — which cannot bend a
+    segment that has no interior vertices. Long straight segments (e.g.
+    Wyoming's borders after a 1000 m ``simplify_coverage`` have ~69 km
+    segments) can stall convergence.
+
+    ``segmentize`` is applied independently per input segment and is
+    deterministic, so edges shared between adjacent polygons stay identical
+    after densification — no gaps or overlaps are introduced.
+
+    Parameters
+    ----------
+    gdf : GeoDataFrame
+        Input GeoDataFrame with any geometry type supported by
+        ``shapely.segmentize`` (Polygon, MultiPolygon, LineString, etc.).
+    max_segment_length : float
+        Maximum segment length, in the CRS's linear units.
+
+    Returns
+    -------
+    GeoDataFrame
+        Copy of ``gdf`` with densified geometries. CRS, index, and all
+        non-geometry columns are preserved unchanged.
+
+    Examples
+    --------
+    >>> import geopandas as gpd
+    >>> from shapely.geometry import box
+    >>> from carto_flow.geo_utils.simplification import densify_coverage
+    >>>
+    >>> gdf = gpd.GeoDataFrame(geometry=[box(0, 0, 10, 10)])
+    >>> densified = densify_coverage(gdf, max_segment_length=2)
+    >>> len(densified.geometry.iloc[0].exterior.coords) > 5
+    True
+    """
+    result = gdf.copy()
+    result.geometry = shapely.segmentize(gdf.geometry.to_numpy(), max_segment_length)
     return result

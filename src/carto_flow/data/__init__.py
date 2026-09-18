@@ -5,14 +5,15 @@ This module provides convenience functions to load example datasets without
 requiring users to manually download and manage data files. The datasets are
 either included with the package or downloaded on-demand from reliable sources.
 
-Optional Dependencies
----------------------
-This module has optional dependencies that are not required for the core functionality
-of carto-flow. These dependencies include:
-- censusdis: For accessing US census data (optional, for demographic examples)
-
-If these dependencies are not installed, functions that require them will raise
-a clear ImportError with instructions on how to install the missing packages.
+Census Data
+-----------
+``load_us_census`` reads a bundled snapshot (ACS 2020, GeoParquet) shipped
+inside the package for its default resolution, so that path needs no network
+access, API key, or optional dependency at runtime. Requests outside the
+bundled snapshot (a vintage other than 2020, or a ``simplify`` tolerance
+finer than 1000 m) fall back to a live download via ``censusdis`` (extra
+``data``), which needs a Census API key. See ``load_us_census`` for details
+and ``scripts/build_census_snapshot.py`` to regenerate the bundled snapshot.
 
 State-Region and State-Division Mappings
 ---------------------------------------
@@ -28,7 +29,9 @@ by the US Census Bureau:
 """
 
 import importlib.metadata
+import os
 from importlib.resources import files
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -184,15 +187,6 @@ def _check_optional_dependency(package_name: str, purpose: str) -> None:
         ) from None
 
 
-def _import_optional_module(module_name: str, package_name: str, purpose: str) -> object:
-    """Import an optional module with proper error handling."""
-    _check_optional_dependency(package_name, purpose)
-    try:
-        return __import__(module_name, fromlist=[""])
-    except ImportError as e:
-        raise ImportError(f"Failed to import '{module_name}' module for {purpose}: {e}") from e
-
-
 def load_world() -> "geopandas.GeoDataFrame":
     """
     Load a world countries dataset with population estimates.
@@ -220,8 +214,8 @@ def load_world() -> "geopandas.GeoDataFrame":
     """
     import geopandas as gpd
 
-    path = files("carto_flow.data").joinpath("world.geojson")
-    return gpd.read_file(path)
+    path = files("carto_flow.data").joinpath("world.parquet")
+    return gpd.read_parquet(path)
 
 
 def load_us_states() -> "geopandas.GeoDataFrame":
@@ -245,8 +239,8 @@ def load_us_states() -> "geopandas.GeoDataFrame":
     """
     import geopandas as gpd
 
-    path = files("carto_flow.data").joinpath("us_states.geojson")
-    return gpd.read_file(path)
+    path = files("carto_flow.data").joinpath("us_states.parquet")
+    return gpd.read_parquet(path)
 
 
 def load_sample_cities() -> "geopandas.GeoDataFrame":
@@ -269,8 +263,176 @@ def load_sample_cities() -> "geopandas.GeoDataFrame":
     """
     import geopandas as gpd
 
-    path = files("carto_flow.data").joinpath("cities.geojson")
-    return gpd.read_file(path)
+    path = files("carto_flow.data").joinpath("cities.parquet")
+    return gpd.read_parquet(path)
+
+
+_BUNDLED_VINTAGE = 2020
+_BUNDLED_SIMPLIFY_TOLERANCE = 1000.0
+_BUNDLED_DENSIFY_MAX_SEGMENT_LENGTH = 5000.0
+
+_CENSUS_KEY_INSTRUCTIONS = (
+    "Get a free key at https://api.census.gov/data/key_signup.html and store it in "
+    "~/.censusdis/api_key.txt or set the US_CENSUS_API_KEY environment variable. "
+    "Vintage 2020 at the bundled resolution (simplify=None or simplify >= 1000) needs no key."
+)
+
+
+def _census_variables(level: str, population: bool, poverty: bool, race: bool) -> dict[str, str]:
+    """Map of raw ACS variable code -> friendly column name for the requested groups."""
+    name_col = "State Name" if level == "state" else "District Name"
+    variables: dict[str, str] = {"NAME": name_col}
+    if population:
+        variables |= {"B01003_001E": "Population"}
+    if poverty:
+        variables |= {
+            "B16009_001E": "Total Poverty",
+            "B16009_002E": "Below Poverty Level",
+            "B16009_015E": "Above Poverty Level",
+        }
+    if race:
+        variables |= {
+            "B03002_001E": "Total Race",
+            "B03002_003E": "White",
+            "B03002_004E": "Black or African American",
+            "B03002_006E": "Asian",
+            "B03002_013E": "Hispanic or Latino",
+        }
+    return variables
+
+
+def _has_census_api_key() -> bool:
+    if os.environ.get("US_CENSUS_API_KEY"):
+        return True
+    key_path = Path.home() / ".censusdis" / "api_key.txt"
+    return key_path.exists() and bool(key_path.read_text().strip())
+
+
+def _load_us_census_bundled(
+    level: str, population: bool, poverty: bool, race: bool, simplify: float | None
+) -> "geopandas.GeoDataFrame":
+    """Read the bundled ACS 2020 GeoParquet snapshot (no network, no key)."""
+    import geopandas as gpd
+
+    path = files("carto_flow.data").joinpath(f"us_census_{_BUNDLED_VINTAGE}_{level}.parquet")
+    gdf = gpd.read_parquet(path)
+
+    # For state level, the bundled "State Name" column already carries the
+    # human-readable name (it equals the raw NAME); renaming NAME too would
+    # create a duplicate "State Name" column. For district level, NAME is
+    # the district's own name and is distinct from "State Name".
+    variables = _census_variables(level, population, poverty, race)
+    rename = {k: v for k, v in variables.items() if level != "state" or k != "NAME"}
+    gdf = gdf.rename(columns=rename)
+
+    base_cols = ["STATE", "State Abbreviation", "State Name", "geometry"]
+    if level == "congressional_district":
+        base_cols.insert(1, "CONGRESSIONAL_DISTRICT")
+    gdf = gdf[[*rename.values(), *base_cols]].copy()
+
+    if simplify is not None:
+        from carto_flow.geo_utils.simplification import simplify_coverage
+
+        gdf = simplify_coverage(gdf, tolerance=simplify, max_segment_length=_BUNDLED_DENSIFY_MAX_SEGMENT_LENGTH)
+
+    return gdf
+
+
+def _load_us_census_live(
+    level: str,
+    vintage: int,
+    population: bool,
+    poverty: bool,
+    race: bool,
+    simplify: float | None,
+) -> "geopandas.GeoDataFrame":
+    """Download ACS data live via censusdis (network + API key required)."""
+    _check_optional_dependency("censusdis", "downloading Census data for vintage != 2020 or simplify < 1000 m")
+    try:
+        import censusdis
+        import censusdis.data as ced
+    except ImportError as e:
+        raise ImportError(
+            "The 'censusdis' package is required for downloading Census data for vintage != 2020 "
+            "or simplify < 1000 m, but it could not be imported.\n"
+            "You can install it with:\n"
+            "pip install carto-flow[data]  # to install all optional data dependencies\n"
+            "or\n"
+            "pip install censusdis  # to install just this package"
+        ) from e
+
+    if not _has_census_api_key():
+        raise RuntimeError(f"No US Census API key found. {_CENSUS_KEY_INSTRUCTIONS}")
+
+    variables = _census_variables(level, population, poverty, race)
+    try:
+        if level == "state":
+            gdf = ced.download("acs/acs5", vintage, list(variables.keys()), state="*", with_geometry=True)
+        else:
+            gdf = ced.download(
+                "acs/acs5",
+                vintage,
+                list(variables.keys()),
+                state="*",
+                congressional_district="*",
+                with_geometry=True,
+            )
+    except Exception as e:
+        raise RuntimeError(f"Census data download failed: {e}. {_CENSUS_KEY_INSTRUCTIONS}") from e
+
+    gdf = gdf.rename(columns=variables)
+    gdf = gdf.to_crs("ESRI:102008")
+
+    gdf["State Abbreviation"] = gdf["STATE"].map(censusdis.states.ABBREVIATIONS_FROM_IDS)
+    base_cols = ["STATE", "State Abbreviation", "geometry"]
+    if level == "congressional_district":
+        gdf["State Name"] = gdf["STATE"].map(censusdis.states.NAMES_FROM_IDS)
+        base_cols += ["CONGRESSIONAL_DISTRICT", "State Name"]
+    gdf = gdf[[*variables.values(), *base_cols]].copy()
+
+    if simplify is not None:
+        from carto_flow.geo_utils.simplification import simplify_coverage
+
+        gdf = simplify_coverage(gdf, tolerance=simplify, max_segment_length=_BUNDLED_DENSIFY_MAX_SEGMENT_LENGTH)
+
+    return gdf
+
+
+def _finalize_census_gdf(
+    gdf: "geopandas.GeoDataFrame",
+    level: str,
+    population: bool,
+    poverty: bool,
+    race: bool,
+    contiguous_only: bool,
+) -> "geopandas.GeoDataFrame":
+    """Shared post-processing so the bundled and live paths return identical columns."""
+    if level == "state":
+        if contiguous_only:
+            gdf = gdf[~gdf["State Name"].isin(["Alaska", "Hawaii", "Puerto Rico"])]
+    else:
+        # Remove non-geographic placeholder districts
+        gdf = gdf[gdf["CONGRESSIONAL_DISTRICT"] != "ZZ"]
+
+        if contiguous_only:
+            gdf = gdf[~gdf["State Abbreviation"].isin(["AK", "HI", "PR", "DC"])]
+
+    gdf = gdf.copy()
+
+    gdf["Region"] = gdf["STATE"].map(lambda x: REGION_NAMES.get(STATE_REGIONS.get(x or "", ""), None))  # type: ignore[arg-type]
+    gdf["Division"] = gdf["STATE"].map(lambda x: DIVISION_NAMES.get(STATE_DIVISIONS.get(x or "", ""), None))  # type: ignore[arg-type]
+
+    if population:
+        gdf["Population (Millions)"] = gdf["Population"] / 1e6
+        gdf["Population Density"] = gdf["Population"] / (gdf.area / 1e6)
+    if poverty:
+        gdf["Below Poverty Level %"] = gdf["Below Poverty Level"] / gdf["Total Poverty"]
+        gdf["Above Poverty Level %"] = gdf["Above Poverty Level"] / gdf["Total Poverty"]
+    if race:
+        for key in ("White", "Black or African American", "Asian", "Hispanic or Latino"):
+            gdf[f"{key} %"] = gdf[key] / gdf["Total Race"]
+
+    return gdf
 
 
 def load_us_census(
@@ -285,8 +447,25 @@ def load_us_census(
     """
     Load US boundaries with ACS demographic data from the US Census Bureau.
 
-    Downloads American Community Survey (ACS) 5-year estimates, projected to the
-    Albers equal-area projection (ESRI:102008).
+    For the default vintage (2020) at the bundled resolution (``simplify``
+    ``None`` or ``>= 1000``), this reads a bundled snapshot of the American
+    Community Survey (ACS) 5-year estimates shipped inside the package as
+    GeoParquet: no network access or Census API key is required. Geometries
+    are bundled at 500k cartographic-boundary resolution, coverage-simplified
+    at 1000 m, then densified so no straight segment exceeds 5 km (see
+    ``carto_flow.geo_utils.simplify_coverage`` for why: algorithms that move
+    vertices, like the flow cartogram, cannot bend a segment that has no
+    interior vertices).
+
+    For any other request — a vintage other than 2020, or a ``simplify``
+    tolerance finer than the bundled 1000 m — this falls back to a live
+    download via ``censusdis`` (install with ``pip install carto-flow[data]``),
+    which needs a Census API key (see
+    https://api.census.gov/data/key_signup.html), read from the
+    ``US_CENSUS_API_KEY`` environment variable or ``~/.censusdis/api_key.txt``.
+
+    In both cases the result is projected to the Albers equal-area
+    projection (ESRI:102008) and has the same columns.
 
     Parameters
     ----------
@@ -307,11 +486,16 @@ def load_us_census(
         - ``"congressional_district"`` — one row per congressional district.
           Adds columns ``District Name`` and ``State Name``.
     simplify : float or None, default None
-        If given, simplify geometries using this tolerance in meters (units of
-        ESRI:102008). A value of 1000 gives a good balance of detail vs. speed.
-        ``None`` keeps full-resolution geometries.
+        Simplification tolerance in meters (units of ESRI:102008).
+        ``None`` (default) keeps the source resolution: the bundled 1000 m
+        (already densified to 5 km segments) for vintage 2020, or full
+        resolution for a live download. A value ``>= 1000`` with vintage
+        2020 re-simplifies the bundled geometries locally; any other value
+        (including ``< 1000``) triggers a live download, simplified to that
+        tolerance and densified to 5 km segments.
     vintage : int, default 2020
-        ACS 5-year vintage year.
+        ACS 5-year vintage year. 2020 uses the bundled snapshot (at the
+        bundled resolution); any other vintage triggers a live download.
     contiguous_only : bool, default True
         Exclude Alaska, Hawaii, Puerto Rico, and DC.
 
@@ -321,10 +505,18 @@ def load_us_census(
         Dataset in ESRI:102008 (Albers equal-area, meters). Both levels include
         ``State Abbreviation``, ``Region``, and ``Division`` columns.
 
+    Raises
+    ------
+    ImportError
+        If a live download is needed and ``censusdis`` is not installed.
+    RuntimeError
+        If a live download is needed and no Census API key is found, or the
+        download itself fails.
+
     Examples
     --------
     >>> from carto_flow.data import load_us_census
-    >>> gdf = load_us_census(population=True, race=True, simplify=1000)
+    >>> gdf = load_us_census(population=True, race=True)
     >>> print(gdf["State Name"].head())
 
     >>> gdf_dist = load_us_census(level="congressional_district", population=True)
@@ -333,78 +525,14 @@ def load_us_census(
     if level not in ("state", "congressional_district"):
         raise ValueError(f"level must be 'state' or 'congressional_district', got {level!r}")
 
-    _check_optional_dependency("censusdis", "loading US Census data")
-    import censusdis
-    import censusdis.data as ced
+    use_bundled = vintage == _BUNDLED_VINTAGE and (simplify is None or simplify >= _BUNDLED_SIMPLIFY_TOLERANCE)
 
-    name_col = "State Name" if level == "state" else "District Name"
-    variables: dict[str, str] = {"NAME": name_col}
-    if population:
-        variables |= {"B01003_001E": "Population"}
-    if poverty:
-        variables |= {
-            "B16009_001E": "Total Poverty",
-            "B16009_002E": "Below Poverty Level",
-            "B16009_015E": "Above Poverty Level",
-        }
-    if race:
-        variables |= {
-            "B03002_001E": "Total Race",
-            "B03002_003E": "White",
-            "B03002_004E": "Black or African American",
-            "B03002_006E": "Asian",
-            "B03002_013E": "Hispanic or Latino",
-        }
-
-    if level == "state":
-        gdf = ced.download("acs/acs5", vintage, list(variables.keys()), state="*", with_geometry=True)
-        gdf.rename(columns=variables, inplace=True)
-        gdf = gdf.to_crs("ESRI:102008")
-
-        if contiguous_only:
-            gdf = gdf[~gdf["State Name"].isin(["Alaska", "Hawaii", "Puerto Rico"])]
-
-        gdf["State Abbreviation"] = gdf["STATE"].map(censusdis.states.ABBREVIATIONS_FROM_IDS)
+    if use_bundled:
+        gdf = _load_us_census_bundled(level, population, poverty, race, simplify)
     else:
-        gdf = ced.download(
-            "acs/acs5",
-            vintage,
-            list(variables.keys()),
-            state="*",
-            congressional_district="*",
-            with_geometry=True,
-        )
-        gdf.rename(columns=variables, inplace=True)
-        gdf = gdf.to_crs("ESRI:102008")
+        gdf = _load_us_census_live(level, vintage, population, poverty, race, simplify)
 
-        gdf["State Abbreviation"] = gdf["STATE"].map(censusdis.states.ABBREVIATIONS_FROM_IDS)
-        gdf["State Name"] = gdf["STATE"].map(censusdis.states.NAMES_FROM_IDS)
-
-        # Remove non-geographic placeholder districts
-        gdf = gdf[gdf["CONGRESSIONAL_DISTRICT"] != "ZZ"]
-
-        if contiguous_only:
-            gdf = gdf[~gdf["State Abbreviation"].isin(["AK", "HI", "PR", "DC"])]
-
-    gdf["Region"] = gdf["STATE"].map(lambda x: REGION_NAMES.get(STATE_REGIONS.get(x or "", ""), None))  # type: ignore[arg-type]
-    gdf["Division"] = gdf["STATE"].map(lambda x: DIVISION_NAMES.get(STATE_DIVISIONS.get(x or "", ""), None))  # type: ignore[arg-type]
-
-    if simplify is not None:
-        from carto_flow.geo_utils.simplification import simplify_coverage
-
-        gdf = simplify_coverage(gdf, tolerance=simplify)
-
-    if population:
-        gdf["Population (Millions)"] = gdf["Population"] / 1e6
-        gdf["Population Density"] = gdf["Population"] / (gdf.area / 1e6)
-    if poverty:
-        gdf["Below Poverty Level %"] = gdf["Below Poverty Level"] / gdf["Total Poverty"]
-        gdf["Above Poverty Level %"] = gdf["Above Poverty Level"] / gdf["Total Poverty"]
-    if race:
-        for key in ("White", "Black or African American", "Asian", "Hispanic or Latino"):
-            gdf[f"{key} %"] = gdf[key] / gdf["Total Race"]
-
-    return gdf
+    return _finalize_census_gdf(gdf, level, population, poverty, race, contiguous_only)
 
 
 def load_us_state_population() -> "pandas.DataFrame":

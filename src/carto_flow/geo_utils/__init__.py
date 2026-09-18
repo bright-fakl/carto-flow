@@ -29,6 +29,8 @@ find_adjacent_pairs
     Find touching geometry pairs using buffered intersection.
 simplify_coverage
     Simplify polygon geometries while preserving shared boundaries.
+densify_coverage
+    Insert vertices so no straight segment exceeds a given length.
 
 Notes
 -----
@@ -85,13 +87,14 @@ from .geometry import (
     unpack_geometries,
     unpack_geometry,
 )
-from .simplification import simplify_coverage
+from .simplification import densify_coverage, simplify_coverage
 
 # Define public API for explicit control over what is exported
 __all__ = [
     "GeometryCoordinateInfo",
     "compute_complex_polygon_areas_numba",
     "compute_polygon_area_numba",
+    "densify_coverage",
     "find_adjacent_pairs",
     "reconstruct_geometries",
     "reconstruct_geometry",

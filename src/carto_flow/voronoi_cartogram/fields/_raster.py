@@ -10,7 +10,7 @@ from shapely.errors import ShapelyError
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
-from ._base import BaseField, _extract_exact_cells, _keep_polygonal
+from ._base import BaseField, _extract_exact_cells, _keep_polygonal, drop_sliver_holes
 
 # Keep every power-diagram cell non-empty when extracting the final cells
 # (see ``RasterField._nonempty_offsets``).  Module-level constants rather than
@@ -407,7 +407,7 @@ class RasterField(BaseField):
                     polys = [g for g in getattr(vp, "geoms", [vp]) if g.geom_type == "Polygon"]
                     valid_parts.extend(polys)
             new_geom = unary_union(valid_parts) if valid_parts else self._current_boundary
-        self._current_boundary = new_geom
+        self._current_boundary = drop_sliver_holes(new_geom)
         sh.prepare(self._current_boundary)
         self._elastic_active_mask = sh.contains_xy(self._current_boundary, self._grid_pts_x, self._grid_pts_y)
         # Keep adhesion snap target aligned with the deformed boundary so that
@@ -485,6 +485,9 @@ class RasterField(BaseField):
         boundary = boundary if boundary is not None else self._current_boundary
         half_dx = dx / 2.0
         half_dy = dy / 2.0
+        # A cell that clips to less than a millionth of a pixel is not a cell.
+        min_cell_area = 1e-6 * dx * dy
+        grid_size = 1e-6 * min(dx, dy)
 
         x_edges = np.empty(nx + 1)
         x_edges[0] = x_coords[0] - half_dx
@@ -531,6 +534,31 @@ class RasterField(BaseField):
             # polygonal parts so downstream code (shapely.boundary in
             # find_adjacent_pairs, coverage_simplify below) sees a Polygon.
             clipped = _keep_polygonal(clipped)
+            if clipped.area <= min_cell_area < poly.area:
+                # The clip lost a cell that owns pixels.  This should not happen
+                # now that the boundary is cleaned of degenerate rings (see
+                # drop_sliver_holes), but never report a phantom point cell for
+                # a cell that really is inside the boundary: retry on a coarse
+                # precision grid, and otherwise keep the raw pixel union.
+                # (A cell whose pixels genuinely lie outside the boundary -- the
+                # NN fill labels those too -- is left as the empty clip.)
+                fallback = how = None
+                retry = _keep_polygonal(
+                    sh.intersection(sh.set_precision(poly, grid_size), sh.set_precision(boundary, grid_size))
+                )
+                if retry.area > min_cell_area:
+                    fallback, how = retry, "reduced-precision clip"
+                elif sh.covers(boundary, poly):
+                    fallback, how = poly, "raw pixel union"
+                if fallback is not None:
+                    warnings.warn(
+                        f"raster cell extraction failed for seed {i} ({int(mask.sum())} pixel(s)): "
+                        f"clipping to the boundary collapsed the cell to a zero-area "
+                        f"{clipped.geom_type.lower()}; falling back to the {how}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                    clipped = fallback
             cell_polys[i] = clipped if not sh.is_empty(clipped) else Point(self.points[i])
 
         # Smooth pixel staircases: coverage_simplify on shared interior edges only.

@@ -268,7 +268,7 @@ class GridBasedLayout(Layout):
 
             # Flatten to N-level (item k → tile_idx) in source_indices order
             geom_counters = np.zeros(G_full, dtype=np.intp)
-            assignments = np.empty(len(data.source_indices), dtype=np.intp)
+            assignments: np.ndarray = np.empty(len(data.source_indices), dtype=np.intp)
             for k, g in enumerate(data.source_indices.tolist()):
                 assignments[k] = geom_tiles[g][geom_counters[g]]
                 geom_counters[g] += 1

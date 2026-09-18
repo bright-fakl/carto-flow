@@ -6,6 +6,7 @@ from .data_prep import LayoutData, compute_symbol_sizes, prepare_layout_data
 from .flow import FlowDensityHistory, FlowDensityLayout, FlowDensityLayoutOptions, FlowDensityMetrics
 from .grid import GridBasedLayout, GridBasedLayoutOptions, GridMetrics
 from .layout_result import AlgorithmMetrics, LayoutResult, SimulationHistory, Transform
+from .mosaic import HungarianOptions, MosaicLayout, MosaicLayoutOptions, MosaicMetrics
 from .packing import (
     CirclePackingAdvancedOptions,
     CirclePackingLayout,
@@ -32,9 +33,13 @@ __all__ = [
     "GridBasedLayout",
     "GridBasedLayoutOptions",
     "GridMetrics",
+    "HungarianOptions",
     "Layout",
     "LayoutData",
     "LayoutResult",
+    "MosaicLayout",
+    "MosaicLayoutOptions",
+    "MosaicMetrics",
     "PackingHistory",
     "PackingMetrics",
     "PhysicsHistory",
@@ -51,6 +56,7 @@ __all__ = [
 register_layout("centroid", CentroidLayout)
 register_layout("flow_density", FlowDensityLayout)
 register_layout("grid", GridBasedLayout)
+register_layout("mosaic", MosaicLayout)
 register_layout("packing", CirclePackingLayout)
 register_layout("physics", CirclePhysicsLayout)
 register_layout("topology", CirclePackingLayout)  # backward-compat alias

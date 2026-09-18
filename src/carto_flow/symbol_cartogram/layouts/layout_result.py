@@ -430,10 +430,14 @@ class TiledLayoutResult(LayoutResult):
         show_symbols: bool = True,
         show_assigned: bool = True,
         show_unassigned: bool = True,
+        show_pool: bool = False,
         assigned_color: str = "#d4e6f1",
         unassigned_color: str = "#f5f5f5",
+        core_edgecolor: str = "#e6972a",
+        ring_edgecolor: str = "#d9534f",
         tile_edgecolor: str = "#999999",
         tile_linewidth: float = 0.5,
+        pool_linewidth: float = 1.5,
         tile_alpha: float = 0.5,
         **kwargs: Any,
     ) -> TilingPlotResult:
@@ -451,6 +455,19 @@ class TiledLayoutResult(LayoutResult):
             Show occupied tiles. Default True.
         show_unassigned : bool
             Show empty tiles. Default True.
+        show_pool : bool
+            Use edge colour to mark solver-pool membership on every tile
+            (``MosaicLayoutResult`` only). Core tiles get *core_edgecolor*
+            and extra-ring tiles get *ring_edgecolor* regardless of whether
+            they are assigned; tiles outside the pool keep *tile_edgecolor*.
+            Default False.
+        core_edgecolor : str
+            Edge colour for core tiles when *show_pool* = True. Default amber.
+        ring_edgecolor : str
+            Edge colour for extra-ring tiles when *show_pool* = True.
+            Default salmon.
+        pool_linewidth : float
+            Line width for pool-tile borders. Default 1.5.
         **kwargs
             Forwarded to ``cartogram.plot()`` when ``show_symbols=True``.
         """
@@ -468,34 +485,78 @@ class TiledLayoutResult(LayoutResult):
 
         assigned_set = set(self.assignments.tolist()) if self.assignments is not None else set()
 
-        assigned_patches: list[MplPolygon] = []
-        unassigned_patches: list[MplPolygon] = []
+        # Pool membership sets (MosaicLayoutResult only)
+        core_set_vis: set[int] = set()
+        ring_set_vis: set[int] = set()
+        if show_pool:
+            pool_indices = getattr(self, "pool_tile_indices", None)
+            if pool_indices is not None:
+                pool_set = set(pool_indices.tolist())
+                core_indices = getattr(self, "core_tile_indices", None)
+                if core_indices is not None:
+                    core_set_vis = set(core_indices.tolist())
+                    ring_set_vis = pool_set - core_set_vis
+                else:
+                    core_set_vis = pool_set
+
+        # Classify each tile into one of five buckets:
+        #   outside_unassigned, core_unassigned, ring_unassigned,
+        #   core_assigned, ring_assigned
+        buckets: dict[str, list[MplPolygon]] = {
+            "outside_unassigned": [],
+            "core_unassigned": [],
+            "ring_unassigned": [],
+            "core_assigned": [],
+            "ring_assigned": [],
+        }
         for i, poly in enumerate(self.tiling_result.polygons):
             coords = np.array(poly.exterior.coords)
             patch = MplPolygon(coords, closed=True)
-            (assigned_patches if i in assigned_set else unassigned_patches).append(patch)
+            is_assigned = i in assigned_set
+            if i in core_set_vis:
+                buckets["core_assigned" if is_assigned else "core_unassigned"].append(patch)
+            elif i in ring_set_vis:
+                buckets["ring_assigned" if is_assigned else "ring_unassigned"].append(patch)
+            elif is_assigned:
+                # Assigned but pool membership unknown (non-mosaic result).
+                buckets["core_assigned"].append(patch)
+            else:
+                buckets["outside_unassigned"].append(patch)
 
+        def _pc(patches: list[MplPolygon], facecolor: str, edgecolor: str, linewidth: float) -> PatchCollection | None:
+            if not patches:
+                return None
+            pc = PatchCollection(
+                patches,
+                facecolor=facecolor,
+                edgecolor=edgecolor,
+                linewidth=linewidth,
+                alpha=tile_alpha,
+            )
+            ax.add_collection(pc)
+            return pc
+
+        # Draw order: outside -> ring -> core (pool membership visible through z-order)
         pc_unassigned = None
-        if show_unassigned and unassigned_patches:
-            pc_unassigned = PatchCollection(
-                unassigned_patches,
-                facecolor=unassigned_color,
-                edgecolor=tile_edgecolor,
-                linewidth=tile_linewidth,
-                alpha=tile_alpha,
-            )
-            ax.add_collection(pc_unassigned)
+        if show_unassigned:
+            pc_unassigned = _pc(buckets["outside_unassigned"], unassigned_color, tile_edgecolor, tile_linewidth)
 
-        pc_assigned = None
-        if show_assigned and assigned_patches:
-            pc_assigned = PatchCollection(
-                assigned_patches,
-                facecolor=assigned_color,
-                edgecolor=tile_edgecolor,
-                linewidth=tile_linewidth,
-                alpha=tile_alpha,
+        pc_assigned = pc_core = pc_ring = None
+        if show_pool:
+            pc_ring = _pc(buckets["ring_unassigned"], unassigned_color, ring_edgecolor, pool_linewidth)
+            if show_assigned:
+                _pc(buckets["ring_assigned"], assigned_color, ring_edgecolor, pool_linewidth)
+            pc_core = _pc(buckets["core_unassigned"], unassigned_color, core_edgecolor, pool_linewidth)
+            if show_assigned:
+                # pc_assigned stays None: assigned tiles are split across core and ring.
+                _pc(buckets["core_assigned"], assigned_color, core_edgecolor, pool_linewidth)
+        elif show_assigned:
+            pc_assigned = _pc(
+                buckets["core_assigned"] + buckets["ring_assigned"],
+                assigned_color,
+                tile_edgecolor,
+                tile_linewidth,
             )
-            ax.add_collection(pc_assigned)
 
         symbols_result = None
         if show_symbols and cartogram is not None:
@@ -512,6 +573,8 @@ class TiledLayoutResult(LayoutResult):
             ax=ax,
             assigned_tiles=pc_assigned,
             unassigned_tiles=pc_unassigned,
+            core_tiles=pc_core,
+            ring_tiles=pc_ring,
             symbols=symbols_result,
         )
 
@@ -535,12 +598,20 @@ class MosaicLayoutResult(TiledLayoutResult):
         Region-level GeoDataFrame with ``tile_count`` and ``target_count``.
     counts : NDArray[np.intp] | None
         Target tile count per geometry, shape ``(n_geometries,)``.
+    core_tile_indices : NDArray[np.intp] | None
+        Indices of tiles whose overlap with the study union reached
+        ``min_overlap_frac`` (the calibrated core pool).
+    pool_tile_indices : NDArray[np.intp] | None
+        Indices of all tiles in the solver pool (core + extra rings).
+        Useful for visualizing which tiles were available to the solver.
     """
 
     layout_type: str = "mosaic"
     tiles_gdf: Any = None
     regions_gdf: Any = None
     counts: NDArray[np.intp] | None = None
+    core_tile_indices: NDArray[np.intp] | None = None
+    pool_tile_indices: NDArray[np.intp] | None = None
 
 
 # Import at end to avoid circular import

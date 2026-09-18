@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike, NDArray
 
+from ...geo_utils.prescale import components_from_adjacency
 from ..adjacency import compute_adjacency
 from ..options import AdjacencyMode
 
@@ -73,6 +74,10 @@ class LayoutData:
     geometry_positions: NDArray[np.floating] | None = None
     source_indices: NDArray[np.intp] | None = None
     group_ids: NDArray[np.intp] | None = None
+    counts_G: NDArray[np.int32] | None = None
+    sizes_G: NDArray[np.floating] | None = None
+    components: list[list[int]] | None = None
+    component_labels: NDArray[np.intp] | None = None
 
 
 def compute_symbol_sizes(
@@ -166,6 +171,7 @@ def prepare_layout_data(
     size_normalization: Literal["max", "total"] = "max",
     tile_size_expansion: Literal["shared", "copied"] = "copied",
     collapse_group: float = 0.0,
+    pre_scale: bool = False,
 ) -> LayoutData:
     """Prepare data for layout algorithms.
 
@@ -236,6 +242,11 @@ def prepare_layout_data(
         unchanged so that ``origin_weight`` in physics layouts can attract
         symbols back toward geography. Only has effect when ``group_by`` or
         ``tile_count`` is set. Default: 0.0.
+    pre_scale : bool
+        Uniformly scale each geographically connected component so its area
+        matches its share of the data (``tile_count`` if given, else ``size``)
+        before any layout step. No effect for single-component inputs.
+        Default: False.
 
     Returns
     -------
@@ -333,6 +344,33 @@ def prepare_layout_data(
 
     G = len(gdf)
 
+    # 4b. Optional prescaling of connected components
+    if pre_scale:
+        import shapely
+
+        from ...geo_utils.prescale import prescale_connected_components
+
+        _, components = components_from_adjacency(adjacency_G)
+        if len(components) > 1:
+            if tile_count is not None:
+                ps_values = np.asarray(gdf[tile_count].to_numpy(), dtype=float)
+            elif size is not None:
+                ps_values = np.asarray(gdf[size].to_numpy(), dtype=float)
+            else:
+                ps_values = np.ones(G, dtype=float)
+            total_area = float(geometry_areas.sum())
+            target_density = float(ps_values.sum()) / total_area if total_area > 0 else 1.0
+            prescaled = prescale_connected_components(
+                list(gdf.geometry),
+                ps_values,
+                target_density,
+                components=components,
+            )
+            gdf = gdf.copy()
+            gdf.geometry = [shapely.make_valid(g) for g in prescaled]
+            geometry_areas = np.array([g.area for g in gdf.geometry])
+            geometry_positions = np.array([[g.centroid.x, g.centroid.y] for g in gdf.geometry])
+
     # 5. tile_count expansion
     source_indices = None
     if tile_count is not None:
@@ -377,15 +415,26 @@ def prepare_layout_data(
     else:
         effective_ucr = unit_cell_radius
 
+    norm_factor = 1.0
     if size_normalization == "total":
         current_total = float(np.pi * np.sum(sizes**2))
         target_total = float(np.sum(geometry_areas))
         if current_total > 0:
-            sizes = sizes * float(np.sqrt(target_total / current_total))
+            norm_factor = float(np.sqrt(target_total / current_total))
     else:  # "max"
         max_size = float(sizes.max())
         if max_size > 0:
-            sizes = sizes * (effective_ucr / max_size)
+            norm_factor = float(effective_ucr / max_size)
+    sizes = sizes * norm_factor
+
+    # 5c. G-level counts/sizes and connected components, for layouts that
+    # operate on geometries rather than expanded tiles (e.g. mosaic, grid).
+    counts_G_out = None
+    sizes_G_out = None
+    if tile_count is not None:
+        counts_G_out = counts
+        sizes_G_out = sizes_G * norm_factor
+    component_labels_out, components_out = components_from_adjacency(adjacency_G)
 
     # 6. group_by / tile_count group encoding — always expanded to N-level
     # When tile_count is set, each geometry is its own group: group k = geometry k.
@@ -432,4 +481,8 @@ def prepare_layout_data(
         geometry_positions=geometry_positions,
         source_indices=source_indices,
         group_ids=group_ids,
+        counts_G=counts_G_out,
+        sizes_G=sizes_G_out,
+        components=components_out,
+        component_labels=component_labels_out,
     )

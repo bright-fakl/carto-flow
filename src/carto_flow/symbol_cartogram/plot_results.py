@@ -167,11 +167,19 @@ class TilingPlotResult:
     ax : plt.Axes
         The axes containing all artists.
     assigned_tiles : PatchCollection or None
-        ``PatchCollection`` for tiles that have a region assigned.  ``None``
-        when *show_assigned* = ``False`` or no assigned tiles exist.
+        Tiles that have a region assigned.  ``None`` when *show_assigned* =
+        ``False``, when no assigned tiles exist, or when *show_pool* =
+        ``True`` (assigned tiles are then split across *core_tiles* and
+        *ring_tiles*).
     unassigned_tiles : PatchCollection or None
-        ``PatchCollection`` for empty tiles.  ``None`` when
+        Empty tiles outside the solver pool.  ``None`` when
         *show_unassigned* = ``False`` or all tiles are assigned.
+    core_tiles : PatchCollection or None
+        Unassigned core tiles (inside the study union). Only populated
+        when *show_pool* = ``True`` on a ``MosaicLayoutResult``.
+    ring_tiles : PatchCollection or None
+        Unassigned extra-ring tiles (outside the study union, added as reserve).
+        Only populated when *show_pool* = ``True`` on a ``MosaicLayoutResult``.
     symbols : SymbolsPlotResult or None
         Result from the symbol overlay when *show_symbols* = ``True``.
         ``None`` otherwise.
@@ -180,6 +188,8 @@ class TilingPlotResult:
     ax: plt.Axes
     assigned_tiles: PatchCollection | None
     unassigned_tiles: PatchCollection | None
+    core_tiles: PatchCollection | None = None
+    ring_tiles: PatchCollection | None = None
     symbols: SymbolsPlotResult | None = None
 
 

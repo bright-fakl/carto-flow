@@ -343,7 +343,7 @@ def morph_geometries(
 
     # PRE-SCALING (Feature 1 — remove this block to disable)
     if options.prescale_components:
-        from .prescale import prescale_connected_components
+        from ..geo_utils.prescale import prescale_connected_components
 
         geometries = list(prescale_connected_components(geometries, values_array, unscaled_target_density))
 

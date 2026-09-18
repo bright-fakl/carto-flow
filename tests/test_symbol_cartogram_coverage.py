@@ -57,13 +57,15 @@ class TestSymbolCartogramCoverage:
         assert result.status == SymbolCartogramStatus.COMPLETED
 
         # Test metrics property
-        assert result.metrics is not None
-        assert "displacement_mean" in result.metrics
-        assert "displacement_max" in result.metrics
-        assert "displacement_std" in result.metrics
+        assert result.placement_metrics is not None
+        assert "displacement_mean" in result.placement_metrics
+        assert "displacement_max" in result.placement_metrics
+        assert "displacement_std" in result.placement_metrics
 
-        # Test simulation_history property (when not saved)
-        assert result.simulation_history is None
+        # simulation_history is always populated for physics-based layouts
+        # (overlaps and algorithm diagnostics are always recorded)
+        assert result.layout_result.history is not None
+        assert result.layout_result.history.positions is None  # save_history=False
 
     def test_compute_adjacency_binary_mode(self):
         """Test compute_adjacency with binary mode."""

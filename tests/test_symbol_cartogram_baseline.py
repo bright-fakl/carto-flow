@@ -63,9 +63,9 @@ class TestCurrentAPIContract:
         assert "_symbol_size" in result.symbols.columns
         assert "_displacement" in result.symbols.columns
         assert result.status is not None
-        assert result.metrics is not None
-        assert "displacement_mean" in result.metrics
-        assert "displacement_max" in result.metrics
+        assert result.placement_metrics is not None
+        assert "displacement_mean" in result.placement_metrics
+        assert "displacement_max" in result.placement_metrics
 
     def test_uniform_size_mode(self):
         """Uniform sizing (no value_column) creates equal-sized symbols."""
@@ -120,7 +120,7 @@ class TestCurrentAPIContract:
         )
 
         assert len(result.symbols) == len(gdf)
-        assert result.metrics is not None
+        assert result.placement_metrics is not None
 
     def test_single_geometry(self):
         """Single geometry returns immediately without simulation."""
@@ -133,8 +133,8 @@ class TestCurrentAPIContract:
         result = create_symbol_cartogram(gdf, "population", show_progress=False)
 
         assert len(result.symbols) == 1
-        assert result.status == SymbolCartogramStatus.COMPLETED
-        assert result.metrics["displacement_mean"] == 0.0
+        assert result.status == SymbolCartogramStatus.CONVERGED
+        assert result.placement_metrics["displacement_mean"] == 0.0
 
     def test_null_values_skipped(self):
         """Null values are skipped with warning."""
@@ -152,7 +152,7 @@ class TestCurrentAPIContract:
             )
 
         assert len(result.symbols) == 4
-        assert result.metrics["n_skipped"] == 1
+        assert result.placement_metrics["n_skipped"] == 1
 
     def test_empty_gdf_raises(self):
         """Empty GeoDataFrame raises ValueError."""
@@ -184,33 +184,40 @@ class TestCurrentAPIContract:
             save_history=True,
         )
 
-        assert result.simulation_history is not None
-        assert result.simulation_history.positions is not None
-        assert len(result.simulation_history.positions) > 0
+        assert result.layout_result.history is not None
+        assert result.layout_result.history.positions is not None
+        assert len(result.layout_result.history.positions) > 0
 
-    def test_presets_return_dicts(self):
-        """All presets are callable and produce valid kwarg dicts."""
+    def test_preset_classmethods(self):
+        """CirclePackingLayout preset classmethods return configured instances."""
+        from carto_flow.symbol_cartogram import CirclePackingLayout
+
+        for name in ("centroid", "dorling", "geographic", "dorling_grouped", "geographic_grouped"):
+            layout = getattr(CirclePackingLayout, name)()
+            assert isinstance(layout, CirclePackingLayout)
+
+    def test_preset_functions_importable(self):
+        """Named cartogram functions are importable from the top-level package."""
         from carto_flow.symbol_cartogram import (
-            preset_demers,
-            preset_dorling,
-            preset_fast,
-            preset_quality,
-            preset_tile_map,
-            preset_topology_preserving,
+            centroid_cartogram,
+            demers_cartogram,
+            dorling_cartogram,
+            dorling_grouped_cartogram,
+            geographic_cartogram,
+            geographic_grouped_cartogram,
+            tile_map_cartogram,
         )
 
-        presets = [
-            preset_dorling,
-            preset_topology_preserving,
-            preset_demers,
-            preset_tile_map,
-            preset_fast,
-            preset_quality,
-        ]
-        for preset_fn in presets:
-            kwargs = preset_fn()
-            assert isinstance(kwargs, dict)
-            assert "layout" in kwargs
+        for fn in (
+            centroid_cartogram,
+            demers_cartogram,
+            dorling_cartogram,
+            dorling_grouped_cartogram,
+            geographic_cartogram,
+            geographic_grouped_cartogram,
+            tile_map_cartogram,
+        ):
+            assert callable(fn)
 
     def test_result_to_geodataframe(self):
         """to_geodataframe preserves original columns."""
@@ -236,7 +243,7 @@ class TestDirectSimulatorUsage:
 
     def test_circle_physics_simulator(self):
         """CirclePhysicsSimulator runs with kwargs."""
-        from carto_flow.symbol_cartogram.placement import CirclePhysicsSimulator
+        from carto_flow.symbol_cartogram.layouts.physics._simulator import CirclePhysicsSimulator
 
         n = 5
         positions = np.random.default_rng(42).uniform(0, 10, (n, 2))
@@ -262,7 +269,7 @@ class TestDirectSimulatorUsage:
 
     def test_topology_preserving_simulator(self):
         """TopologyPreservingSimulator runs with kwargs."""
-        from carto_flow.symbol_cartogram.placement import TopologyPreservingSimulator
+        from carto_flow.symbol_cartogram.layouts.packing._simulator import TopologyPreservingSimulator
 
         n = 4
         positions = np.array([[0, 0], [2, 0], [0, 2], [2, 2]], dtype=float)
@@ -395,5 +402,5 @@ class TestVisualization:
             layout=layout,
             show_progress=False,
         )
-        with pytest.raises(ValueError, match="grid-based"):
+        with pytest.raises(TypeError, match="grid or mosaic"):
             plot_tiling(result)

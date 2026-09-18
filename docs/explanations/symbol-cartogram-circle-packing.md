@@ -4,7 +4,7 @@
 
 The circle packing layout (`CirclePackingLayout`, string key `"topology"`) uses a two-stage force-based simulator — `TopologyPreservingSimulator` — to place proportionally-sized circles while preserving the topological relationships between neighboring regions. The simulator uses position-based dynamics with explicit contact reaction constraints, enabling circles to slide along each other at contact points.
 
-Source: [placement.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/placement.py)
+Source: [layouts/packing/\_\_init\_\_.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/packing/__init__.py) (`CirclePackingLayout`), [layouts/packing/\_simulator.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/packing/_simulator.py) (`TopologyPreservingSimulator`)
 
 ## Algorithm Architecture
 

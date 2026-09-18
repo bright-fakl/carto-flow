@@ -15,13 +15,11 @@ import carto_flow.symbol_cartogram as smb
 
 us_states = examples.load_us_census(population=True)
 
-symbol_carto = smb.create_symbol_cartogram(
+# place symbols at the state centroids and remove overlap
+symbol_carto = smb.centroid_cartogram(
     us_states,
     # provide a column for proportional sizing of the symbols
     "Population",
-    # place symbols at the state centroids and remove overlap
-    layout=smb.CentroidLayout(remove_overlap=True),
-    show_progress=False,
 )
 
 # %%

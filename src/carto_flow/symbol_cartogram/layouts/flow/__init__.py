@@ -89,7 +89,11 @@ class FlowDensityLayoutOptions:
         circle radius. Default: 0.05
     sigma_perp_factor : float
         Controls the perpendicular width of each contact-point Gaussian:
-        sigma_perp = factor * min(r_i, r_j). Default: 1.0
+        sigma_perp = factor * max(claim_i, claim_j), where claim_i =
+        d * (r_i + spacing/2) / (r_i + r_j + spacing) is the distance
+        from centroid i to its claim point. At 1.0 the blob is nearly
+        isotropic; values < 1 (typically 0.25-0.5) focus pressure along
+        the pair axis and reduce cross-talk between nearby pairs. Default: 1.0
     smooth : float
         Gaussian filter sigma for the density field in real-world coordinate
         units (same units as centroid positions). Converted internally to grid

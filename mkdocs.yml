@@ -84,8 +84,6 @@ nav:
         - Symbols and Tiling:
             - Symbols: reference/symbol_cartogram/symbols.md
             - Tiling: reference/symbol_cartogram/tiling.md
-        - Computation:
-            - Placement: reference/symbol_cartogram/placement.md
         - Output:
             - Visualization: reference/symbol_cartogram/visualization.md
     - Voronoi Cartogram:
@@ -123,6 +121,7 @@ nav:
         - Pipeline Overview: explanations/symbol-cartogram-pipeline.md
         - Grid Layout Algorithm: explanations/symbol-cartogram-grid-layout.md
         - Circle Packing Layout Algorithm: explanations/symbol-cartogram-circle-packing.md
+        - Flow Density Layout Algorithm: explanations/symbol-cartogram-flow-density-layout.md
         - Tiling System: explanations/tiling-system.md
     - Voronoi Cartogram:
         - Algorithm: explanations/voronoi-cartogram-algorithm.md

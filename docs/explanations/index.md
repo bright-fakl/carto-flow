@@ -35,5 +35,8 @@ Hungarian assignment of regions to tiles in a regular grid: the cost matrix (ori
 ### [Circle Packing Layout Algorithm](symbol-cartogram-circle-packing.md)
 Two-stage position-based dynamics: Stage 1 resolves overlaps via global expansion and local separation; Stage 2 packs circles using four attraction forces, explicit contact reaction constraints (tangential sliding), and EMA-smoothed step integration.
 
+### [Flow Density Layout Algorithm](symbol-cartogram-flow-density-layout.md)
+Divergence field built from anisotropic Gaussian blobs at predicted contact points, solved with an FFT Poisson solve; circle centroids are advected through the resulting velocity field until spacing converges.
+
 ### [Tiling System](tiling-system.md)
 Regular grids of congruent polygon tiles used as assignment targets for the grid layout: square, hexagonal, triangle, quadrilateral, and the 81 Grünbaum–Shephard isohedral types with customizable edge curves and an interactive design UI.

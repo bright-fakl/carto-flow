@@ -12,6 +12,18 @@ from shapely.ops import unary_union
 
 from ._base import BaseField, _extract_exact_cells, _keep_polygonal
 
+# Keep every power-diagram cell non-empty when extracting the final cells
+# (see ``RasterField._nonempty_offsets``).  Module-level constants rather than
+# options: set to False to restore the unguarded solver.
+ENSURE_NONEMPTY_POWER_CELLS = True
+
+# Apply the same guard during relaxation, to seeds that lost all their pixels.
+# Off by default: on top of the guard above it removes further degenerate cells
+# at coarse resolutions (districts + 5000 m: 46 -> 35 at res 32, 9 -> 7 at 48,
+# 1 -> 0 at 128) but it perturbs the Lloyd trajectory, and at res 256 it raised
+# the satellite-component count from 16 to 19.  See the PR for the measurement.
+ENSURE_NONEMPTY_POWER_CELLS_IN_RELAXATION = False
+
 
 class RasterField(BaseField):
     """Raster nearest-neighbour Lloyd relaxation.
@@ -652,7 +664,8 @@ class RasterField(BaseField):
                 chunk = 4096
                 labels_active = np.empty(m_active, dtype=np.int32)
                 w32 = self._weights.astype(np.float32) if use_weights else None
-                lam32 = self._power_offsets.astype(np.float32) if use_offsets else None
+                lam = self._nonempty_offsets() if ENSURE_NONEMPTY_POWER_CELLS else self._power_offsets
+                lam32 = lam.astype(np.float32) if use_offsets else None
                 for start in range(0, m_active, chunk):
                     end = min(start + chunk, m_active)
                     dx = gx_active[start:end, None] - pts32[None, :, 0]
@@ -697,6 +710,34 @@ class RasterField(BaseField):
         # Use computation-resolution raster cells: faster than exact Voronoi,
         # and correctly reflects the topology used during Lloyd relaxation.
         return self._build_cells_upsampled(self._raster_resolution)
+
+    # -- Power-offset guard -------------------------------------------------
+
+    def _nonempty_offsets(self, max_passes: int = 5) -> np.ndarray:
+        """Raise power offsets until every seed owns at least its own position.
+
+        A seed's power cell is ``{x : |x - p_i|^2 - lambda_i <= |x - p_j|^2 - lambda_j}``.
+        When ``lambda_i`` falls far enough below a neighbour's, that set becomes
+        empty: the cell degrades to a Point, and because a pixel-less seed takes
+        its own position as the Lloyd target, it is frozen there and can never
+        win territory back.  ``lambda_i >= max_j(lambda_j - d_ij^2)`` is the
+        weakest condition that keeps ``p_i`` itself inside cell *i*, so clamping
+        the offsets from below by that value is enough to keep every power cell
+        non-empty.  Raising one offset raises other seeds' floors, hence the
+        (cheap, usually single-pass) repetition.
+        """
+        pts = self.points
+        sq = np.einsum("ij,ij->i", pts, pts)
+        d2 = sq[:, None] + sq[None, :] - 2.0 * (pts @ pts.T)
+        np.fill_diagonal(d2, np.inf)
+        offsets = self._power_offsets
+        for _ in range(max_passes):
+            floor = (offsets[None, :] - d2).max(axis=1)
+            raised = np.maximum(offsets, floor)
+            if np.array_equal(raised, offsets):
+                break
+            offsets = raised
+        return offsets
 
     # -- Lloyd step ---------------------------------------------------------
 
@@ -796,6 +837,10 @@ class RasterField(BaseField):
             target_counts = float(m) / G
             self._power_offsets *= 1.0 - area_eq_weight
             self._power_offsets += area_eq_weight * 2.0 * self._pixel_area * (target_counts - counts)
+            if ENSURE_NONEMPTY_POWER_CELLS_IN_RELAXATION:
+                starved = counts == 0
+                if starved.any():
+                    self._power_offsets[starved] = self._nonempty_offsets()[starved]
 
         self.points = (
             self.points

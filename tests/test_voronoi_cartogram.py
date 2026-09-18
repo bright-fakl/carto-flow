@@ -508,3 +508,18 @@ class TestDegenerateCells:
 
         assert [c.geom_type for c in cells] == ["MultiPolygon", "Point"]
         assert not any("coverage_simplify" in str(w.message) for w in caught)
+
+    def test_power_offset_floor_keeps_every_cell_non_empty(self):
+        """A far-below-neighbour power offset must be raised, not left empty."""
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        points = np.array([[1.0, 2.0], [3.0, 2.0]])
+        field = RasterField(points, box(0, 0, 4, 4), resolution=8, area_eq_weight=0.1)
+        # Seed 0 sits 2 units from seed 1, so an offset gap larger than d^2 = 4
+        # makes seed 0's power cell empty.
+        field._power_offsets[:] = [-10.0, 0.0]
+        raised = field._nonempty_offsets()
+        assert raised[0] >= raised[1] - 4.0
+        assert raised[1] == 0.0
+        # Own position now wins: |p0 - p0|^2 - lam0 <= |p0 - p1|^2 - lam1
+        assert -raised[0] <= 4.0 - raised[1]

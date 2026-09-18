@@ -199,7 +199,7 @@ def create_voronoi_cartogram(
     initial_cv: float = float(np.std(areas) / _mean) if _mean > 0 else 0.0
 
     if options.prescale_components:
-        from carto_flow.flow_cartogram.prescale import prescale_connected_components
+        from carto_flow.geo_utils.prescale import prescale_connected_components
 
         w_for_prescale = weights_arr if weights_arr is not None else np.ones(len(geometries), dtype=np.float64)
         total_area = float(areas.sum())

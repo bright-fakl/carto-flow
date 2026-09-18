@@ -31,6 +31,22 @@ simplify_coverage
     Simplify polygon geometries while preserving shared boundaries.
 densify_coverage
     Insert vertices so no straight segment exceeds a given length.
+explode_geodataframe
+    Force-based separation of overlapping/touching polygons in a GeoDataFrame.
+repair_adjacency
+    Permute slots so that input-adjacent geometries stay output-adjacent.
+repair_compactness
+    Boundary swaps between adjacent groups to reduce inertia.
+repair_contiguity
+    Permute slots so that each group's cells form a contiguous region.
+repair_group_assignment
+    Reassign group membership to satisfy a contiguity constraint.
+components_from_adjacency
+    Derive connected components from a dense adjacency matrix.
+compute_connected_components
+    Detect connected components among geometries (Union-Find over adjacency).
+prescale_connected_components
+    Uniformly scale each connected component to its target total area.
 
 Notes
 -----
@@ -74,6 +90,13 @@ See Also
 
 # Import and re-export main functions and classes from geometry module
 from .adjacency import find_adjacent_pairs
+from .contiguity import (
+    repair_adjacency,
+    repair_compactness,
+    repair_contiguity,
+    repair_group_assignment,
+)
+from .explode import explode_geodataframe
 from .geometry import (
     # Classes
     GeometryCoordinateInfo,
@@ -87,17 +110,30 @@ from .geometry import (
     unpack_geometries,
     unpack_geometry,
 )
+from .prescale import (
+    components_from_adjacency,
+    compute_connected_components,
+    prescale_connected_components,
+)
 from .simplification import densify_coverage, simplify_coverage
 
 # Define public API for explicit control over what is exported
 __all__ = [
     "GeometryCoordinateInfo",
+    "components_from_adjacency",
     "compute_complex_polygon_areas_numba",
+    "compute_connected_components",
     "compute_polygon_area_numba",
     "densify_coverage",
+    "explode_geodataframe",
     "find_adjacent_pairs",
+    "prescale_connected_components",
     "reconstruct_geometries",
     "reconstruct_geometry",
+    "repair_adjacency",
+    "repair_compactness",
+    "repair_contiguity",
+    "repair_group_assignment",
     "simplify_coverage",
     "unpack_geometries",
     "unpack_geometry",

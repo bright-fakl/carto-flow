@@ -189,7 +189,7 @@ When `VoronoiOptions(prescale_components=True)`, each group of geometrically
 connected polygons is uniformly scaled to its collective target area **before**
 the Lloyd iteration starts. This is the same routine used by the flow cartogram
 (`prescale_connected_components()` from
-[`flow_cartogram/prescale.py`](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/prescale.py)).
+[`geo_utils/prescale.py`](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/geo_utils/prescale.py)).
 
 Prescaling reduces initial area CV, allowing faster convergence with fewer
 iterations. It is particularly effective when some regions are far from their

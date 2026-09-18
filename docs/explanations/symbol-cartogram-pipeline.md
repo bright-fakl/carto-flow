@@ -85,9 +85,10 @@ and is used to seed the initial tile assignment.
 so that group-level styling overrides and `to_geodataframe(level="group")` can
 aggregate symbols by group. It also sets `group_ids_G`, the same labels at
 geometry level, for layouts that group geometries rather than symbols (mosaic).
-With `tile_count` there is no user grouping — the two cannot be combined — so
-`group_ids_G` is `None` and `group_ids` simply records which geometry each tile
-came from.
+`tile_count` cannot be combined with `group_by`, so it leaves `group_ids_G` as
+`None` and `group_ids` simply records which geometry each tile came from.
+`None` means *each geometry is its own group* rather than *no grouping*: the
+mosaic layout still requires each geometry's tiles to form one connected block.
 
 `size` and `tile_count` address different questions: `size` controls *how large* each
 symbol is; `tile_count` controls *how many* symbols represent each region.

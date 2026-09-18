@@ -296,7 +296,9 @@ class MosaicLayout(Layout):
         # Step 3c: Build group labels for group_by mode.
         # Uses the G-level user grouping (group_ids_G), which is None unless
         # group_by was used; data.group_ids is N-level (one entry per symbol)
-        # and must not be zipped against the G geometries.
+        # and must not be zipped against the G geometries. None does not mean
+        # "no grouping": the assignment then treats each geometry as its own
+        # group, so a geometry and its tiles still have to form one block.
         group_labels = None
         if data.group_ids_G is not None:
             raw_group_labels = data.group_ids_G.astype(np.int32)

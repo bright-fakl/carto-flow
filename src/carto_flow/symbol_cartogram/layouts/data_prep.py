@@ -65,10 +65,12 @@ class LayoutData:
         per-symbol source label rather than a user grouping.
     group_ids_G : NDArray[np.intp] | None
         User grouping at G-level (one entry per geometry), shape (G,).
-        Set only when ``group_by`` was used; None otherwise — in particular
-        with ``tile_count``, where there is no user grouping (``tile_count``
-        and ``group_by`` cannot be combined). Layouts that group geometries
-        rather than symbols (e.g. mosaic) must use this, not ``group_ids``.
+        Set only when ``group_by`` was used (``tile_count`` and ``group_by``
+        cannot be combined). None means each geometry is its own group: with
+        ``tile_count``, a geometry and its tiles form one block and
+        MosaicLayout still enforces per-geometry contiguity. Layouts that
+        group geometries rather than symbols (e.g. mosaic) must use this,
+        not ``group_ids``.
 
     """
 
@@ -450,8 +452,9 @@ def prepare_layout_data(
     # When group_by is set, encode the column as zero-based integers.
     # `group_ids` is always N-level (one entry per symbol); `group_ids_G` is
     # G-level (one entry per geometry) and is only set when the user asked for
-    # a grouping via group_by — with tile_count alone there is no user
-    # grouping, so it stays None. See the LayoutData docstring.
+    # a grouping via group_by. With tile_count alone it stays None, which means
+    # each geometry is its own group (its tiles must stay together), not that
+    # grouping is switched off. See the LayoutData docstring.
     group_ids = None
     group_ids_G = None
     if tile_count is not None:

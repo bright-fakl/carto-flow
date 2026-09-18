@@ -463,3 +463,48 @@ class TestAnimation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# 12. Degenerate cells
+# ---------------------------------------------------------------------------
+
+
+class TestDegenerateCells:
+    """Cells that collapse to a Point or a line must not leak downstream."""
+
+    def test_line_clip_result_becomes_a_point_placeholder(self):
+        """A label region that clips to lines only must not survive as a line.
+
+        A line-only cell used to be kept as the cell geometry and then fed to
+        ``shapely.coverage_simplify``, which raised and silently disabled
+        boundary smoothing for every cell of that run.
+        """
+        import warnings
+
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        points = np.array([[0.5, 2.0], [2.5, 2.0]])
+        field = RasterField(points, box(0, 0, 4, 4), resolution=4)
+        # Boundary with a notch exactly over the pixel column labelled 1, so
+        # that column's clip result is a MultiLineString (the notch walls).
+        notched = box(0, 0, 4, 4).difference(box(1, 0, 2, 4))
+        label_2d = np.zeros((4, 4), dtype=np.int32)
+        label_2d[:, 1] = 1
+        coords = np.array([0.5, 1.5, 2.5, 3.5])
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cells = field._label_2d_to_cell_polys(
+                label_2d,
+                nx=4,
+                ny=4,
+                dx=1.0,
+                dy=1.0,
+                x_coords=coords,
+                y_coords=coords,
+                boundary=notched,
+            )
+
+        assert [c.geom_type for c in cells] == ["MultiPolygon", "Point"]
+        assert not any("coverage_simplify" in str(w.message) for w in caught)

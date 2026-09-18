@@ -230,6 +230,33 @@ class BaseField:
 
 
 # ---------------------------------------------------------------------------
+# Shared geometry normalisation
+# ---------------------------------------------------------------------------
+
+
+def _keep_polygonal(geom):
+    """Reduce *geom* to its polygonal parts.
+
+    Clipping a Voronoi cell to the boundary can yield a ``GeometryCollection``
+    with zero-area line/point parts, or collapse the cell entirely to a
+    ``LineString``/``MultiLineString``. Non-polygonal geometry breaks
+    downstream consumers (``shapely.boundary`` returns None/empty, and
+    ``shapely.coverage_simplify`` raises), so keep the polygonal parts and
+    return an empty polygon when there are none. Polygonal input is returned
+    unchanged.
+    """
+    import shapely as sh
+
+    geom_type = geom.geom_type
+    if geom_type in ("Polygon", "MultiPolygon"):
+        return geom
+    if sh.is_empty(geom):
+        return sh.Polygon()
+    parts = [g for g in getattr(geom, "geoms", ()) if g.geom_type in ("Polygon", "MultiPolygon")]
+    return sh.union_all(parts) if parts else sh.Polygon()
+
+
+# ---------------------------------------------------------------------------
 # Shared exact-cell extraction (used by both ExactField and RasterField)
 # ---------------------------------------------------------------------------
 
@@ -298,9 +325,10 @@ def _extract_exact_cells(points: np.ndarray, boundary) -> np.ndarray:
     need_clip = ~inside
     if need_clip.any():
         clipped[need_clip] = sh.intersection(cell_polys[need_clip], clip_geom)
+    clipped = np.array([_keep_polygonal(c) for c in clipped], dtype=object)
     bad = sh.is_empty(clipped) | (sh.area(clipped) == 0.0)
     if bad.any():
         radius = np.sqrt(float(clip_geom.area) / len(points)) * 0.5
         approx = sh.intersection(sh.buffer(sh.points(points[bad]), radius), clip_geom)
-        clipped[bad] = approx
+        clipped[bad] = np.array([_keep_polygonal(a) for a in np.atleast_1d(approx)], dtype=object)
     return clipped

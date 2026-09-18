@@ -44,6 +44,7 @@ class LayoutData:
     geometry_positions: NDArray | None # G-level centroids before tile_count expansion, shape (G, 2)
     source_indices: NDArray | None     # maps each of the N items to its source row index (0..G-1)
     group_ids: NDArray | None          # integer group label per item, shape (N,)
+    group_ids_G: NDArray | None        # user grouping per geometry, shape (G,); set only by group_by
 ```
 
 ### Symbol Sizes
@@ -82,7 +83,11 @@ and is used to seed the initial tile assignment.
 
 **`group_by`** (column name): attaches an integer `group_ids` label to each item
 so that group-level styling overrides and `to_geodataframe(level="group")` can
-aggregate symbols by group.
+aggregate symbols by group. It also sets `group_ids_G`, the same labels at
+geometry level, for layouts that group geometries rather than symbols (mosaic).
+With `tile_count` there is no user grouping — the two cannot be combined — so
+`group_ids_G` is `None` and `group_ids` simply records which geometry each tile
+came from.
 
 `size` and `tile_count` address different questions: `size` controls *how large* each
 symbol is; `tile_count` controls *how many* symbols represent each region.

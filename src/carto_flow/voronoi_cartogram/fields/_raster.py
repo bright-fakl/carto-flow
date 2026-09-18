@@ -25,6 +25,14 @@ ENSURE_NONEMPTY_POWER_CELLS = True
 # the satellite-component count from 16 to 19.  See the PR for the measurement.
 ENSURE_NONEMPTY_POWER_CELLS_IN_RELAXATION = False
 
+# coverage_simplify distance tolerance for smoothing raster pixel staircases,
+# expressed in pixel units (multiples of sqrt(dx * dy)) rather than as an
+# absolute distance, so it scales with grid resolution.  1.0 == one pixel.
+# See the tolerance sweep in the PR: 0.7 (the raw grid-diagonal-derived value)
+# still shows visible staircasing on real boundaries; this default trades a
+# small amount of extra area deviation for visually smooth borders.
+CELL_SMOOTHING_TOLERANCE_PX = 2.0
+
 
 class RasterField(BaseField):
     """Raster nearest-neighbour Lloyd relaxation.
@@ -464,9 +472,9 @@ class RasterField(BaseField):
         water-tight cell polygons.
 
         After polygon construction, ``shapely.coverage_simplify`` is applied
-        with a ``sqrt(dx * dy / 2)`` distance tolerance (about 0.7 pixel) and
-        ``simplify_boundary=False`` to smooth out pixel staircases while
-        preserving the outer coverage boundary.
+        with a ``CELL_SMOOTHING_TOLERANCE_PX * sqrt(dx * dy)`` distance
+        tolerance and ``simplify_boundary=False`` to smooth out pixel
+        staircases while preserving the outer coverage boundary.
 
         Optional keyword overrides (*nx*, *ny*, *dx*, *dy*, *x_coords*,
         *y_coords*, *boundary*) replace the corresponding ``self._grid_*``
@@ -565,9 +573,10 @@ class RasterField(BaseField):
 
         # Smooth pixel staircases: coverage_simplify on shared interior edges only.
         # `tol` is a distance tolerance in shapely (max vertex displacement),
-        # not an area: use sqrt(dx*dy/2) (~0.7 px) rather than dx*dy/2, which
-        # would be ~1e8x too large at typical grid resolutions and over-smooths.
-        tol = math.sqrt(dx * dy / 2.0)
+        # not an area: scale a pixel-unit constant by sqrt(dx*dy) (one grid
+        # cell's characteristic size), not by dx*dy, which would be ~1e8x too
+        # large at typical grid resolutions and over-smooth into straight lines.
+        tol = CELL_SMOOTHING_TOLERANCE_PX * math.sqrt(dx * dy)
         valid = np.array([c.geom_type in ("Polygon", "MultiPolygon") for c in cell_polys])
         if valid.any():
             try:

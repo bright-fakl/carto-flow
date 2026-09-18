@@ -477,11 +477,6 @@ class TopologyPreservingSimulator:
 
         return max_overlap
 
-    def _weighted_centroid(self) -> NDArray[np.floating]:
-        """Compute area-weighted centroid of current positions."""
-        weights = self.radii**2
-        return (self.positions * weights[:, None]).sum(axis=0) / weights.sum()
-
     def _jitter_coincident(self) -> None:
         """Apply tiny random perturbation to coincident circle pairs.
 

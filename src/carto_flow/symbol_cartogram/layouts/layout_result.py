@@ -383,6 +383,7 @@ class LayoutResult:
         group_ids = np.array(group_ids_raw, dtype=np.intp) if group_ids_raw is not None else None
 
         layout_type = data.get("layout_type", "")
+        result_cls: type[LayoutResult]
         if layout_type == "grid":
             result_cls = GridLayoutResult
         elif layout_type == "mosaic":
@@ -467,7 +468,8 @@ class TiledLayoutResult(LayoutResult):
 
         assigned_set = set(self.assignments.tolist()) if self.assignments is not None else set()
 
-        assigned_patches, unassigned_patches = [], []
+        assigned_patches: list[MplPolygon] = []
+        unassigned_patches: list[MplPolygon] = []
         for i, poly in enumerate(self.tiling_result.polygons):
             coords = np.array(poly.exterior.coords)
             patch = MplPolygon(coords, closed=True)

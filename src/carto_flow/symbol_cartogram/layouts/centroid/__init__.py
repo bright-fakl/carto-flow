@@ -166,7 +166,7 @@ class CentroidLayout(Layout):
                     if use_origin:
                         positions += self._options.origin_attraction * (start_positions - positions)
 
-                    if use_group:
+                    if use_group and n_group_ids is not None:
                         for g in np.unique(n_group_ids):
                             mask = n_group_ids == g
                             group_center = positions[mask].mean(axis=0)

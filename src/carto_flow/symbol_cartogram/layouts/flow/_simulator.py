@@ -295,7 +295,8 @@ def build_density_field(
     damp : bool
         Apply exponential dampening when circles are far from their targets.
     sigma_perp_factor : float
-        Perpendicular Gaussian width = factor * min(r_i, r_j).
+        Perpendicular Gaussian width = factor * max(claim_i, claim_j),
+        where claim_i = d * (r_i + spacing_abs/2) / (r_i + r_j + spacing_abs).
     use_gabriel : bool
         Use Gabriel graph for pairs; False = full Delaunay.
     force_balance : float or {"count", "rms", "repulse"}, default 1.0
@@ -320,7 +321,8 @@ def build_density_field(
         if force_balance == "repulse":
             pull_scale = 0.0
         else:
-            push_amps, pull_amps = [], []
+            push_amps: list[float] = []
+            pull_amps: list[float] = []
             for i, j in pairs:
                 d = np.hypot(centroids[j, 0] - centroids[i, 0], centroids[j, 1] - centroids[i, 1])
                 r_target = radii[i] + radii[j] + spacing_abs
@@ -330,8 +332,8 @@ def build_density_field(
                 (push_amps if a > 0 else pull_amps).append(a)
             if isinstance(force_balance, str):
                 if force_balance == "count":
-                    push_scale = 1.0 / len(push_amps) if push_amps else 1.0
-                    pull_scale = 1.0 / len(pull_amps) if pull_amps else 1.0
+                    push_scale = 1.0 / float(len(push_amps)) if push_amps else 1.0
+                    pull_scale = 1.0 / float(len(pull_amps)) if pull_amps else 1.0
                 else:  # "rms"
                     rms_push = float(np.sqrt(np.mean(np.array(push_amps) ** 2))) if push_amps else 1.0
                     rms_pull = float(np.sqrt(np.mean(np.array(pull_amps) ** 2))) if pull_amps else 1.0
@@ -404,7 +406,8 @@ def run_flow_density(
         positions/radii). Converted internally to grid cells via
         grid.dx / grid.dy. 0 = no smoothing.
     sigma_perp_factor : float
-        Perpendicular Gaussian width = factor * min(r_i, r_j).
+        Perpendicular Gaussian width = factor * max(claim_i, claim_j),
+        where claim_i = d * (r_i + spacing_abs/2) / (r_i + r_j + spacing_abs).
     damp : bool
         Apply exponential dampening when circles are far from their targets.
     use_gabriel : bool
@@ -416,7 +419,8 @@ def run_flow_density(
     dt_factor : float
         Timestep = factor * min(dx, dy) / max_velocity.
     convergence_tolerance : float
-        Stop when mean relative NN spacing error falls below this threshold.
+        Stop when mean |d_nn - target| / target falls below this threshold,
+        where target = r_i + r_nn + spacing_abs.
     show_progress : bool
         Print progress every 20 steps.
     save_history : bool
@@ -473,8 +477,9 @@ def run_flow_density(
     max_errors: list[float] = []
     n_overlaps_list: list[int] = []
 
-    rho = None
-    vx = vy = None
+    rho: NDArray[np.floating] = np.zeros((1, 1))
+    vx: NDArray[np.floating] = np.zeros((1, 1))
+    vy: NDArray[np.floating] = np.zeros((1, 1))
 
     for step in range(max_iterations):
         if step % recompute_every == 0:
@@ -509,7 +514,7 @@ def run_flow_density(
         dt = dt_factor * min(grid.dx, grid.dy) / vmax
         pts = displace_coords_numba(pts, grid.x_coords, grid.y_coords, vx, vy, dt, grid.dx, grid.dy)
 
-        if save_history:
+        if history is not None:
             history.append(pts.copy())
 
         # Convergence: nearest-neighbour spacing error (one NN per circle)

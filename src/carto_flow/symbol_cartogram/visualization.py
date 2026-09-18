@@ -301,10 +301,19 @@ def plot_adjacency(
                 "result was created from a GeoDataFrame."
             )
     else:
-        centers = np.column_stack([
+        all_pos = np.column_stack([
             result.symbols["_symbol_x"].values,
             result.symbols["_symbol_y"].values,
         ])
+        src_idx = result.layout_result.source_indices if result.layout_result is not None else None
+        if src_idx is not None:
+            G = adj.shape[0]
+            geom_centers = np.zeros((G, 2))
+            np.add.at(geom_centers, src_idx, all_pos)
+            cnts = np.bincount(src_idx, minlength=G).clip(min=1)
+            centers = geom_centers / cnts[:, None]
+        else:
+            centers = all_pos
     n = len(centers)
 
     # Collect edges

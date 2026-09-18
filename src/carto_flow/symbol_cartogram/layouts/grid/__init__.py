@@ -235,7 +235,10 @@ class GridBasedLayout(Layout):
             # Two-phase: G-level anchor assignment + BFS tile expansion.
             # Running Hungarian at N level (N = G x K) would be O(N²xM) in pure
             # Python and degenerate (duplicate centroids for within-group items).
-            G_full = len(data.geometry_positions)
+            geometry_positions = data.geometry_positions
+            if geometry_positions is None:  # pragma: no cover - set with source_indices
+                raise ValueError("geometry_positions is required when source_indices is set")
+            G_full = len(geometry_positions)
             counts = np.bincount(data.source_indices, minlength=G_full).astype(np.int32)
             first_items = np.concatenate([[0], np.cumsum(counts[:-1])]).astype(np.intp)
             # Recover GxG adjacency: cross-block entries in the expanded matrix
@@ -244,7 +247,7 @@ class GridBasedLayout(Layout):
 
             # Phase 1: G-level Hungarian anchor placement
             anchor_assignments = assign_to_grid_hungarian(
-                centroids=data.geometry_positions,
+                centroids=geometry_positions,
                 grid_centers=tiling_result.centers,
                 adjacency=adjacency_G,
                 tile_adjacency=tiling_result.adjacency,

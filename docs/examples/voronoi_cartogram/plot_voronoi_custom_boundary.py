@@ -1,6 +1,6 @@
 """
-Voronoi Cartogram with Custom Boundary
-========================================
+Circular Voronoi Cartogram
+==========================
 
 Population cartogram of US States fitted inside a custom circular boundary.
 """

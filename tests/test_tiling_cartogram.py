@@ -13,9 +13,10 @@ from shapely.geometry import box
 
 from carto_flow.symbol_cartogram import (
     GridBasedLayout,
+    GridBasedLayoutOptions,
     create_symbol_cartogram,
 )
-from carto_flow.symbol_cartogram.options import GridBasedLayoutOptions, SymbolOrientation
+from carto_flow.symbol_cartogram.options import SymbolOrientation
 from carto_flow.symbol_cartogram.tiling import (
     IsohedralTiling,
     QuadrilateralTiling,
@@ -210,7 +211,7 @@ class TestTileSymbolDefault:
         areas = [g.area for g in result.symbols.geometry]
         assert np.allclose(areas, areas[0], rtol=1e-6)
         # The symbol area should match the tile area (spacing=0 → no gap)
-        tiling_result = result._tiling_result
+        tiling_result = result.layout_result.tiling_result
         tile_area = tiling_result.canonical_tile.area
         assert areas[0] == pytest.approx(tile_area, rel=0.01), (
             f"Symbol area {areas[0]:.4f} != tile area {tile_area:.4f}"
@@ -221,7 +222,7 @@ class TestTileSymbolDefault:
         gdf = make_grid_gdf(rows=3, cols=3)
         layout = GridBasedLayout(GridBasedLayoutOptions(tiling="square", spacing=0.1))
         result = create_symbol_cartogram(gdf, layout=layout)
-        tiling_result = result._tiling_result
+        tiling_result = result.layout_result.tiling_result
         tile_area = tiling_result.canonical_tile.area
         for g in result.symbols.geometry:
             assert g.area < tile_area
@@ -236,7 +237,7 @@ class TestTileSymbolDefault:
             styling={"symbol": "square"},
         )
         # Verify symbols are reasonably sized: area should not exceed tile area.
-        tiling_result = result._tiling_result
+        tiling_result = result.layout_result.tiling_result
         tile_area = tiling_result.canonical_tile.area
         for geom in result.symbols.geometry:
             assert geom.area <= tile_area + 1e-6, f"Symbol area {geom.area:.4f} exceeds tile area {tile_area:.4f}"
@@ -254,7 +255,7 @@ class TestSymbolSizing:
         layout = GridBasedLayout(GridBasedLayoutOptions(tiling="hexagon", spacing=0.0))
         result = create_symbol_cartogram(gdf, layout=layout, styling={"symbol": "hexagon"})
         # Retrieve tile area from actual result
-        tiling_result = result._tiling_result
+        tiling_result = result.layout_result.tiling_result
         tile_area = tiling_result.canonical_tile.area
         areas = [g.area for g in result.symbols.geometry]
         # All uniform → same area
@@ -397,7 +398,7 @@ class TestFillInternalHoles:
         polygons are slightly oversized so their union covers the center
         (no geographic gap). The function should fill the hole.
         """
-        from carto_flow.symbol_cartogram.placement import fill_internal_holes
+        from carto_flow.symbol_cartogram.layouts.grid._placement import fill_internal_holes
 
         # 9 tiles in a 3x3 grid, tile indices 0-8:
         #  6  7  8
@@ -463,7 +464,7 @@ class TestFillInternalHoles:
         the corresponding grid hole should be preserved."""
         from shapely.geometry import box as shapely_box
 
-        from carto_flow.symbol_cartogram.placement import fill_internal_holes
+        from carto_flow.symbol_cartogram.layouts.grid._placement import fill_internal_holes
 
         # Same 3x3 grid as above
         grid_centers = np.array(

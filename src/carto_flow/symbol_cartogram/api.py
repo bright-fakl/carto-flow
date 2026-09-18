@@ -17,15 +17,16 @@ from .result import SymbolCartogram
 if TYPE_CHECKING:
     from numpy.typing import NDArray
 
-    from .layout import Layout
-    from .layout_result import LayoutResult
+    from .layouts import Layout, LayoutResult
     from .styling import Styling
 
 
 def create_symbol_cartogram(
     gdf: gpd.GeoDataFrame,
-    value_column: str | None = None,
+    size: str | None = None,
     *,
+    tile_count: str | None = None,
+    group_by: str | None = None,
     # Layout algorithm
     layout: Layout | str = "physics",
     # Preprocessing options (passed to create_layout)
@@ -33,6 +34,8 @@ def create_symbol_cartogram(
     size_max_value: float | None = None,
     size_clip: bool = True,
     size_normalization: Literal["max", "total"] = "max",
+    tile_size_expansion: Literal["shared", "copied"] = "copied",
+    collapse_group: float = 0.0,
     adjacency_mode: AdjacencyMode = AdjacencyMode.BINARY,
     adjacency: NDArray | None = None,
     distance_tolerance: float | None = None,
@@ -45,7 +48,7 @@ def create_symbol_cartogram(
     """Create a symbol cartogram from a GeoDataFrame.
 
     Each region is represented by a single symbol (circle, square, or hexagon).
-    Symbol size is proportional to a data value when ``value_column`` is
+    Symbol size is proportional to a data value when ``size`` is
     provided, or uniform when it is omitted.
 
     This is a convenience function that combines layout computation and styling
@@ -56,9 +59,16 @@ def create_symbol_cartogram(
     ----------
     gdf : gpd.GeoDataFrame
         Input GeoDataFrame with polygon geometries.
-    value_column : str, optional
+    size : str, optional
         Column for proportional sizing. When provided, symbols are sized
         proportionally to values. When absent, all symbols have uniform size.
+    tile_count : str, optional
+        Column with integer tile counts. When provided, each region is
+        represented by that many symbols. Cannot be combined with group_by.
+    group_by : str, optional
+        Column for grouping symbols. When provided, group_index is stored
+        on the result for group-level styling and export. Cannot be combined
+        with tile_count.
     layout : Layout or str
         Layout instance or string shorthand ("physics", "topology", "grid").
         Pass a Layout instance for full control over algorithm options.
@@ -76,6 +86,11 @@ def create_symbol_cartogram(
         - ``"total"``: all sizes are scaled so that the total symbol area equals
           the total original geometry area.  Useful when you want circle area-sum
           to match the geographic area-sum (standard for Dorling cartograms).
+    collapse_group : float
+        Pre-collapse starting positions toward each group's centroid (0-1).
+        At 1.0 all items in a group start coincident at the group centroid,
+        matching ``tile_count`` behavior. Only has effect when ``group_by``
+        or ``tile_count`` is set. Default: 0.0.
     adjacency_mode : AdjacencyMode
         How to compute adjacency: BINARY, WEIGHTED, or AREA_WEIGHTED.
     adjacency : np.ndarray, optional
@@ -127,12 +142,16 @@ def create_symbol_cartogram(
     # Create layout
     layout_result = create_layout(
         gdf,
-        value_column,
+        size,
+        tile_count=tile_count,
+        group_by=group_by,
         layout=layout,
         size_scale=size_scale,
         size_max_value=size_max_value,
         size_clip=size_clip,
         size_normalization=size_normalization,
+        tile_size_expansion=tile_size_expansion,
+        collapse_group=collapse_group,
         adjacency_mode=adjacency_mode,
         adjacency=adjacency,
         distance_tolerance=distance_tolerance,
@@ -159,14 +178,18 @@ def create_symbol_cartogram(
 
 def create_layout(
     gdf: gpd.GeoDataFrame,
-    value_column: str | None = None,
+    size: str | None = None,
     *,
+    tile_count: str | None = None,
+    group_by: str | None = None,
     layout: Layout | str = "physics",
     # Preprocessing options
     size_scale: Literal["sqrt", "linear", "log"] = "sqrt",
     size_max_value: float | None = None,
     size_clip: bool = True,
     size_normalization: Literal["max", "total"] = "max",
+    tile_size_expansion: Literal["shared", "copied"] = "copied",
+    collapse_group: float = 0.0,
     adjacency_mode: AdjacencyMode = AdjacencyMode.BINARY,
     adjacency: NDArray | None = None,
     distance_tolerance: float | None = None,
@@ -184,8 +207,12 @@ def create_layout(
     ----------
     gdf : gpd.GeoDataFrame
         Input GeoDataFrame with polygon geometries.
-    value_column : str, optional
+    size : str, optional
         Column for proportional sizing.
+    tile_count : str, optional
+        Column with integer tile counts. Cannot be combined with group_by.
+    group_by : str, optional
+        Column for grouping symbols. Cannot be combined with tile_count.
     layout : Layout or str
         Layout instance or string shorthand ("physics", "topology", "grid").
     size_scale : str
@@ -201,6 +228,11 @@ def create_layout(
           geometry area.
         - ``"total"``: all sizes are scaled so that the total symbol area equals
           the total original geometry area.
+    collapse_group : float
+        Pre-collapse starting positions toward each group's centroid (0-1).
+        At 1.0 all items in a group start coincident at the group centroid,
+        matching ``tile_count`` behavior. Only has effect when ``group_by``
+        or ``tile_count`` is set. Default: 0.0.
     adjacency_mode : AdjacencyMode
         How to compute adjacency: BINARY, WEIGHTED, or AREA_WEIGHTED.
     adjacency : np.ndarray, optional
@@ -234,8 +266,7 @@ def create_layout(
     >>> cartogram = result.style(symbol="hexagon", scale=0.9)
 
     """
-    from .data_prep import prepare_layout_data
-    from .layout import get_layout
+    from .layouts import get_layout, prepare_layout_data
 
     # Resolve layout
     if isinstance(layout, str):
@@ -244,11 +275,15 @@ def create_layout(
     # Preprocess
     data = prepare_layout_data(
         gdf,
-        value_column,
+        size,
+        tile_count=tile_count,
+        group_by=group_by,
         size_scale=size_scale,
         size_max_value=size_max_value,
         size_clip=size_clip,
         size_normalization=size_normalization,
+        tile_size_expansion=tile_size_expansion,
+        collapse_group=collapse_group,
         adjacency_mode=adjacency_mode,
         distance_tolerance=distance_tolerance,
     )

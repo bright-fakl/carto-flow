@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from matplotlib.legend import Legend
     from numpy.typing import NDArray
 
-    from .layout_result import LayoutResult
+    from .layouts import LayoutResult
     from .plot_results import (
         AdjacencyHeatmapResult,
         AdjacencyPlotResult,
@@ -301,10 +301,19 @@ def plot_adjacency(
                 "result was created from a GeoDataFrame."
             )
     else:
-        centers = np.column_stack([
+        all_pos = np.column_stack([
             result.symbols["_symbol_x"].values,
             result.symbols["_symbol_y"].values,
         ])
+        src_idx = result.layout_result.source_indices if result.layout_result is not None else None
+        if src_idx is not None:
+            G = adj.shape[0]
+            geom_centers = np.zeros((G, 2))
+            np.add.at(geom_centers, src_idx, all_pos)
+            cnts = np.bincount(src_idx, minlength=G).clip(min=1)
+            centers = geom_centers / cnts[:, None]
+        else:
+            centers = all_pos
     n = len(centers)
 
     # Collect edges
@@ -717,76 +726,17 @@ def plot_tiling(
         If the result is not from grid-based placement.
 
     """
-    import matplotlib.pyplot as plt
-    from matplotlib.collections import PatchCollection
-    from matplotlib.patches import Polygon as MplPolygon
-
-    from .plot_results import TilingPlotResult
-
-    tiling_result = getattr(result, "_tiling_result", None)
-    assignments = getattr(result, "_assignments", None)
-
-    if tiling_result is None:
-        raise ValueError(
-            "No tiling data available. plot_tiling() requires a result from grid-based layout (GridBasedLayout).",
-        )
-
-    if ax is None:
-        _, ax = plt.subplots(1, 1, figsize=(10, 8))
-
-    assigned_set = set(assignments.tolist()) if assignments is not None else set()
-
-    # Build two collections: assigned and unassigned tiles
-    assigned_patches = []
-    unassigned_patches = []
-    for i, poly in enumerate(tiling_result.polygons):
-        coords = np.array(poly.exterior.coords)
-        patch = MplPolygon(coords, closed=True)
-        if i in assigned_set:
-            assigned_patches.append(patch)
-        else:
-            unassigned_patches.append(patch)
-
-    pc_unassigned = None
-    if show_unassigned and unassigned_patches:
-        pc_unassigned = PatchCollection(
-            unassigned_patches,
-            facecolor=unassigned_color,
-            edgecolor=tile_edgecolor,
-            linewidth=tile_linewidth,
-            alpha=tile_alpha,
-        )
-        ax.add_collection(pc_unassigned)
-
-    pc_assigned = None
-    if show_assigned and assigned_patches:
-        pc_assigned = PatchCollection(
-            assigned_patches,
-            facecolor=assigned_color,
-            edgecolor=tile_edgecolor,
-            linewidth=tile_linewidth,
-            alpha=tile_alpha,
-        )
-        ax.add_collection(pc_assigned)
-
-    symbols_result = None
-    if show_symbols:
-        symbols_result = result.plot(ax=ax, **kwargs)
-
-    # Auto-scale to tile bounds
-    all_coords = np.vstack([np.array(poly.exterior.coords) for poly in tiling_result.polygons])
-    ax.set_xlim(all_coords[:, 0].min(), all_coords[:, 0].max())
-    ax.set_ylim(all_coords[:, 1].min(), all_coords[:, 1].max())
-
-    ax.set_aspect("equal")
-    ax.set_axis_off()
-    ax.set_title("Tiling Grid")
-
-    return TilingPlotResult(
+    return result.plot_tiling(
         ax=ax,
-        assigned_tiles=pc_assigned,
-        unassigned_tiles=pc_unassigned,
-        symbols=symbols_result,
+        show_symbols=show_symbols,
+        show_assigned=show_assigned,
+        show_unassigned=show_unassigned,
+        assigned_color=assigned_color,
+        unassigned_color=unassigned_color,
+        tile_edgecolor=tile_edgecolor,
+        tile_linewidth=tile_linewidth,
+        tile_alpha=tile_alpha,
+        **kwargs,
     )
 
 
@@ -830,18 +780,22 @@ def _find_column(
     Raises ``ValueError`` listing available columns when the column is absent.
     """
     n = len(result.symbols)
+    has_orig_idx = "original_index" in result.symbols.columns
 
     # 1. Explicit source_gdf override
     if source_gdf is not None and name in source_gdf.columns:
         arr = source_gdf[name].values
+        # Apply valid_mask first to match lengths
+        mask = getattr(result, "_valid_mask", None)
+        if mask is not None and len(arr) != n:
+            arr = source_gdf.loc[mask, name].values
+        # Reorder/expand via original_index when present (handles tile_count expansion)
+        if has_orig_idx:
+            orig_idx = result.symbols["original_index"].values
+            if len(arr) > int(orig_idx.max()):
+                return arr[orig_idx]
         if len(arr) == n:
             return arr
-        # Try applying valid_mask to match lengths
-        mask = getattr(result, "_valid_mask", None)
-        if mask is not None:
-            arr = source_gdf.loc[mask, name].values
-            if len(arr) == n:
-                return arr
 
     # 2. result.symbols
     if name in result.symbols.columns:
@@ -852,6 +806,11 @@ def _find_column(
     if internal is not None and name in internal.columns:
         mask = getattr(result, "_valid_mask", None)
         arr = internal.loc[mask, name].values if mask is not None else internal[name].values
+        # Reorder/expand via original_index when present
+        if has_orig_idx:
+            orig_idx = result.symbols["original_index"].values
+            if len(arr) > int(orig_idx.max()):
+                return arr[orig_idx]
         if len(arr) == n:
             return arr
 

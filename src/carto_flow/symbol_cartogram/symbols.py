@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .layout_result import Transform
+    from .layouts import Transform
 
 import numpy as np
 from numpy.typing import NDArray

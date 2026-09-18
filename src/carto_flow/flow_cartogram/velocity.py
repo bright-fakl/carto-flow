@@ -115,7 +115,7 @@ def compute_velocity_anisotropic(
     ky = 2 * np.pi * np.fft.fftfreq(ny, grid.dy)
     kx, ky = np.meshgrid(kx, ky)
 
-    rho_hat = np.fft.fft2((rho - np.mean(rho)) / np.mean(rho))
+    rho_hat = np.fft.fft2(rho - np.mean(rho))
     denom = kx**2 / Dx + ky**2 / Dy
     denom[0, 0] = 1.0
 
@@ -175,7 +175,7 @@ def compute_velocity_anisotropic_rfft(
         Velocity components in x and y directions.
     """
     ny, nx = rho.shape
-    rho_dev = (rho - np.mean(rho)) / np.mean(rho)
+    rho_dev = rho - np.mean(rho)
 
     # Get cached k-space arrays
     Kx, Ky, denom = _cached_kspace_grad((ny, nx), grid.dx, grid.dy, Dx, Dy)
@@ -277,9 +277,7 @@ class VelocityComputerFFTW:
             Velocity components (views of internal buffers)
         """
         # Compute deviation
-        rho_mean = np.mean(rho)
-        np.subtract(rho, rho_mean, out=self.rho_dev)
-        self.rho_dev /= rho_mean
+        np.subtract(rho, np.mean(rho), out=self.rho_dev)
 
         # Forward FFT
         self.fft_forward()

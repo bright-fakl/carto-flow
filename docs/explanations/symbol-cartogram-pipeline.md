@@ -19,25 +19,31 @@ flowchart LR
     G --> H["plot() / to_geodataframe()"]
 ```
 
-**Two API levels** are available. The all-in-one function `create_symbol_cartogram(gdf, value_column, ...)` runs the full pipeline in one call. The two-step API `create_layout(gdf, value_column, ...)` followed by `layout_result.style(...)` separates layout computation (expensive) from styling (fast), enabling multiple styling variations from a single computed layout.
+**Two API levels** are available. The all-in-one function `create_symbol_cartogram(gdf, size=..., ...)` runs the full pipeline in one call. The two-step API `create_layout(gdf, size=..., ...)` followed by `layout_result.style(...)` separates layout computation (expensive) from styling (fast), enabling multiple styling variations from a single computed layout.
 
 ---
 
 ## Data Preprocessing
 
-Source: [data_prep.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/data_prep.py)
+Source: [layouts/data_prep.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/data_prep.py)
 
-`prepare_layout_data(gdf, value_column, ...)` takes a GeoDataFrame of polygon regions and returns a `LayoutData` dataclass with four fields:
+`prepare_layout_data(gdf, size=None, *, tile_count=None, group_by=None, ...)` takes a GeoDataFrame
+of polygon regions and returns a `LayoutData` dataclass. *N* denotes the total number of
+items after any `tile_count` expansion; *G* denotes the number of input geometries.
 
 ```python
 @dataclass
 class LayoutData:
-    positions: NDArray   # centroids, shape (n, 2)
-    sizes:     NDArray   # area-equivalent radii, shape (n,)
-    adjacency: NDArray   # adjacency matrix, shape (n, n)
-    bounds:    tuple     # geographic bounding box
-    mean_area: float     # mean input geometry area
+    positions: NDArray    # symbol centroids, shape (N, 2)
+    sizes:     NDArray    # area-equivalent radii, shape (N,)
+    adjacency: NDArray    # adjacency matrix, shape (N, N)
+    bounds:    tuple      # geographic bounding box
+    mean_area: float      # mean input geometry area
     source_gdf: gpd.GeoDataFrame
+    valid_mask: NDArray | None         # bool mask identifying non-null rows in source_gdf
+    geometry_positions: NDArray | None # G-level centroids before tile_count expansion, shape (G, 2)
+    source_indices: NDArray | None     # maps each of the N items to its source row index (0..G-1)
+    group_ids: NDArray | None          # integer group label per item, shape (N,)
 ```
 
 ### Symbol Sizes
@@ -64,11 +70,28 @@ The `size_max_value` parameter fixes the reference maximum, enabling consistent 
 
 The adjacency matrix is used by layout algorithms to keep geographically adjacent symbols close together.
 
+### Tile Count and Group By
+
+Two mutually exclusive parameters alter how input rows are expanded into layout items:
+
+**`tile_count`** (column name, integer values): each region *g* is expanded into
+`tile_count[g]` separate items that will each be assigned to a distinct tile.
+`LayoutData.source_indices` maps each item back to its origin row *g*.
+`LayoutData.geometry_positions` holds the *G* original centroids before expansion
+and is used to seed the initial tile assignment.
+
+**`group_by`** (column name): attaches an integer `group_ids` label to each item
+so that group-level styling overrides and `to_geodataframe(level="group")` can
+aggregate symbols by group.
+
+`size` and `tile_count` address different questions: `size` controls *how large* each
+symbol is; `tile_count` controls *how many* symbols represent each region.
+
 ---
 
 ## Layout System
 
-Source: [layout.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layout.py), [layout_result.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layout_result.py)
+Source: [layouts/](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/), [layouts/layout_result.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/layout_result.py)
 
 ### Layout ABC
 
@@ -86,10 +109,11 @@ Four concrete implementations are registered under string keys and can be select
 |-----------|-------|-------------|
 | `"topology"` | `CirclePackingLayout` | Two-stage physics with contact constraints; good topology preservation |
 | `"physics"` | `CirclePhysicsLayout` | Velocity-based two-phase simulation; general purpose |
+| `"flow_density"` | `FlowDensityLayout` | Gaussian density-field flow advection; covers full domain without background sink |
 | `"grid"` | `GridBasedLayout` | Hungarian assignment to a regular tile grid |
 | `"centroid"` | `CentroidLayout` | Symbol at centroid; optional local overlap removal |
 
-Algorithm details are in the [Grid Layout Algorithm](symbol-cartogram-grid-layout.md) and [Circle Packing Layout Algorithm](symbol-cartogram-circle-packing.md) explanations.
+Algorithm details are in the [Grid Layout Algorithm](symbol-cartogram-grid-layout.md), [Circle Packing Layout Algorithm](symbol-cartogram-circle-packing.md), and [Flow Density Layout Algorithm](symbol-cartogram-flow-density-layout.md) explanations.
 
 ### LayoutResult
 
@@ -107,8 +131,13 @@ class LayoutResult:
     bounds:           tuple
     crs:              str | None
     algorithm_info:   dict
-    simulation_history: Any
+    simulation_history: SimulationHistory | None
+    metrics:          AlgorithmMetrics | None
 ```
+
+`metrics` holds final scalar summaries common to all physics-based layouts (`converged`, `iterations`, `final_overlaps`) plus an algorithm-specific subobject (`PhysicsMetrics`, `PackingMetrics`, or `FlowDensityMetrics`). Convenience properties `result.converged`, `result.iterations`, and `result.overlaps` delegate to `metrics` and `simulation_history` respectively.
+
+`simulation_history` holds per-iteration arrays. Its `algorithm` field is a typed subobject: `PhysicsHistory` (velocity per step), `PackingHistory` (drift, jitter, drift_rate), or `FlowDensityHistory` (mean and max NN errors).
 
 Immutability ensures the computed positions are never modified after the layout runs, making it safe to apply multiple styling configurations to the same result.
 
@@ -146,6 +175,10 @@ Source: [styling.py](https://github.com/bright-fakl/carto-flow/blob/main/src/car
 | `"circle"` | `CircleSymbol` | Inscribed radius = 0.5 |
 | `"square"` | `SquareSymbol` | Axis-aligned |
 | `"hexagon"` | `HexagonSymbol` | `pointy_top` parameter |
+| `"triangle"` | `TriangleSymbol` | `pointing_up` parameter |
+| `"diamond"` | `DiamondSymbol` | Square rotated 45° |
+| `"pentagon"` | `PentagonSymbol` | `pointy_top` parameter |
+| `"star"` | `StarSymbol` | `n_points`, `inner_radius_ratio` parameters |
 | — | `IsohedralTileSymbol` | For tiling-based shapes |
 
 Custom symbols subclass `Symbol` and implement `unit_polygon()`.
@@ -169,6 +202,23 @@ styling.set_symbol(["circle", "hexagon", "square", ...])
 ```
 
 The fluent API supports method chaining: `Styling().set_symbol("hexagon").transform(scale=0.9)`.
+
+### Per-Group Overrides
+
+When `group_by` was used at layout time, each item has a `group_ids` entry that `Styling`
+can target with three group-level methods. Group overrides take precedence over the global
+default but are overridden by per-geometry settings:
+
+```python
+styling = (
+    Styling(symbol="hexagon")                          # global default
+    .set_group_symbol("circle", group_indices=[0, 3])  # groups 0 and 3 use circles
+    .group_transform(scale=0.7, group_indices=[1])     # group 1 scaled down
+    .set_group_params({"pointy_top": False}, group_indices=[2])  # HexagonSymbol param
+)
+```
+
+Resolution order: per-geometry > per-group > global > canonical symbol.
 
 ### FitMode
 
@@ -201,7 +251,9 @@ Source: [result.py](https://github.com/bright-fakl/carto-flow/blob/main/src/cart
 
 **`restyle(styling=None, **kwargs)`** creates a new `SymbolCartogram` with different styling without re-running the layout. Requires `layout_result` to be present.
 
-**`to_geodataframe(source_gdf=None)`** exports the symbols as a GeoDataFrame, optionally joining original attributes from `source_gdf`.
+**`to_geodataframe(source_gdf=None, level="tile")`** exports the symbols as a GeoDataFrame.
+`level="tile"` (default) returns one row per symbol tile.
+`level="group"` requires `group_by` to have been set; returns one row per group with union geometry and a `tile_count` column.
 
 **`get_displacement_vectors()`** returns an (n, 2) array of displacement vectors from original centroids to final symbol centers.
 

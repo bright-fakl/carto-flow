@@ -44,11 +44,15 @@ SymbolShape
 AdjacencyMode
     How adjacency is computed (BINARY or WEIGHTED).
 
-Presets
--------
-preset_dorling, preset_topology_preserving, preset_demers, preset_tile_map,
-preset_fast, preset_quality
-    Factory functions returning kwargs dicts for ``create_symbol_cartogram``.
+Named cartogram functions
+------------------------
+centroid_cartogram, dorling_cartogram, geographic_cartogram,
+dorling_grouped_cartogram, geographic_grouped_cartogram,
+demers_cartogram, tile_map_cartogram
+    Convenience entry points that wrap ``create_symbol_cartogram`` with
+    preset algorithm and styling choices. The first five form a 2x2 grid
+    (grouped/not x origin-pull/centroid-pull) plus the Stage-1-only centroid
+    variant. Each exposes only the parameters that vary meaningfully for its style.
 
 Result
 ------
@@ -110,37 +114,43 @@ Classic Dorling cartogram (proportional circles, free placement):
 
 Using a preset:
 
->>> from carto_flow.symbol_cartogram.presets import preset_tile_map
->>> result = create_symbol_cartogram(gdf, **preset_tile_map())
+>>> from carto_flow.symbol_cartogram import tile_map_cartogram
+>>> result = tile_map_cartogram(gdf)
 >>> result.plot(column="category", categorical=True)
 
 """
 
 from .adjacency import compute_adjacency
 from .api import create_layout, create_symbol_cartogram
-from .data_prep import (
-    LayoutData,
-    compute_symbol_sizes,
-    prepare_layout_data,
-)
 from .grid import compute_grid_symbol_size, generate_grid
-from .layout import (
+from .layouts import (
+    AlgorithmMetrics,
     CentroidLayout,
+    CentroidLayoutOptions,
+    CentroidMetrics,
+    CirclePackingAdvancedOptions,
     CirclePackingLayout,
+    CirclePackingLayoutOptions,
     CirclePhysicsLayout,
+    CirclePhysicsLayoutOptions,
+    FlowDensityLayout,
+    FlowDensityLayoutOptions,
     GridBasedLayout,
+    GridBasedLayoutOptions,
+    GridMetrics,
     Layout,
+    LayoutData,
+    LayoutResult,
+    SimulationHistory,
+    Transform,
+    compute_symbol_sizes,
     get_layout,
+    prepare_layout_data,
     register_layout,
 )
-from .layout_result import LayoutResult, Transform
 from .options import (
     AdjacencyMode,
-    CentroidLayoutOptions,
-    CirclePackingLayoutOptions,
-    CirclePhysicsLayoutOptions,
     ForceMode,
-    GridBasedLayoutOptions,
     SymbolOrientation,
     SymbolShape,
 )
@@ -155,14 +165,15 @@ from .plot_results import (
     TilingPlotResult,
 )
 from .presets import (
-    preset_demers,
-    preset_dorling,
-    preset_fast,
-    preset_quality,
-    preset_tile_map,
-    preset_topology_preserving,
+    centroid_cartogram,
+    demers_cartogram,
+    dorling_cartogram,
+    dorling_grouped_cartogram,
+    geographic_cartogram,
+    geographic_grouped_cartogram,
+    tile_map_cartogram,
 )
-from .result import SimulationHistory, SymbolCartogram
+from .result import SymbolCartogram
 from .status import SymbolCartogramStatus
 from .styling import FitMode, Styling
 from .symbols import (
@@ -199,8 +210,11 @@ __all__ = [
     "AdjacencyHeatmapResult",
     "AdjacencyMode",
     "AdjacencyPlotResult",
+    "AlgorithmMetrics",
     "CentroidLayout",
     "CentroidLayoutOptions",
+    "CentroidMetrics",
+    "CirclePackingAdvancedOptions",
     "CirclePackingLayout",
     "CirclePackingLayoutOptions",
     "CirclePhysicsLayout",
@@ -209,9 +223,14 @@ __all__ = [
     "ComparisonPlotResult",
     "DisplacementPlotResult",
     "FitMode",
+    "FlowDensityHistory",
+    "FlowDensityLayout",
+    "FlowDensityLayoutOptions",
+    "FlowDensityMetrics",
     "ForceMode",
     "GridBasedLayout",
     "GridBasedLayoutOptions",
+    "GridMetrics",
     "HexagonSymbol",
     "HexagonTiling",
     "IsohedralTileSymbol",
@@ -219,6 +238,10 @@ __all__ = [
     "Layout",
     "LayoutData",
     "LayoutResult",
+    "PackingHistory",
+    "PackingMetrics",
+    "PhysicsHistory",
+    "PhysicsMetrics",
     "PrototilePlotResult",
     "QuadrilateralTiling",
     "SimulationHistory",
@@ -243,6 +266,7 @@ __all__ = [
     "Transform",
     "TransformedSymbol",
     "TriangleTiling",
+    "centroid_cartogram",
     "compute_adjacency",
     "compute_grid_symbol_size",
     "compute_symbol_sizes",
@@ -252,7 +276,12 @@ __all__ = [
     "create_square",
     "create_symbol_cartogram",
     "create_symbols",
+    "demers_cartogram",
+    "dorling_cartogram",
+    "dorling_grouped_cartogram",
     "generate_grid",
+    "geographic_cartogram",
+    "geographic_grouped_cartogram",
     "get_layout",
     "plot_adjacency",
     "plot_adjacency_heatmap",
@@ -260,13 +289,8 @@ __all__ = [
     "plot_displacement",
     "plot_tiling",
     "prepare_layout_data",
-    "preset_demers",
-    "preset_dorling",
-    "preset_fast",
-    "preset_quality",
-    "preset_tile_map",
-    "preset_topology_preserving",
     "register_layout",
     "resolve_symbol",
     "resolve_tiling",
+    "tile_map_cartogram",
 ]

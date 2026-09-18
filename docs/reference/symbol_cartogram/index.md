@@ -28,7 +28,7 @@ graph TD
 | Sub-module | Description |
 |------------|-------------|
 | **[API](api.md)** | Main functions: `create_symbol_cartogram`, `create_layout` |
-| **[Layout](layout.md)** | Layout algorithms: `CirclePhysicsLayout`, `GridBasedLayout`, etc. |
+| **[Layouts](layout.md)** | Layout algorithms: `FlowDensityLayout`, `CirclePhysicsLayout`, `GridBasedLayout`, etc. |
 | **[LayoutResult](layout_result.md)** | Immutable layout output with transforms |
 | **[Result](result.md)** | `SymbolCartogram` result container |
 | **[Styling](styling.md)** | Symbol styling configuration |
@@ -46,12 +46,6 @@ graph TD
 |------------|-------------|
 | **[Symbols](symbols.md)** | Symbol classes: `CircleSymbol`, `HexagonSymbol`, etc. |
 | **[Tiling](tiling.md)** | Tiling classes: `HexagonTiling`, `IsohedralTiling`, etc. |
-
-## Computation
-
-| Sub-module | Description |
-|------------|-------------|
-| **[Placement](placement.md)** | Physics simulators for circle placement |
 
 ## Output
 
@@ -86,26 +80,42 @@ square_result = layout_result.style(symbol="square", scale=0.8)
 hexagon_result = layout_result.style(symbol="hexagon", scale=0.9)
 ```
 
+### Flow Density Layout
+
+```python
+from carto_flow.symbol_cartogram import create_symbol_cartogram, FlowDensityLayout
+
+# Basic flow density layout
+result = create_symbol_cartogram(gdf, "population", layout=FlowDensityLayout())
+
+# Grouped by region: districts cluster within their parent region
+result = create_symbol_cartogram(
+    gdf,
+    "population",
+    group_by="region",
+    layout=FlowDensityLayout(spacing=0.15, cross_group_pull_scale=0.0),
+)
+```
+
 ### Custom Layout and Styling
 
 ```python
 from carto_flow.symbol_cartogram import (
     create_symbol_cartogram,
-    PhysicsBasedLayout,
-    PhysicsSimulatorOptions,
+    CirclePackingLayout,
+    CirclePackingLayoutOptions,
     Styling,
-    SymbolShape
 )
 
-layout = PhysicsBasedLayout(PhysicsSimulatorOptions(
+layout = CirclePackingLayout(CirclePackingLayoutOptions(
     spacing=0.15,
     max_iterations=2000,
-    force_mode="contact"
 ))
 
-styling = Styling(symbol=SymbolShape.HEXAGON, scale=0.85, color="#ff6b6b")
+styling = Styling(symbol="hexagon", scale=0.85)
 
 result = create_symbol_cartogram(gdf, "population", layout=layout, styling=styling)
+result.plot(column="population", facecolor="#ff6b6b")
 ```
 
 ### Using Presets
@@ -116,6 +126,35 @@ from carto_flow.symbol_cartogram.presets import preset_tile_map
 
 result = create_symbol_cartogram(gdf, "population", **preset_tile_map())
 result.plot(column="category", categorical=True, cmap="Set3")
+```
+
+### Tiled and Grouped Layouts
+
+```python
+from carto_flow.symbol_cartogram import create_symbol_cartogram
+
+# tile_count: each region gets an integer number of symbols
+result = create_symbol_cartogram(gdf, tile_count="seats", layout="grid")
+result.plot()
+
+# group_by: attach a group label for group-level export and styling
+result = create_symbol_cartogram(gdf, size="population", group_by="region")
+gdf_regions = result.to_geodataframe(level="group")  # one row per region, union geometry
+```
+
+### Group-level Styling
+
+```python
+from carto_flow.symbol_cartogram import create_layout, Styling
+
+layout_result = create_layout(gdf, tile_count="seats", layout="grid")
+
+styling = (
+    Styling(symbol="hexagon")
+    .set_group_symbol("circle", group_indices=[0, 3])
+    .group_transform(scale=0.7, group_indices=[1])
+)
+result = layout_result.style(styling)
 ```
 
 ## Error Handling

@@ -11,10 +11,10 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
-from .layout_result import Transform
+from .layouts import Transform
 
 if TYPE_CHECKING:
-    from .layout_result import LayoutResult
+    from .layouts import LayoutResult
     from .result import SymbolCartogram
     from .symbols import Symbol
 
@@ -122,6 +122,7 @@ class Styling:
             reflection=reflection,
         )
         self._per_geometry: dict[int, dict[str, Any]] = {}
+        self._per_group: dict[int, dict[str, Any]] = {}
 
         # Normalize fit_mode to enum
         if isinstance(fit_mode, str):
@@ -366,6 +367,92 @@ class Styling:
         self._global_transform = self._global_transform.compose(t)
         return self
 
+    def set_group_symbol(
+        self,
+        symbol: Symbol | str,
+        group_indices: list[int],
+    ) -> Styling:
+        """Set symbol for specific groups.
+
+        Parameters
+        ----------
+        symbol : Symbol or str
+            Symbol instance or string shorthand.
+        group_indices : list of int
+            Group integer indices to apply to.
+
+        Returns
+        -------
+        Styling
+            Self for method chaining.
+
+        """
+        for g in group_indices:
+            self._per_group.setdefault(g, {})["symbol"] = symbol
+        return self
+
+    def group_transform(
+        self,
+        scale: float = 1.0,
+        rotation: float = 0.0,
+        reflection: bool = False,
+        group_indices: list[int] | None = None,
+    ) -> Styling:
+        """Apply additional transform for specific groups.
+
+        Parameters
+        ----------
+        scale : float
+            Scale multiplier.
+        rotation : float
+            Rotation in degrees.
+        reflection : bool
+            Whether to reflect.
+        group_indices : list of int or None
+            Group integer indices. None is a no-op (use transform() instead).
+
+        Returns
+        -------
+        Styling
+            Self for method chaining.
+
+        """
+        if group_indices is None:
+            return self
+        t = Transform(
+            scale=scale,
+            rotation=np.radians(rotation) if rotation != 0.0 else 0.0,
+            reflection=reflection,
+        )
+        for g in group_indices:
+            existing = self._per_group.get(g, {}).get("transform", Transform())
+            self._per_group.setdefault(g, {})["transform"] = existing.compose(t)
+        return self
+
+    def set_group_params(
+        self,
+        params: dict[str, Any],
+        group_indices: list[int],
+    ) -> Styling:
+        """Set symbol parameters for specific groups.
+
+        Parameters
+        ----------
+        params : dict
+            Parameters to pass to symbol.modify().
+        group_indices : list of int
+            Group integer indices to apply to.
+
+        Returns
+        -------
+        Styling
+            Self for method chaining.
+
+        """
+        for g in group_indices:
+            self._per_group.setdefault(g, {}).setdefault("params", {}).update(params)
+        return self
+
     def apply(self, layout_result: LayoutResult) -> SymbolCartogram:
         """Apply styling to layout and produce cartogram.
 
@@ -399,32 +486,43 @@ class Styling:
         # Cache for symbol fit factors (to avoid recomputing)
         symbol_fit_cache: dict[int, tuple[float, tuple[float, float]]] = {}
 
+        src_idx = layout_result.source_indices  # (N,) or None
+        grp_ids = layout_result.group_ids  # (N,) or None
+
         for i, base_transform in enumerate(layout_result.transforms):
-            # Get effective symbol
-            symbol = self._per_geometry.get(i, {}).get("symbol", self._global_symbol)
-            if symbol is None:
-                symbol = layout_result.canonical_symbol
+            geom_i = int(src_idx[i]) if src_idx is not None else i
+            group_i = int(grp_ids[i]) if grp_ids is not None else None
+
+            # Symbol resolution: per-geometry > per-group > global > canonical
+            symbol = (
+                self._per_geometry.get(geom_i, {}).get("symbol")
+                or (self._per_group.get(group_i, {}).get("symbol") if group_i is not None else None)
+                or self._global_symbol
+                or layout_result.canonical_symbol
+            )
             if isinstance(symbol, str):
                 symbol = self._resolve_symbol(symbol)
 
-            # Get effective params
-            params = {
-                **self._global_params,
-                **self._per_geometry.get(i, {}).get("params", {}),
-            }
+            # Get effective params: global < per-group < per-geometry
+            params = dict(self._global_params)
+            if group_i is not None:
+                params.update(self._per_group.get(group_i, {}).get("params", {}))
+            params.update(self._per_geometry.get(geom_i, {}).get("params", {}))
             if params:
                 symbol = symbol.modify(**params)
 
-            # Get effective transform
-            global_t = self._global_transform
-            per_t = self._per_geometry.get(i, {}).get("transform", Transform())
-            effective_t = base_transform.compose(global_t).compose(per_t)
+            # Get effective transform: base < global < per-group < per-geometry
+            per_group_t = (
+                self._per_group.get(group_i, {}).get("transform", Transform()) if group_i is not None else Transform()
+            )
+            per_geom_t = self._per_geometry.get(geom_i, {}).get("transform", Transform())
+            effective_t = base_transform.compose(self._global_transform).compose(per_group_t).compose(per_geom_t)
 
             # If styling has rotation/reflection, wrap symbol for proper fitting
             # This ensures fit is computed on the transformed shape
             fit_symbol = symbol
-            styling_rotation = global_t.rotation
-            styling_reflection = global_t.reflection
+            styling_rotation = self._global_transform.rotation
+            styling_reflection = self._global_transform.reflection
             if styling_rotation != 0.0 or styling_reflection:
                 from .symbols import TransformedSymbol
 
@@ -464,7 +562,9 @@ class Styling:
 
         # Create GeoDataFrame
         gdf = gpd.GeoDataFrame(geometry=geometries, crs=layout_result.crs)
-        gdf["original_index"] = range(len(geometries))
+        gdf["original_index"] = src_idx.tolist() if src_idx is not None else list(range(len(geometries)))
+        if grp_ids is not None:
+            gdf["group_index"] = grp_ids.tolist()
         gdf["_symbol_x"] = symbol_x
         gdf["_symbol_y"] = symbol_y
         gdf["_symbol_size"] = symbol_sizes
@@ -472,44 +572,32 @@ class Styling:
         # Compute displacement from original positions
         displacements = np.zeros(len(geometries))
         if layout_result.positions is not None:
+            ref_positions = layout_result.positions[src_idx] if src_idx is not None else layout_result.positions
             displacements = np.sqrt(
-                (np.array(symbol_x) - layout_result.positions[:, 0]) ** 2
-                + (np.array(symbol_y) - layout_result.positions[:, 1]) ** 2,
+                (np.array(symbol_x) - ref_positions[:, 0]) ** 2 + (np.array(symbol_y) - ref_positions[:, 1]) ** 2,
             )
         gdf["_displacement"] = displacements
 
-        # Compute metrics
-        metrics = {
+        # Compute placement quality metrics
+        placement_metrics = {
             "displacement_mean": float(np.mean(displacements)),
             "displacement_max": float(np.max(displacements)),
             "displacement_std": float(np.std(displacements)),
         }
-
-        # Add n_skipped metric if valid_mask is provided
         if layout_result.valid_mask is not None:
-            metrics["n_skipped"] = int(np.sum(~layout_result.valid_mask))
+            placement_metrics["n_skipped"] = int(np.sum(~layout_result.valid_mask))
 
-        # Add algorithm-specific metrics
-        if layout_result.algorithm_info and "info" in layout_result.algorithm_info:
-            info = layout_result.algorithm_info["info"]
-            if isinstance(info, dict):
-                if "iterations" in info:
-                    metrics["iterations"] = info["iterations"]
-                if "converged" in info:
-                    metrics["converged"] = info["converged"]
+        from .status import SymbolCartogramStatus
 
-        # Extract tiling_result and assignments for grid layouts
-        tiling_result = layout_result.algorithm_info.get("tiling_result") if layout_result.algorithm_info else None
-        assignments = layout_result.algorithm_info.get("assignments") if layout_result.algorithm_info else None
+        converged = layout_result.metrics.converged if layout_result.metrics is not None else None
+        status = SymbolCartogramStatus.CONVERGED if converged is True else SymbolCartogramStatus.COMPLETED
 
         return SymbolCartogram(
             symbols=gdf,
             layout_result=layout_result,
             styling=self,
-            metrics=metrics,
-            _tiling_result=tiling_result,
-            _assignments=assignments,
-            simulation_history=layout_result.simulation_history,
+            status=status,
+            placement_metrics=placement_metrics,
             _valid_mask=layout_result.valid_mask,
         )
 

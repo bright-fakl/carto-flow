@@ -325,7 +325,7 @@ def _extract_exact_cells(points: np.ndarray, boundary) -> np.ndarray:
     need_clip = ~inside
     if need_clip.any():
         clipped[need_clip] = sh.intersection(cell_polys[need_clip], clip_geom)
-    clipped = np.array([_keep_polygonal(c) for c in clipped], dtype=object)
+    clipped[:] = [_keep_polygonal(c) for c in clipped]
     bad = sh.is_empty(clipped) | (sh.area(clipped) == 0.0)
     if bad.any():
         radius = np.sqrt(float(clip_geom.area) / len(points)) * 0.5

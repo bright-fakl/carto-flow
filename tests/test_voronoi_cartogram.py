@@ -523,3 +523,98 @@ class TestDegenerateCells:
         assert raised[1] == 0.0
         # Own position now wins: |p0 - p0|^2 - lam0 <= |p0 - p1|^2 - lam1
         assert -raised[0] <= 4.0 - raised[1]
+
+    def test_degenerate_cells_are_reported(self):
+        """The API surfaces degenerate cells instead of silently dropping them."""
+        import warnings
+
+        from shapely.geometry import Point
+
+        from carto_flow.voronoi_cartogram.result import VoronoiCartogram
+
+        gdf = make_grid_gdf(2, 2)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = create_voronoi_cartogram(gdf, backend=_FAST_EXACT, options=_FAST_OPTIONS)
+        assert result.degenerate_cells == []
+
+        cells = result.cells.copy()
+        cells[1] = Point(result.positions[1])
+        degenerate = VoronoiCartogram(
+            positions=result.positions,
+            cells=cells,
+            metrics=result.metrics,
+            options=result.options,
+            _source_gdf=gdf,
+        )
+        assert degenerate.degenerate_cells == [gdf.index[1]]
+        analysis = degenerate.analyze_topology()
+        assert analysis.degenerate_cells == [gdf.index[1]]
+        assert "degenerate cells" in repr(analysis)
+
+    def test_create_warns_about_degenerate_cells(self, monkeypatch):
+        """`create_voronoi_cartogram` warns when a cell has collapsed."""
+        import warnings
+
+        from shapely.geometry import Point
+
+        import carto_flow.voronoi_cartogram.api as api
+
+        gdf = make_grid_gdf(2, 2)
+        real = api.RasterBackend.build_field
+
+        def patched(self, *a, **kw):
+            fld = real(self, *a, **kw)
+            get_cells = fld.get_cells
+
+            def degenerate_cells():
+                cells = get_cells()
+                cells[0] = Point(fld.get_points()[0])
+                return cells
+
+            fld.get_cells = degenerate_cells
+            return fld
+
+        monkeypatch.setattr(api.RasterBackend, "build_field", patched)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = create_voronoi_cartogram(gdf, backend=_FAST_RASTER, options=_FAST_OPTIONS)
+        assert result.degenerate_cells == [gdf.index[0]]
+        assert any("collapsed to a point" in str(w.message) for w in caught)
+
+    def test_power_offset_guard_reduces_degenerate_cells_on_us_districts(self):
+        """Regression test for the reproduction case of the investigation.
+
+        US congressional districts simplified at 5000 m, grouped by state, at a
+        coarse raster resolution: several cells used to collapse to a Point.
+        """
+        import warnings
+
+        import carto_flow.data as examples
+        import carto_flow.voronoi_cartogram.fields._raster as raster
+        from carto_flow.geo_utils.simplification import simplify_coverage
+
+        districts = examples.load_us_census(population=True, level="congressional_district")
+        districts = simplify_coverage(districts, tolerance=5000, min_island_size=50000)
+
+        def run():
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return create_voronoi_cartogram(
+                    districts,
+                    backend=RasterBackend(resolution=64),
+                    options=VoronoiOptions(n_iter=30, area_cv_tol=0.1),
+                    group_by="State Name",
+                )
+
+        guarded = run()
+        try:
+            raster.ENSURE_NONEMPTY_POWER_CELLS = False
+            unguarded = run()
+        finally:
+            raster.ENSURE_NONEMPTY_POWER_CELLS = True
+
+        assert len(guarded.degenerate_cells) < len(unguarded.degenerate_cells)
+        # No cell may be a line geometry, at any resolution.
+        assert all(c.geom_type in ("Polygon", "MultiPolygon", "Point") for c in guarded.cells)
+        assert guarded.metrics["mean_area_error_pct"] <= unguarded.metrics["mean_area_error_pct"]

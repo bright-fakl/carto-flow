@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import warnings
 from typing import Any, cast
 
@@ -463,8 +464,9 @@ class RasterField(BaseField):
         water-tight cell polygons.
 
         After polygon construction, ``shapely.coverage_simplify`` is applied
-        with a half-pixel-area tolerance and ``simplify_boundary=False`` to
-        smooth out pixel staircases while preserving the outer coverage boundary.
+        with a ``sqrt(dx * dy / 2)`` distance tolerance (about 0.7 pixel) and
+        ``simplify_boundary=False`` to smooth out pixel staircases while
+        preserving the outer coverage boundary.
 
         Optional keyword overrides (*nx*, *ny*, *dx*, *dy*, *x_coords*,
         *y_coords*, *boundary*) replace the corresponding ``self._grid_*``
@@ -562,7 +564,10 @@ class RasterField(BaseField):
             cell_polys[i] = clipped if not sh.is_empty(clipped) else Point(self.points[i])
 
         # Smooth pixel staircases: coverage_simplify on shared interior edges only.
-        tol = dx * dy / 2.0
+        # `tol` is a distance tolerance in shapely (max vertex displacement),
+        # not an area: use sqrt(dx*dy/2) (~0.7 px) rather than dx*dy/2, which
+        # would be ~1e8x too large at typical grid resolutions and over-smooths.
+        tol = math.sqrt(dx * dy / 2.0)
         valid = np.array([c.geom_type in ("Polygon", "MultiPolygon") for c in cell_polys])
         if valid.any():
             try:

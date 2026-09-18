@@ -673,11 +673,12 @@ class TestSliverHoleBoundary:
             boundary=boundary,
         )
         # Staircase smoothing (coverage_simplify) moves area between the two
-        # cells, so compare generously per cell but exactly over the coverage.
+        # cells but, with a correctly-scaled (length, not area) tolerance,
+        # stays close to each cell's raw pixel count; total coverage is exact.
         for i in (0, 1):
             n_px = int((label_2d == i).sum())
             assert cells[i].geom_type in ("Polygon", "MultiPolygon"), cells[i].geom_type
-            assert cells[i].area > 0.25 * n_px * dx * dy
+            assert cells[i].area == pytest.approx(n_px * dx * dy, rel=0.15)
         assert sum(c.area for c in cells) == pytest.approx(boundary.area, rel=1e-9)
 
     def test_field_strips_sliver_rings_from_the_boundary(self):
@@ -734,7 +735,7 @@ class TestSliverHoleBoundary:
             )
 
         assert cells[1].geom_type in ("Polygon", "MultiPolygon")
-        assert cells[1].area > 0.25 * 5 * dx * dy
+        assert cells[1].area == pytest.approx(5 * dx * dy, rel=0.15)
         messages = [str(w.message) for w in caught]
         assert any("extraction failed for seed 1" in m for m in messages), messages
 

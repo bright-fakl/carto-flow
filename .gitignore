@@ -224,3 +224,6 @@ Untitled*.ipynb
 .kilo/node_modules/
 .kilo/package.json
 .kilo/package-lock.json
+
+# Local before/after visual check artefacts
+visual_checks/

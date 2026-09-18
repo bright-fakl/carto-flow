@@ -39,6 +39,7 @@ def create_symbol_cartogram(
     adjacency_mode: AdjacencyMode = AdjacencyMode.BINARY,
     adjacency: NDArray | None = None,
     distance_tolerance: float | None = None,
+    pre_scale: bool = False,
     # Runtime options (passed to create_layout)
     show_progress: bool = True,
     save_history: bool = False,
@@ -97,6 +98,10 @@ def create_symbol_cartogram(
         Pre-computed adjacency matrix. If provided, adjacency_mode is ignored.
     distance_tolerance : float, optional
         Buffer distance for adjacency detection.
+    pre_scale : bool
+        Uniformly scale each geographically connected component of the input
+        so its area matches its share of the data before layout. Useful for
+        multi-component inputs (e.g. mainland plus islands). Default False.
     show_progress : bool
         Display progress feedback during placement.
     save_history : bool
@@ -155,6 +160,7 @@ def create_symbol_cartogram(
         adjacency_mode=adjacency_mode,
         adjacency=adjacency,
         distance_tolerance=distance_tolerance,
+        pre_scale=pre_scale,
         show_progress=show_progress,
         save_history=save_history,
     )
@@ -193,6 +199,7 @@ def create_layout(
     adjacency_mode: AdjacencyMode = AdjacencyMode.BINARY,
     adjacency: NDArray | None = None,
     distance_tolerance: float | None = None,
+    pre_scale: bool = False,
     # Runtime options
     show_progress: bool = True,
     save_history: bool = False,
@@ -239,6 +246,10 @@ def create_layout(
         Pre-computed adjacency matrix. If provided, adjacency_mode is ignored.
     distance_tolerance : float, optional
         Buffer distance for adjacency detection.
+    pre_scale : bool
+        Uniformly scale each geographically connected component of the input
+        so its area matches its share of the data before layout. Useful for
+        multi-component inputs (e.g. mainland plus islands). Default False.
     show_progress : bool
         Display progress feedback during placement.
     save_history : bool
@@ -286,6 +297,7 @@ def create_layout(
         collapse_group=collapse_group,
         adjacency_mode=adjacency_mode,
         distance_tolerance=distance_tolerance,
+        pre_scale=pre_scale,
     )
 
     # Override adjacency if provided

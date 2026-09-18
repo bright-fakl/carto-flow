@@ -38,5 +38,8 @@ Two-stage position-based dynamics: Stage 1 resolves overlaps via global expansio
 ### [Flow Density Layout Algorithm](symbol-cartogram-flow-density-layout.md)
 Divergence field built from anisotropic Gaussian blobs at predicted contact points, solved with an FFT Poisson solve; circle centroids are advected through the resulting velocity field until spacing converges.
 
+### [Mosaic Layout Algorithm](symbol-cartogram-mosaic-layout.md)
+Exact integer tile assignment with an optional flow-morphing pre-step: tile grid calibration via sqrt gradient descent, the slot-expanded Hungarian cost function (centroid distance, outside penalty, connectivity bonus), and iterative connectivity repair for intra-region contiguity and inter-region adjacency.
+
 ### [Tiling System](tiling-system.md)
 Regular grids of congruent polygon tiles used as assignment targets for the grid layout: square, hexagonal, triangle, quadrilateral, and the 81 Grünbaum–Shephard isohedral types with customizable edge curves and an interactive design UI.

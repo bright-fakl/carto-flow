@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ...options import SymbolOrientation, SymbolShape
 from ..base import Layout, _apply_kwargs_to_options
@@ -239,7 +240,11 @@ class GridBasedLayout(Layout):
             if geometry_positions is None:  # pragma: no cover - set with source_indices
                 raise ValueError("geometry_positions is required when source_indices is set")
             G_full = len(geometry_positions)
-            counts = np.bincount(data.source_indices, minlength=G_full).astype(np.int32)
+            counts: NDArray[np.int32] = (
+                data.counts_G
+                if data.counts_G is not None
+                else np.bincount(data.source_indices, minlength=G_full).astype(np.int32)
+            )
             first_items = np.concatenate([[0], np.cumsum(counts[:-1])]).astype(np.intp)
             # Recover GxG adjacency: cross-block entries in the expanded matrix
             # are identical to the original GxG values.

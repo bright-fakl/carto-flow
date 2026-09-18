@@ -31,6 +31,7 @@ nav:
       - Apply Partitions to a Flow Cartogram: how-to/partitions-on-flow-cartogram.ipynb
     - Symbol Cartogram:
       - Style Symbols by Category: how-to/style-symbols-by-category.ipynb
+      - Create a Tile-Count Map: how-to/tile-count-maps.ipynb
     - Voronoi Cartogram:
       - Choose the Right Backend: how-to/voronoi_cartogram/choose-backend.ipynb
       - Coastal and Peninsula Regions: how-to/voronoi_cartogram/coastal-regions.ipynb
@@ -122,6 +123,7 @@ nav:
         - Grid Layout Algorithm: explanations/symbol-cartogram-grid-layout.md
         - Circle Packing Layout Algorithm: explanations/symbol-cartogram-circle-packing.md
         - Flow Density Layout Algorithm: explanations/symbol-cartogram-flow-density-layout.md
+        - Mosaic Layout Algorithm: explanations/symbol-cartogram-mosaic-layout.md
         - Tiling System: explanations/tiling-system.md
     - Voronoi Cartogram:
         - Algorithm: explanations/voronoi-cartogram-algorithm.md

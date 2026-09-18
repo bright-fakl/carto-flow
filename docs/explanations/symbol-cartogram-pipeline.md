@@ -111,9 +111,10 @@ Four concrete implementations are registered under string keys and can be select
 | `"physics"` | `CirclePhysicsLayout` | Velocity-based two-phase simulation; general purpose |
 | `"flow_density"` | `FlowDensityLayout` | Gaussian density-field flow advection; covers full domain without background sink |
 | `"grid"` | `GridBasedLayout` | Hungarian assignment to a regular tile grid |
+| `"mosaic"` | `MosaicLayout` | Exact integer tile assignment with optional flow-morphing pre-step |
 | `"centroid"` | `CentroidLayout` | Symbol at centroid; optional local overlap removal |
 
-Algorithm details are in the [Grid Layout Algorithm](symbol-cartogram-grid-layout.md), [Circle Packing Layout Algorithm](symbol-cartogram-circle-packing.md), and [Flow Density Layout Algorithm](symbol-cartogram-flow-density-layout.md) explanations.
+Algorithm details are in the [Grid Layout Algorithm](symbol-cartogram-grid-layout.md), [Circle Packing Layout Algorithm](symbol-cartogram-circle-packing.md), [Flow Density Layout Algorithm](symbol-cartogram-flow-density-layout.md), and [Mosaic Layout Algorithm](symbol-cartogram-mosaic-layout.md) explanations.
 
 ### LayoutResult
 

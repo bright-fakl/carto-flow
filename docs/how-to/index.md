@@ -29,6 +29,9 @@ Combine the two modules: morph geometries with the flow cartogram, then apply pr
 ### [Style Symbols by Category](style-symbols-by-category.ipynb)
 Separate layout computation from styling: map data columns to colors, shapes, opacity, hatching, and labels using `plot()` keyword arguments.
 
+### [Create a Tile-Count Map](tile-count-maps.ipynb)
+Use `tile_count` to assign each region an integer number of tiles (e.g. parliamentary seats), export group-level union geometries with `to_geodataframe(level="group")`, and apply per-group symbol shapes with `Styling.set_group_symbol()`.
+
 ## Voronoi Cartogram
 
 ### [Choose the Right Backend](voronoi_cartogram/choose-backend.ipynb)

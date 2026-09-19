@@ -9,9 +9,10 @@ What the layout guarantees, and what it only attempts:
   asserted everywhere;
 * intra-region contiguity and inter-region adjacency — best effort. The
   iterative repair loop keeps the best-scoring assignment it finds, which is
-  not always violation-free. Contiguity is therefore asserted on fixtures
-  where the current implementation achieves it, and the known failure on the
-  3x3 fixture is captured as a strict xfail.
+  not always violation-free, but a post-ring chain-swap repair then closes
+  remaining splits when it can do so without breaking another region.
+  Contiguity is therefore asserted on the fixtures the implementation
+  achieves it on.
 """
 
 from __future__ import annotations
@@ -193,19 +194,13 @@ class TestContiguity:
 
         assert non_contiguous_regions(result) == []
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Contiguity is best effort: on the 3x3 fixture (hexagon, morph=False) "
-            "2 of 9 regions come out split, unchanged by the group_ids_G fix and "
-            "still 2 after the repair objective was changed to score split regions "
-            "(plan 1.1). The repair loop already keeps the best pass it sees; here "
-            "the raw Hungarian solve is that best pass, so nothing improves on it. "
-            "Closing these two needs a repair move the loop does not have (e.g. "
-            "swap repair, plan 1.1 follow-up)."
-        ),
-    )
     def test_all_regions_contiguous_3x3(self):
+        """The 3x3 fixture reaches full contiguity via the chain-swap repair.
+
+        Was a strict xfail: 2 of 9 regions came out split because the repair
+        loop's best pass was the raw Hungarian solve and it had no move left.
+        The post-ring chain-swap repair closes both.
+        """
         gdf = grid_gdf(3, 3, COUNTS_3X3)
         result = compute(gdf)
 
@@ -225,6 +220,70 @@ class TestContiguity:
 
 
 # ---------------------------------------------------------------------------
+# 2a. Chain-swap repair
+# ---------------------------------------------------------------------------
+
+
+def _core_holes(result: MosaicLayoutResult) -> int:
+    """Unassigned core tiles every one of whose neighbours is assigned."""
+    adjacency = result.tiling_result.adjacency
+    assigned = {int(t) for t in result.assignments}
+    holes = 0
+    for t in (int(x) for x in result.core_tile_indices):
+        if t in assigned:
+            continue
+        neighbours = np.flatnonzero(adjacency[t])
+        if len(neighbours) and all(int(nb) in assigned for nb in neighbours):
+            holes += 1
+    return holes
+
+
+class TestChainSwapRepair:
+    """The post-ring chain-swap repair closes splits without side effects."""
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_exact_tile_counts_preserved_under_repair(self, cols, rows, counts):
+        """The repair only permutes ownership of occupied tiles."""
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=10))
+
+        np.testing.assert_array_equal(tile_counts_per_geometry(on), counts)
+        np.testing.assert_array_equal(tile_counts_per_geometry(off), counts)
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_repair_never_increases_split_regions(self, cols, rows, counts):
+        """Turning the repair on may not split more regions than leaving it off."""
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=10))
+
+        assert len(non_contiguous_regions(on)) <= len(non_contiguous_regions(off))
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_repair_occupies_the_same_tiles(self, cols, rows, counts):
+        """The occupied tile set is untouched, so the ring swap-back's work stands."""
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=10))
+
+        assert {int(t) for t in on.assignments} == {int(t) for t in off.assignments}
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_repair_introduces_no_core_holes(self, cols, rows, counts):
+        """The repair adds no unassigned tile enclosed by assigned ones."""
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=10))
+
+        assert _core_holes(on) <= _core_holes(off)
+
+
+# ---------------------------------------------------------------------------
 # 2b. Topology metrics
 # ---------------------------------------------------------------------------
 
@@ -233,17 +292,29 @@ class TestTopologyMetrics:
     """``MosaicMetrics`` reports region-level topology, and ``converged`` uses it."""
 
     def test_metrics_report_split_regions(self):
-        """The 3x3 fixture splits regions, so ``converged`` must be False."""
+        """With the chain-swap repair off, the 3x3 fixture splits regions.
+
+        ``converged`` must then be False even though every region has exactly
+        its requested tile count — exact counts alone do not imply convergence.
+        """
         gdf = grid_gdf(3, 3, COUNTS_3X3)
-        result = compute(gdf)
+        result = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=0))
 
         metrics = result.metrics.algorithm
         assert metrics.n_noncontiguous_regions == len(non_contiguous_regions(result))
         assert metrics.n_noncontiguous_regions > 0
         assert metrics.n_split_groups == 0
         assert result.metrics.converged is False
-        # Exact counts alone no longer imply convergence.
         assert metrics.regions_correct == metrics.regions_total
+
+    def test_metrics_report_convergence_after_repair(self):
+        """With the repair on (the default) the same fixture converges."""
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        result = compute(gdf)
+
+        metrics = result.metrics.algorithm
+        assert metrics.n_noncontiguous_regions == 0
+        assert result.metrics.converged is True
 
     def test_repair_passes_is_the_real_pass_count(self):
         """``iterations`` reports passes run, not ``max_connectivity_iters``."""

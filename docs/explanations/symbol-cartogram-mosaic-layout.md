@@ -203,9 +203,24 @@ contiguous and all geographic neighbours share a tile edge.
 `AlgorithmMetrics.converged` requires exact counts **and** zero split regions and groups, so it
 is `False` on a result that has every tile count right but a region in two pieces.
 
-With `swap_repair_passes > 0`, a final swap-based repair stage
-(`geo_utils.contiguity.repair_group_assignment`, shared with the voronoi cartogram) exchanges
-tiles between regions while preserving tile counts. It is off by default.
+### Chain-swap repair
+
+Whatever the Hungarian loop leaves split, a final **chain-swap repair** tries to close, and it
+runs *after* the extra-ring swap-back rather than before it. That ordering matters: the ring
+swap-back is itself a strong repair — on US states it takes the assignment from 10 split states
+to 2, and on districts grouped by state from 19 split groups to 14 — so a repair placed before
+it spends its swaps on satellites the ring step would have reconnected anyway, and then has its
+work partly undone.
+
+The move is the one in `geo_utils.contiguity.repair_contiguity`: enumerate short chains of tiles
+from a stranded satellite back to its region's main body and rotate ownership along the chain.
+Every tile on the chain keeps its geometry's tile count, and the *set* of occupied tiles is
+untouched, so exact counts and the hole-free interior the ring step produced are both preserved
+structurally. Candidate chains that would split some other region are rejected.
+
+The permutation is applied only if it strictly reduces the number of split regions or groups and
+increases neither, so turning the repair on can never make either metric worse than leaving it
+off. `swap_repair_passes` defaults to 10; set it to 0 to disable.
 
 ### What is guaranteed, and what is not
 
@@ -259,7 +274,7 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `disconnected_penalty_mult` | 10.0 | Cost raise for disconnected tiles (x current max cost). |
 | `gap_bridge_mult` | 5.0 | Cost reduction for bridge-candidate tiles (x current max cost). |
 | `disconnected_score_weight` | 100 | Tie-break weight per disconnected tile vs. per gap. |
-| `swap_repair_passes` | 0 | Passes of the final swap-based repair stage; 0 disables it. |
+| `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
 
 The cost weights were renamed from `alpha` / `beta` / `delta` to `distance_weight` /
 `outside_penalty` / `interior_bonus` before the layout became public; there are no aliases.

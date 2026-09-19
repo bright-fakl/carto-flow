@@ -293,10 +293,15 @@ class MosaicLayout(Layout):
                     pool_set |= ring
                 comp_tile_pools[c] = sorted(pool_set)
 
-        # Step 3c: Build group labels for group_by mode
+        # Step 3c: Build group labels for group_by mode.
+        # Uses the G-level user grouping (group_ids_G), which is None unless
+        # group_by was used; data.group_ids is N-level (one entry per symbol)
+        # and must not be zipped against the G geometries. None does not mean
+        # "no grouping": the assignment then treats each geometry as its own
+        # group, so a geometry and its tiles still have to form one block.
         group_labels = None
-        if data.group_ids is not None:
-            raw_group_labels = data.group_ids.astype(np.int32)
+        if data.group_ids_G is not None:
+            raw_group_labels = data.group_ids_G.astype(np.int32)
             # Split groups at geographic component boundaries
             eff: dict[tuple[int, int], int] = {}
             effective_group_labels = np.empty(G, dtype=np.int32)
@@ -382,7 +387,7 @@ class MosaicLayout(Layout):
             tile_size,
             counts,
             source_gdf,
-            data.group_ids,
+            data.group_ids_G,
         )
 
         # Step 6: Build transforms (one per assigned tile)
@@ -449,7 +454,7 @@ class MosaicLayout(Layout):
             pool_tile_indices=pool_tile_indices,
             valid_mask=data.valid_mask,
             source_indices=src_idx,
-            group_ids=data.group_ids[src_idx] if data.group_ids is not None else None,
+            group_ids=data.group_ids_G[src_idx] if data.group_ids_G is not None else None,
         )
 
 
@@ -460,9 +465,14 @@ def _build_geodataframes(
     tile_size: float,
     counts: np.ndarray,
     source_gdf,
-    data_group_ids: np.ndarray | None,
+    group_ids_G: np.ndarray | None,
 ):
-    """Build tiles_gdf and regions_gdf from the assignment."""
+    """Build tiles_gdf and regions_gdf from the assignment.
+
+    ``group_ids_G`` is the G-level user grouping (one entry per geometry) or
+    None. With None, ``regions_gdf`` has one row per geometry; otherwise one
+    row per group.
+    """
     import geopandas as gpd
     import shapely
     from shapely.ops import unary_union as _uu
@@ -487,18 +497,18 @@ def _build_geodataframes(
         polys = [_snapped_polygons[t] for t in tile_indices_for_region]
         return _uu(polys)
 
-    if data_group_ids is not None:
+    if group_ids_G is not None:
         # group_by mode: one region per unique group
-        unique_grp_ids = np.unique(data_group_ids)
+        unique_grp_ids = np.unique(group_ids_G)
         region_geoms = []
         tile_count_list = []
         target_count_list = []
         for gid in unique_grp_ids:
-            gmask_set = set(np.where(data_group_ids == gid)[0].tolist())
+            gmask_set = set(np.where(group_ids_G == gid)[0].tolist())
             g_tile_indices = [t for t in valid_tile_indices if int(assignment[t]) in gmask_set]
             region_geoms.append(_merge(g_tile_indices))
             tile_count_list.append(len(g_tile_indices))
-            target_count_list.append(int(np.sum(data_group_ids == gid)))
+            target_count_list.append(int(np.sum(group_ids_G == gid)))
         regions_gdf = gpd.GeoDataFrame(
             {"tile_count": tile_count_list, "target_count": target_count_list, "group_id": unique_grp_ids.tolist()},
             geometry=region_geoms,

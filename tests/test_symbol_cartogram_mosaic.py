@@ -159,6 +159,22 @@ class TestTileCounts:
         assert list(result.regions_gdf["target_count"]) == COUNTS_4X3
         assert len(result.tiles_gdf) == len(result.transforms)
 
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_regions_gdf_tile_count_is_aggregated_per_geometry(self, cols, rows, counts):
+        """One ``regions_gdf`` row per geometry, holding exactly its own tiles.
+
+        Regression test: ``tile_count`` used to be aggregated with the N-level
+        ``group_ids``, which mixed tiles of unrelated geometries (a 4-tile
+        region reported 18).
+        """
+        gdf = grid_gdf(cols, rows, counts)
+        result = compute(gdf)
+
+        assert len(result.regions_gdf) == len(gdf)
+        assert list(result.regions_gdf["tile_count"]) == counts
+        assert list(result.regions_gdf["target_count"]) == counts
+        assert int(result.regions_gdf["tile_count"].sum()) == len(result.transforms)
+
 
 # ---------------------------------------------------------------------------
 # 2. Contiguity
@@ -180,7 +196,10 @@ class TestContiguity:
         strict=True,
         reason=(
             "Contiguity is best effort: on the 3x3 fixture (hexagon, morph=False) "
-            "2 of 9 regions come out split. See issue #20 follow-ups."
+            "2 of 9 regions come out split, unchanged by the group_ids_G fix. "
+            "The connectivity repair scores disconnected *tiles*, not split "
+            "regions, so it does not close these two. See issue #20 follow-ups "
+            "(plan 1.1, repair objective)."
         ),
     )
     def test_all_regions_contiguous_3x3(self):
@@ -219,6 +238,40 @@ def group_fixture() -> tuple[gpd.GeoDataFrame, list[str], list[int]]:
     groups = ["A", "A", "B", "B"] * 2 + ["B", "B"]
     components = [0] * 8 + [1] * 2
     return gpd.GeoDataFrame({"grp": groups}, geometry=geoms), groups, components
+
+
+class TestGroupIdLevels:
+    """``group_ids`` is N-level (per symbol); ``group_ids_G`` is the G-level grouping."""
+
+    def test_tile_count_has_no_user_grouping(self):
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        data = prepare_layout_data(gdf, tile_count="tiles")
+
+        assert data.group_ids is not None
+        assert len(data.group_ids) == sum(COUNTS_3X3)  # N-level
+        assert data.group_ids_G is None  # no group_by, so no user grouping
+
+        result = MosaicLayout(morph=False).compute(data, show_progress=False)
+        assert result.group_ids is None
+
+    def test_group_by_sets_g_level_ids(self):
+        gdf, groups, _ = group_fixture()
+        data = prepare_layout_data(gdf, group_by="grp")
+
+        expected = np.unique(groups, return_inverse=True)[1]
+        assert data.group_ids_G is not None
+        assert len(data.group_ids_G) == len(gdf)  # G-level
+        np.testing.assert_array_equal(data.group_ids_G, expected)
+        np.testing.assert_array_equal(data.group_ids, expected)  # N == G here
+
+        result = MosaicLayout(morph=False).compute(data, show_progress=False)
+        assert result.group_ids is not None
+        np.testing.assert_array_equal(result.group_ids, expected[np.asarray(result.source_indices)])
+
+    def test_tile_count_and_group_by_cannot_be_combined(self):
+        gdf = grid_gdf(3, 3, COUNTS_3X3).assign(grp="a")
+        with pytest.raises(ValueError, match="Cannot set both tile_count and group_by"):
+            prepare_layout_data(gdf, tile_count="tiles", group_by="grp")
 
 
 class TestGroupBy:
@@ -468,3 +521,7 @@ class TestUsStates:
         assert metrics.regions_correct == metrics.regions_total == len(gdf)
         np.testing.assert_array_equal(tile_counts_per_geometry(result), tiles)
         assert metrics.n_components == 1
+        # One regions_gdf row per state, each holding exactly its requested tiles.
+        assert len(result.regions_gdf) == len(gdf)
+        np.testing.assert_array_equal(result.regions_gdf["tile_count"].to_numpy(), tiles)
+        np.testing.assert_array_equal(result.regions_gdf["target_count"].to_numpy(), tiles)

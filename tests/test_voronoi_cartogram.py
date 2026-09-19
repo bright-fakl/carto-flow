@@ -463,3 +463,163 @@ class TestAnimation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# 12. Degenerate cells
+# ---------------------------------------------------------------------------
+
+
+class TestDegenerateCells:
+    """Cells that collapse to a Point or a line must not leak downstream."""
+
+    def test_line_clip_result_becomes_a_point_placeholder(self):
+        """A label region that clips to lines only must not survive as a line.
+
+        A line-only cell used to be kept as the cell geometry and then fed to
+        ``shapely.coverage_simplify``, which raised and silently disabled
+        boundary smoothing for every cell of that run.
+        """
+        import warnings
+
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        points = np.array([[0.5, 2.0], [2.5, 2.0]])
+        field = RasterField(points, box(0, 0, 4, 4), resolution=4)
+        # Boundary with a notch exactly over the pixel column labelled 1, so
+        # that column's clip result is a MultiLineString (the notch walls).
+        notched = box(0, 0, 4, 4).difference(box(1, 0, 2, 4))
+        label_2d = np.zeros((4, 4), dtype=np.int32)
+        label_2d[:, 1] = 1
+        coords = np.array([0.5, 1.5, 2.5, 3.5])
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cells = field._label_2d_to_cell_polys(
+                label_2d,
+                nx=4,
+                ny=4,
+                dx=1.0,
+                dy=1.0,
+                x_coords=coords,
+                y_coords=coords,
+                boundary=notched,
+            )
+
+        assert [c.geom_type for c in cells] == ["MultiPolygon", "Point"]
+        assert not any("coverage_simplify" in str(w.message) for w in caught)
+
+    def test_power_offset_floor_keeps_every_cell_non_empty(self):
+        """A far-below-neighbour power offset must be raised, not left empty."""
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        points = np.array([[1.0, 2.0], [3.0, 2.0]])
+        field = RasterField(points, box(0, 0, 4, 4), resolution=8, area_eq_weight=0.1)
+        # Seed 0 sits 2 units from seed 1, so an offset gap larger than d^2 = 4
+        # makes seed 0's power cell empty.
+        field._power_offsets[:] = [-10.0, 0.0]
+        raised = field._nonempty_offsets()
+        assert raised[0] >= raised[1] - 4.0
+        assert raised[1] == 0.0
+        # Own position now wins: |p0 - p0|^2 - lam0 <= |p0 - p1|^2 - lam1
+        assert -raised[0] <= 4.0 - raised[1]
+
+    def test_degenerate_cells_are_reported(self):
+        """The API surfaces degenerate cells instead of silently dropping them."""
+        import warnings
+
+        from shapely.geometry import Point
+
+        from carto_flow.voronoi_cartogram.result import VoronoiCartogram
+
+        gdf = make_grid_gdf(2, 2)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = create_voronoi_cartogram(gdf, backend=_FAST_EXACT, options=_FAST_OPTIONS)
+        assert result.degenerate_cells == []
+
+        cells = result.cells.copy()
+        cells[1] = Point(result.positions[1])
+        degenerate = VoronoiCartogram(
+            positions=result.positions,
+            cells=cells,
+            metrics=result.metrics,
+            options=result.options,
+            _source_gdf=gdf,
+        )
+        assert degenerate.degenerate_cells == [gdf.index[1]]
+        analysis = degenerate.analyze_topology()
+        assert analysis.degenerate_cells == [gdf.index[1]]
+        assert "degenerate cells" in repr(analysis)
+
+    def test_create_warns_about_degenerate_cells(self, monkeypatch):
+        """`create_voronoi_cartogram` warns when a cell has collapsed."""
+        import warnings
+
+        from shapely.geometry import Point
+
+        import carto_flow.voronoi_cartogram.api as api
+
+        gdf = make_grid_gdf(2, 2)
+        real = api.RasterBackend.build_field
+
+        def patched(self, *a, **kw):
+            fld = real(self, *a, **kw)
+            get_cells = fld.get_cells
+
+            def degenerate_cells():
+                cells = get_cells()
+                cells[0] = Point(fld.get_points()[0])
+                return cells
+
+            fld.get_cells = degenerate_cells
+            return fld
+
+        monkeypatch.setattr(api.RasterBackend, "build_field", patched)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = create_voronoi_cartogram(gdf, backend=_FAST_RASTER, options=_FAST_OPTIONS)
+        assert result.degenerate_cells == [gdf.index[0]]
+        assert any("collapsed to a point" in str(w.message) for w in caught)
+
+    def test_power_offset_guard_reduces_degenerate_cells_on_us_districts(self):
+        """Regression test for the reproduction case of the investigation.
+
+        US congressional districts simplified at 5000 m, grouped by state, at a
+        coarse raster resolution: several cells used to collapse to a Point.
+        """
+        import warnings
+
+        import carto_flow.data as examples
+        import carto_flow.voronoi_cartogram.fields._raster as raster
+        from carto_flow.geo_utils.simplification import simplify_coverage
+
+        districts = examples.load_us_census(population=True, level="congressional_district")
+        districts = simplify_coverage(districts, tolerance=5000, min_island_size=50000)
+
+        def run():
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return create_voronoi_cartogram(
+                    districts,
+                    backend=RasterBackend(resolution=64),
+                    options=VoronoiOptions(n_iter=30, area_cv_tol=0.1),
+                    group_by="State Name",
+                )
+
+        guarded = run()
+        try:
+            raster.ENSURE_NONEMPTY_POWER_CELLS = False
+            unguarded = run()
+        finally:
+            raster.ENSURE_NONEMPTY_POWER_CELLS = True
+
+        assert len(guarded.degenerate_cells) < len(unguarded.degenerate_cells)
+        # No cell may be a line geometry, at any resolution.
+        assert all(c.geom_type in ("Polygon", "MultiPolygon", "Point") for c in guarded.cells)
+        # The guard perturbs the final extraction slightly, so allow a small
+        # amount of slack on this coarse (non-converged) R=64 run; it must
+        # not make area accuracy meaningfully worse. The guard's real
+        # benefit shows at coarser resolutions (e.g. 69.5 -> 62.7 at R=32),
+        # so 1% slack here still catches a genuine regression.
+        assert guarded.metrics["mean_area_error_pct"] <= unguarded.metrics["mean_area_error_pct"] * 1.01

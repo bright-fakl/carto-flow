@@ -8,7 +8,7 @@ import numpy as np
 from scipy.spatial import Voronoi
 from shapely.geometry import Point, Polygon
 
-from ._base import BaseField, _extract_exact_cells
+from ._base import BaseField, _extract_exact_cells, _keep_polygonal
 
 
 class ExactField(BaseField):
@@ -100,11 +100,12 @@ class ExactField(BaseField):
         need_clip = ~inside
         if need_clip.any():
             clipped[need_clip] = sh.intersection(cell_polys[need_clip], clip_geom)
+        clipped = np.array([_keep_polygonal(c) for c in clipped], dtype=object)
         bad = sh.is_empty(clipped) | (sh.area(clipped) == 0.0)
         if bad.any():
             radius = np.sqrt(float(clip_geom.area) / len(self.points)) * 0.5
             approx = sh.intersection(sh.buffer(sh.points(self.points[bad]), radius), clip_geom)
-            clipped[bad] = approx
+            clipped[bad] = np.array([_keep_polygonal(a) for a in np.atleast_1d(approx)], dtype=object)
         return clipped
 
     def relax(

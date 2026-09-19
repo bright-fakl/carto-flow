@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import geopandas as gpd
@@ -177,8 +178,6 @@ def create_voronoi_cartogram(
     if group_by is not None and group_by not in gdf.columns:
         raise ValueError(f"group_by column {group_by!r} not found in GeoDataFrame")
     if backend.intra_group_spring is not None and group_by is None:
-        import warnings
-
         warnings.warn(
             "intra_group_spring is set but group_by is None — intra_group_spring will be ignored",
             UserWarning,
@@ -446,7 +445,7 @@ def create_voronoi_cartogram(
         "max_area_error_pct": float(np.max(np.abs(area_errors))),
     }
 
-    return VoronoiCartogram(
+    result = VoronoiCartogram(
         positions=field.get_points(),
         cells=cells,
         metrics=metrics,
@@ -458,3 +457,18 @@ def create_voronoi_cartogram(
         area_errors=area_errors,
         _weighted=weights is not None,
     )
+
+    degenerate = result.degenerate_cells
+    if degenerate:
+        shown = ", ".join(repr(label) for label in degenerate[:5])
+        more = f" (+{len(degenerate) - 5} more)" if len(degenerate) > 5 else ""
+        warnings.warn(
+            f"{len(degenerate)} Voronoi cell(s) collapsed to a point / zero area: "
+            f"{shown}{more}. They count as -100% area error and are omitted from "
+            f"plots; raise the backend resolution to avoid this "
+            f"(see VoronoiCartogram.degenerate_cells).",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    return result

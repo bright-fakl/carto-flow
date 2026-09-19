@@ -85,9 +85,10 @@ def find_adjacent_pairs(
             if detection.is_empty or detection.length <= distance_tolerance:
                 continue
             # True shared border: portion of i's boundary inside j's buffer.
-            # shapely.boundary is None for GeometryCollections; fall back to
-            # the buffered intersection length in that case.
-            if boundaries[i] is None:
+            # shapely.boundary is None for GeometryCollections and an EMPTY
+            # GeometryCollection for degenerate (Point / zero-area) geometries;
+            # fall back to the buffered intersection length in both cases.
+            if boundaries[i] is None or boundaries[i].is_empty:
                 shared_length = detection.length
             else:
                 shared_length = boundaries[i].intersection(buffered[j]).length

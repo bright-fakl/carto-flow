@@ -494,49 +494,4 @@ def hungarian_morphed_assignment(
         stats["passes"] = passes_run
         stats["split_units"] = 0 if best_score[0] >= 2**31 else best_score[0]
 
-    if options.swap_repair_passes > 0:
-        from ....geo_utils.contiguity import repair_group_assignment
-
-        assigned_tiles = [t for t in valid_tile_indices if best_assignment[t] >= 0]
-        if assigned_tiles:
-            tile_polys = [tiling_result.polygons[t] for t in assigned_tiles]
-            tile_geoms = [int(best_assignment[t]) for t in assigned_tiles]
-
-            if group_labels is not None:
-                # group_by mode: Stage 1/3 use state labels; Stage 2 skipped —
-                # mirrors voronoi _compose_topology_permutation with groups.
-                tile_groups = [int(group_labels[g]) for g in tile_geoms]
-                district_adj: list[tuple[int, int]] = []
-            elif counts.max() > 1:
-                # Multi-tile mode: geometry plays the role of group (multiple
-                # tiles per geometry). Same as group_by: Stage 1/3 with geometry
-                # indices, Stage 2 skipped.
-                tile_groups = tile_geoms
-                district_adj = []
-            else:
-                # Single-tile mode (N == G, no group_by): geometry index ==
-                # district index. Run all stages including Stage 2.
-                tile_groups = tile_geoms
-                geom_to_district: dict[int, int] = {}
-                for d, g in enumerate(tile_geoms):
-                    if g not in geom_to_district:
-                        geom_to_district[g] = d
-                district_adj = [
-                    (geom_to_district[g1], geom_to_district[g2])
-                    for g1, g2, _ in geom_adj_pairs
-                    if g1 in geom_to_district and g2 in geom_to_district
-                ]
-
-            slot_of = repair_group_assignment(
-                tile_polys,
-                tile_groups,
-                district_adj,
-                max_passes=options.swap_repair_passes,
-            )
-            orig_geoms = list(tile_geoms)
-            for t in assigned_tiles:
-                best_assignment[t] = -1
-            for d, new_slot_idx in enumerate(slot_of):
-                best_assignment[assigned_tiles[new_slot_idx]] = orig_geoms[d]
-
     return best_assignment

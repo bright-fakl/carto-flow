@@ -84,6 +84,67 @@ def _count_split_units(
     return split
 
 
+def _chain_swap_repair(
+    assignment: np.ndarray,
+    adj_list: list[list[int]],
+    G: int,
+    group_labels: np.ndarray | None,
+    max_passes: int,
+    show_progress: bool = False,
+) -> np.ndarray:
+    """Close remaining split units by swapping geometry ownership along tile chains.
+
+    Runs :func:`~carto_flow.geo_utils.contiguity.repair_contiguity` over the
+    *final* set of occupied tiles — after the extra-ring swap-back — so the
+    repair sees the topology the metrics are computed on.  Because it only
+    permutes which geometry owns each already-occupied tile, the occupied tile
+    set (and therefore every region's tile count, and the absence of holes the
+    ring swap-back achieved) is preserved exactly.
+
+    The permutation is applied only when it strictly reduces the number of
+    split units and increases neither the per-geometry nor the per-group count,
+    so the repair can never make either metric worse than leaving it off.
+    """
+    from ....geo_utils.contiguity import repair_contiguity
+
+    tiles = sorted(t for t in range(len(assignment)) if assignment[t] >= 0)
+    if len(tiles) < 2:
+        return assignment
+    local = {t: i for i, t in enumerate(tiles)}
+    adjacency = [{local[nb] for nb in adj_list[t] if nb in local} for t in tiles]
+    geoms = [int(assignment[t]) for t in tiles]
+
+    geom_units = np.arange(G, dtype=np.int32)
+    units = [int(group_labels[g]) for g in geoms] if group_labels is not None else geoms
+
+    def score(a: np.ndarray) -> tuple[int, int]:
+        by_group = _count_split_units(a, tiles, adj_list, group_labels) if group_labels is not None else 0
+        return by_group, _count_split_units(a, tiles, adj_list, geom_units)
+
+    before = score(assignment)
+    if before == (0, 0):
+        return assignment
+
+    # max_candidate_paths above the library default: the first chains found are
+    # often rejected because rerouting them would split another unit, and the
+    # accept-guard below makes a wider search free of downside.
+    slot_of, _ = repair_contiguity(None, units, max_passes=max_passes, adjacency=adjacency, max_candidate_paths=60)
+
+    repaired = assignment.copy()
+    repaired[tiles] = -1
+    for d, slot in enumerate(slot_of):
+        repaired[tiles[int(slot)]] = geoms[d]
+
+    after = score(repaired)
+    accepted = after[0] <= before[0] and after[1] <= before[1] and after < before
+    if show_progress:
+        print(
+            f"[mosaic]   chain-swap repair: (group, geom) splits {before} -> {after}"
+            f"  {'accepted' if accepted else 'rejected'}"
+        )
+    return repaired if accepted else assignment
+
+
 @dataclass
 class HungarianOptions:
     """Cost-function parameters for mosaic Hungarian assignment.
@@ -130,9 +191,12 @@ class HungarianOptions:
         pool centroid. More accurate for non-convex or tightly-packed regions
         (e.g. New England). Default False.
     swap_repair_passes : int
-        Maximum passes for the swap-based repair stage (Stage 1: contiguity,
-        Stage 2: adjacency) run after the iterative Hungarian loop.
-        Default 0 (disabled).
+        Maximum passes of the chain-swap contiguity repair that runs on the
+        final assignment, after the extra-ring swap-back.  It permutes which
+        geometry owns each occupied tile along short chains, so tile counts
+        and the occupied tile set are preserved exactly, and the result is
+        kept only when it strictly reduces the number of split regions or
+        groups without increasing either.  0 disables it.  Default 10.
     """
 
     distance_weight: float = 1.0
@@ -144,7 +208,7 @@ class HungarianOptions:
     disconnected_score_weight: int = 100
     neighbor_weight: float = 0.3
     neighbor_bfs: bool = False
-    swap_repair_passes: int = 0
+    swap_repair_passes: int = 10
 
     def __post_init__(self) -> None:
         if self.max_connectivity_iters < 0:
@@ -434,6 +498,16 @@ class MosaicLayout(Layout):
                             unassigned_core.discard(t)
                             changed = True
                             break
+
+        # Post-process: close any remaining split regions/groups by swapping
+        # geometry ownership along tile chains.  Runs after the extra-ring
+        # swap-back, which is itself a strong repair (it pulls ring tiles back
+        # into the core and reconnects most satellites); repairing before it
+        # would spend the chain swaps on splits the ring step removes anyway.
+        if hopts.swap_repair_passes > 0:
+            assignment = _chain_swap_repair(
+                assignment, adj_list, G, group_labels, hopts.swap_repair_passes, show_progress
+            )
 
         # Store tile index sets for visualization.
         # core_tile_indices: tiles whose centroid is inside the study union (= valid_tile_indices).

@@ -12,20 +12,23 @@ __all__ = ["repair_adjacency", "repair_compactness", "repair_contiguity", "repai
 
 
 def repair_contiguity(
-    cells: list,
+    cells: list | None,
     groups: list,
     *,
     max_passes: int = 20,
     show_progress: bool = False,
     debug: bool = False,
     min_shared_length: float | None = None,
+    adjacency: list[set[int]] | None = None,
+    max_candidate_paths: int = 20,
 ) -> tuple[np.ndarray, list[tuple[Any, list[int]]]]:
     """Make each group's cells form a connected subgraph via local swaps.
 
     Parameters
     ----------
-    cells : list
-        Shapely geometry objects — one per slot.
+    cells : list or None
+        Shapely geometry objects — one per slot.  May be None when
+        *adjacency* is supplied.
     groups : list
         Group label for each slot (same length as *cells*).
     max_passes : int
@@ -36,6 +39,17 @@ def repair_contiguity(
         Print one line per satellite repair attempt.
     min_shared_length : float or None
         Minimum shared border length for adjacency.
+    adjacency : list of set of int, or None
+        Precomputed slot adjacency (``adjacency[i]`` = slots sharing an edge
+        with slot *i*).  When given, *cells* is not used and no geometric
+        adjacency is computed.  Callers that already hold an exact tile
+        adjacency graph should pass it so the repair sees the same topology
+        the caller's metrics are computed on.
+    max_candidate_paths : int
+        How many shortest satellite-to-main-body chains to try before giving
+        up on a satellite.  Each candidate may be rejected because rerouting
+        it would split another group, so a low value can abandon a satellite
+        that a slightly longer search would have repaired.  Default 20.
 
     Returns
     -------
@@ -45,15 +59,20 @@ def repair_contiguity(
     discontiguous : list[tuple[Any, list[int]]]
         Remaining satellite components that could not be repaired.
     """
-    from .adjacency import find_adjacent_pairs
+    n = len(groups)
 
-    n = len(cells)
+    if adjacency is not None:
+        adj: list[set[int]] = [set(a) for a in adjacency]
+    else:
+        from .adjacency import find_adjacent_pairs
 
-    raw_pairs = find_adjacent_pairs(cells, min_shared_length=min_shared_length)
-    adj: list[set[int]] = [set() for _ in range(n)]
-    for i, j, _ in raw_pairs:
-        adj[i].add(j)
-        adj[j].add(i)
+        if cells is None:
+            raise ValueError("repair_contiguity needs either cells or adjacency")
+        raw_pairs = find_adjacent_pairs(cells, min_shared_length=min_shared_length)
+        adj = [set() for _ in range(n)]
+        for i, j, _ in raw_pairs:
+            adj[i].add(j)
+            adj[j].add(i)
 
     slot_of = np.arange(n, dtype=np.intp)
     dist_at = list(range(n))
@@ -87,7 +106,7 @@ def repair_contiguity(
         dst_slots: set[int],
         forbidden_nodes: set[int],
         max_len: int = 10,
-        max_k: int = 20,
+        max_k: int = max_candidate_paths,
     ):
         heap: list[tuple[int, tuple[int, ...]]] = []
         for s in src_slots:

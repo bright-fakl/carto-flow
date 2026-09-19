@@ -405,14 +405,25 @@ class VoronoiCartogram:
 
     @property
     def degenerate_cells(self) -> list[Any]:
-        """Index labels of cells that collapsed to a point or zero area.
+        """Index labels of cells that collapsed to a point or (near-)zero area.
 
-        A cell degenerates when its generator loses all of its raster pixels,
-        typically because the grid resolution is too coarse for the smallest
-        target areas.  Such a cell has no area, so it contributes an area error
-        of -100%, is omitted from plots, and is exported by
-        :meth:`to_geodataframe` as a ``Point``.  Raising the backend resolution
-        is the usual remedy.
+        A cell degenerates for one of two reasons:
+
+        * **starved generator** -- the generator lost all of its raster pixels,
+          typically because the grid resolution is too coarse for the smallest
+          target areas.  Raising the backend resolution is the usual remedy.
+        * **extraction failure** -- the generator owns pixels, but converting
+          them to a polygon failed (e.g. the clip against a boundary carrying
+          degenerate rings collapsed the cell).  This emits its own
+          ``RuntimeWarning`` naming the seed; raising the resolution does not
+          help.
+
+        Either way the cell has no area, so it contributes an area error of
+        -100%, is omitted from plots, and is exported by
+        :meth:`to_geodataframe` as a ``Point``.
+
+        A polygon counts as degenerate when its area is below ``1e-9`` of the
+        mean cell area, which catches slivers that are not exactly zero.
 
         Returns
         -------
@@ -421,7 +432,10 @@ class VoronoiCartogram:
             source GeoDataFrame is available).  Empty when all cells are proper
             polygons.
         """
-        bad = [i for i, c in enumerate(self.cells) if c.geom_type not in ("Polygon", "MultiPolygon") or c.area == 0.0]
+        areas = np.array([c.area for c in self.cells], dtype=float)
+        mean_area = float(areas.mean()) if len(areas) else 0.0
+        eps = 1e-9 * mean_area
+        bad = [i for i, c in enumerate(self.cells) if c.geom_type not in ("Polygon", "MultiPolygon") or c.area <= eps]
         if self._source_gdf is None:
             return bad
         return [self._source_gdf.index[i] for i in bad]

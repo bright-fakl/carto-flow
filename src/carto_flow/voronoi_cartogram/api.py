@@ -465,7 +465,10 @@ def create_voronoi_cartogram(
         warnings.warn(
             f"{len(degenerate)} Voronoi cell(s) collapsed to a point / zero area: "
             f"{shown}{more}. They count as -100% area error and are omitted from "
-            f"plots; raise the backend resolution to avoid this "
+            f"plots. A cell degenerates either because its generator lost all of "
+            f"its raster pixels (raise the backend resolution) or because polygon "
+            f"extraction failed for a generator that does own pixels (a separate "
+            f"warning names the seed; more resolution will not help) "
             f"(see VoronoiCartogram.degenerate_cells).",
             RuntimeWarning,
             stacklevel=2,

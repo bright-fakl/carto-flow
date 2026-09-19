@@ -10,6 +10,56 @@ from shapely.geometry import Point, Polygon
 from shapely.ops import nearest_points
 
 # ---------------------------------------------------------------------------
+# Boundary hygiene
+# ---------------------------------------------------------------------------
+
+
+def drop_sliver_holes(geom):
+    """Remove numerically degenerate interior rings from a (Multi)Polygon.
+
+    Unioning a polygonal coverage (the usual way the outer boundary is built)
+    leaves behind interior rings with an area at the noise floor of the
+    coordinate magnitudes -- typically ``1e-11`` to ``1e-6`` square metres for
+    projected metre coordinates.  They are invisible, but GEOS overlay is not
+    robust against them: ``intersection(cell, boundary)`` can collapse a
+    perfectly ordinary cell that happens to contain such a ring to a
+    zero-area ``LineString``, even though ``boundary.covers(cell)`` is
+    ``True``.  Dropping the slivers up front avoids that.
+
+    A ring is dropped when ``area <= 1e-9 * scale * perimeter``, i.e. when it
+    is thinner than the coordinate resolution at this magnitude (*scale* is the
+    largest coordinate magnitude in play).  That is a wide margin: on the US
+    districts the 273 sliver rings sit at most ``1.3e-8`` of the threshold and
+    the 14 real holes (down to 559 m2) at least ``855`` times above it.
+    """
+    if geom is None or geom.is_empty or geom.geom_type not in ("Polygon", "MultiPolygon"):
+        return geom
+    minx, miny, maxx, maxy = geom.bounds
+    # Rounding noise scales with the coordinate magnitude, not just the extent.
+    scale = max(maxx - minx, maxy - miny, abs(minx), abs(maxx), abs(miny), abs(maxy))
+    if not np.isfinite(scale) or scale <= 0.0:
+        return geom
+    width = 1e-9 * scale
+    parts = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
+    cleaned = []
+    changed = False
+    for part in parts:
+        keep = [r for r in part.interiors if Polygon(r).area > width * r.length]
+        if len(keep) != len(part.interiors):
+            changed = True
+            cleaned.append(Polygon(part.exterior, keep))
+        else:
+            cleaned.append(part)
+    if not changed:
+        return geom
+    if len(cleaned) == 1:
+        return cleaned[0]
+    from shapely.geometry import MultiPolygon
+
+    return MultiPolygon(cleaned)
+
+
+# ---------------------------------------------------------------------------
 # BaseField
 # ---------------------------------------------------------------------------
 
@@ -54,6 +104,9 @@ class BaseField:
         import shapely as sh
 
         self.points = arr.astype(float).copy()
+        # Degenerate interior rings left over from the coverage union break
+        # GEOS overlay at cell-clipping time (see drop_sliver_holes).
+        boundary = drop_sliver_holes(boundary)
         self.boundary = boundary
         n = len(arr)
         self._cell_radius = np.sqrt(float(boundary.area) / n)

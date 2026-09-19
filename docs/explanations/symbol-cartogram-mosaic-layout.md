@@ -173,14 +173,20 @@ the main tile cluster of $g$ via tile-adjacency edges.
 **Inter-region gaps**: pairs of geographically adjacent geometries $(g_1, g_2)$ whose tile
 sets share no tile-adjacency edge — a topological neighbourhood relationship is broken.
 
-The score at each iteration is:
+Iterations are ranked lexicographically by
 
 $$
-\text{score} = n_{\text{disconnected}} \cdot w_{\text{disc}} + n_{\text{gaps}}
+\bigl(n_{\text{split}},\ n_{\text{disconnected}} \cdot w_{\text{disc}} + n_{\text{gaps}}\bigr)
 $$
 
-where $w_{\text{disc}} = $ `disconnected_score_weight` (default 100). This prioritises
-intra-region contiguity over inter-region adjacency.
+where $n_{\text{split}}$ is the number of **regions** (with `group_by`: groups) whose tiles do
+not form a single connected block, and $w_{\text{disc}} = $ `disconnected_score_weight`
+(default 100). The first term decides; the second only separates iterations that split the same
+number of regions, prioritising intra-region contiguity over inter-region adjacency.
+
+Ranking by split regions rather than by disconnected tiles matters: an iteration can cut the
+number of stray tiles while scattering them over more regions. On US states that is exactly what
+used to happen — the tile score preferred an assignment with 9 split states over one with 2.
 
 If the score is non-zero, the cost matrix is modified before the next re-solve:
 
@@ -188,8 +194,14 @@ If the score is non-zero, the cost matrix is modified before the next re-solve:
 - **Bridge-candidate tiles** at gaps: cost reduced by $C_{\max} \cdot$ `gap_bridge_mult` (default 5×)
 
 The best-scoring assignment across all iterations is returned, and the loop stops early when an
-iteration fails to improve the score. Convergence (score = 0) is declared as soon as all regions
-are contiguous and all geographic neighbours share a tile edge.
+iteration fails to improve the score — in particular an iteration that splits more regions than
+the incumbent is never kept. Convergence (score = 0) is declared as soon as all regions are
+contiguous and all geographic neighbours share a tile edge.
+
+`MosaicMetrics` reports the outcome: `n_noncontiguous_regions`, `n_split_groups` and
+`repair_passes` (solves actually run, not the `max_connectivity_iters` cap).
+`AlgorithmMetrics.converged` requires exact counts **and** zero split regions and groups, so it
+is `False` on a result that has every tile count right but a region in two pieces.
 
 With `swap_repair_passes > 0`, a final swap-based repair stage
 (`geo_utils.contiguity.repair_group_assignment`, shared with the voronoi cartogram) exchanges
@@ -246,7 +258,7 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `max_connectivity_iters` | 15 | Maximum connectivity repair iterations. |
 | `disconnected_penalty_mult` | 10.0 | Cost raise for disconnected tiles (x current max cost). |
 | `gap_bridge_mult` | 5.0 | Cost reduction for bridge-candidate tiles (x current max cost). |
-| `disconnected_score_weight` | 100 | Score weight per disconnected tile vs. per gap. |
+| `disconnected_score_weight` | 100 | Tie-break weight per disconnected tile vs. per gap. |
 | `swap_repair_passes` | 0 | Passes of the final swap-based repair stage; 0 disables it. |
 
 The cost weights were renamed from `alpha` / `beta` / `delta` to `distance_weight` /

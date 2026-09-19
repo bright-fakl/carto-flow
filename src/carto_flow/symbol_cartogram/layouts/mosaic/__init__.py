@@ -15,13 +15,73 @@ __all__ = ["HungarianOptions", "MosaicLayout", "MosaicLayoutOptions", "MosaicMet
 
 @dataclass
 class MosaicMetrics:
-    """Algorithm-specific metrics for MosaicLayout."""
+    """Algorithm-specific metrics for MosaicLayout.
+
+    Attributes
+    ----------
+    tiling, tile_size, n_components
+        Tiling used, its calibrated tile size, and the number of disconnected
+        geographic components the study area was split into.
+    regions_correct, regions_total
+        How many geometries received exactly their requested tile count.
+    n_noncontiguous_regions : int
+        Number of geometries whose assigned tiles do not form a single
+        connected block in the tile adjacency graph.
+    n_split_groups : int
+        With ``group_by``, the number of groups whose tiles form more than one
+        block.  0 without a grouping.  Groups are counted after splitting at
+        geographic component boundaries, since a group spread over separate
+        land masses cannot be one block.
+    repair_passes : int
+        Linear-assignment solves actually run by the connectivity-repair loop
+        (the maximum over components, so 1 means "no repair pass was needed").
+    """
 
     tiling: str = ""
     tile_size: float = 0.0
     n_components: int = 0
     regions_correct: int = 0
     regions_total: int = 0
+    n_noncontiguous_regions: int = 0
+    n_split_groups: int = 0
+    repair_passes: int = 0
+
+
+def _count_split_units(
+    assignment: np.ndarray,
+    tile_indices: list[int],
+    adj_list: list[list[int]],
+    unit_of_geom: np.ndarray,
+) -> int:
+    """Number of units whose assigned tiles are not one connected block.
+
+    ``unit_of_geom`` maps geometry index to unit id (the geometry itself, or
+    its group).  One BFS per unit over the assigned tiles.
+    """
+    from collections import deque
+
+    unit_tiles: dict[int, list[int]] = {}
+    for t in tile_indices:
+        g = int(assignment[t])
+        if g >= 0:
+            unit_tiles.setdefault(int(unit_of_geom[g]), []).append(t)
+
+    split = 0
+    for tiles in unit_tiles.values():
+        if len(tiles) <= 1:
+            continue
+        tile_set = set(tiles)
+        visited = {tiles[0]}
+        queue: deque[int] = deque([tiles[0]])
+        while queue:
+            t = queue.popleft()
+            for nb in adj_list[t]:
+                if nb in tile_set and nb not in visited:
+                    visited.add(nb)
+                    queue.append(nb)
+        if len(visited) != len(tile_set):
+            split += 1
+    return split
 
 
 @dataclass
@@ -55,9 +115,11 @@ class HungarianOptions:
         ``cost_iter.max() x gap_bridge_mult``.
     disconnected_score_weight : int
         How many gap-pairs a single disconnected tile counts as in the
-        convergence score.  Only the ratio to the gap weight (fixed at 1)
-        matters; higher values prioritise intra-region connectivity over
-        inter-region adjacency.
+        *tie-breaking* score.  The repair loop first compares the number of
+        split regions (or groups); this score only separates assignments that
+        split the same number of them.  Only the ratio to the gap weight
+        (fixed at 1) matters; higher values prioritise intra-region
+        connectivity over inter-region adjacency.
     neighbor_weight : float
         Weight on the neighbor cost term. After each solve, penalizes placing
         geometry g's tiles far from the pool centroids of g's geographic
@@ -318,6 +380,7 @@ class MosaicLayout(Layout):
         # Step 4: Per-component Hungarian assignment
         hopts = opts.hungarian_options or HungarianOptions()
         assignment = np.full(T, -1, dtype=np.int32)
+        repair_passes = 0
         for c, geom_indices_c in enumerate(components):
             geom_indices_arr = np.array(geom_indices_c, dtype=np.intp)
             geom_c = [working_geometries[i] for i in geom_indices_c]
@@ -331,6 +394,7 @@ class MosaicLayout(Layout):
             pool_c = comp_tile_pools[c]
             if not pool_c:
                 continue
+            stats_c: dict = {}
             assignment_c = hungarian_morphed_assignment(
                 tiling_result,
                 geom_c,
@@ -342,7 +406,9 @@ class MosaicLayout(Layout):
                 options=hopts,
                 group_labels=group_labels_c,
                 show_progress=show_progress,
+                stats=stats_c,
             )
+            repair_passes = max(repair_passes, int(stats_c.get("passes", 0)))
             for t in pool_c:
                 local_g = int(assignment_c[t])
                 if local_g >= 0:
@@ -418,11 +484,22 @@ class MosaicLayout(Layout):
         )
         regions_correct = int(np.sum(tile_count_per_region == counts))
 
+        # Region-level topology of the final assignment: a region (and, with
+        # group_by, a group) should occupy exactly one connected block.
+        n_noncontiguous_regions = _count_split_units(
+            assignment, output_tile_indices, adj_list, np.arange(G, dtype=np.int32)
+        )
+        n_split_groups = (
+            _count_split_units(assignment, output_tile_indices, adj_list, group_labels)
+            if group_labels is not None
+            else 0
+        )
+
         from ..layout_result import AlgorithmMetrics, MosaicLayoutResult
 
         metrics = AlgorithmMetrics(
-            converged=regions_correct == G,
-            iterations=hopts.max_connectivity_iters,
+            converged=regions_correct == G and n_noncontiguous_regions == 0 and n_split_groups == 0,
+            iterations=repair_passes,
             final_overlaps=0,
             algorithm=MosaicMetrics(
                 tiling=str(opts.tiling),
@@ -430,6 +507,9 @@ class MosaicLayout(Layout):
                 n_components=n_components,
                 regions_correct=regions_correct,
                 regions_total=G,
+                n_noncontiguous_regions=n_noncontiguous_regions,
+                n_split_groups=n_split_groups,
+                repair_passes=repair_passes,
             ),
         )
 

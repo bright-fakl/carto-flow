@@ -160,6 +160,7 @@ def hungarian_morphed_assignment(
     options=None,
     group_labels: np.ndarray | None = None,
     show_progress: bool = False,
+    stats: dict | None = None,
 ) -> np.ndarray:
     """Hungarian assignment in the morphed coordinate space.
 
@@ -168,7 +169,11 @@ def hungarian_morphed_assignment(
     raises the cost of intra-state disconnected tiles and reduces cost
     for tiles that could bridge inter-state gaps, then re-solves — until
     all regions are contiguous or ``options.max_connectivity_iters`` is
-    reached.
+    reached.  Passes are ranked by how many regions (or groups, in group
+    mode) end up split over more than one block, with the disconnected-tile
+    and gap counts only breaking ties, and the best pass is kept; a pass
+    that splits more regions than the incumbent never replaces it and stops
+    the loop.
 
     Parameters
     ----------
@@ -197,6 +202,12 @@ def hungarian_morphed_assignment(
         are handled automatically — tiles are already split into separate
         effective groups before calling this function.  None → per-geometry
         connectivity (default, existing behaviour).
+    stats : dict or None
+        When given, filled in place with diagnostics of the repair loop:
+        ``passes`` (number of linear-assignment solves actually run) and
+        ``split_units`` (region-level score of the kept assignment: number of
+        regions — or groups, in group mode — whose tiles are not one connected
+        component).
 
     Returns
     -------
@@ -317,9 +328,15 @@ def hungarian_morphed_assignment(
 
     assignment = np.full(T_global, -1, dtype=np.int32)
     best_assignment = assignment.copy()
-    best_score = float("inf")
+    # Lexicographic score: (split units, tile/gap score).  The first term is
+    # what users see — a region (or, in group mode, a group) whose tiles are
+    # not one connected block — and it decides on its own; the tile/gap score
+    # only breaks ties between assignments that split the same number of units.
+    best_score: tuple[int, int] = (2**31, 2**31)
+    passes_run = 0
 
     for iteration in range(options.max_connectivity_iters + 1):
+        passes_run = iteration + 1
         row_ind, col_ind = linear_sum_assignment(cost_iter + cost_neighbor)
         assignment[:] = -1
         for s, i in zip(row_ind, col_ind, strict=False):
@@ -411,12 +428,21 @@ def hungarian_morphed_assignment(
                     if not any(nb in tiles_g2 for t in tiles_g1 for nb in adj_list[t]):
                         inter_state_gaps.append((g1, g2))
 
-        score = len(disconnected) * options.disconnected_score_weight + len(inter_state_gaps)
+        # Region-level score: how many units (geometries, or groups in group
+        # mode) end up in more than one block.  A unit is split exactly when it
+        # owns at least one disconnected tile, so this is free to derive.
+        if group_labels is not None:
+            split_units = len({int(group_labels[g]) for _, g in disconnected})
+        else:
+            split_units = len({g for _, g in disconnected})
+        tile_gap_score = len(disconnected) * options.disconnected_score_weight + len(inter_state_gaps)
+        score = (split_units, tile_gap_score)
 
         if show_progress:
             print(
                 f"[mosaic]   Hungarian iter {iteration}: "
-                f"score={score}  disconnected={len(disconnected)}  gaps={len(inter_state_gaps)}"
+                f"split={split_units}  score={tile_gap_score}  "
+                f"disconnected={len(disconnected)}  gaps={len(inter_state_gaps)}"
             )
 
         improved = score < best_score
@@ -424,14 +450,14 @@ def hungarian_morphed_assignment(
             best_score = score
             best_assignment = assignment.copy()
 
-        if score == 0:
+        if score == (0, 0):
             if show_progress:
                 print(f"[mosaic]   Hungarian converged at iteration {iteration}")
             break
 
         if iteration == options.max_connectivity_iters or not improved:
             if show_progress:
-                print(f"[mosaic]   Hungarian stopped — best score={best_score}")
+                print(f"[mosaic]   Hungarian stopped — best split={best_score[0]} score={best_score[1]}")
             break
 
         disc_penalty = cost_static_max * options.disconnected_penalty_mult
@@ -463,6 +489,10 @@ def hungarian_morphed_assignment(
                             if i is not None:
                                 for s in geom_to_slots[g_src]:
                                     cost_iter[s, i] -= bridge_bonus
+
+    if stats is not None:
+        stats["passes"] = passes_run
+        stats["split_units"] = 0 if best_score[0] >= 2**31 else best_score[0]
 
     if options.swap_repair_passes > 0:
         from ....geo_utils.contiguity import repair_group_assignment

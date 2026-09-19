@@ -37,7 +37,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 import shapely
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import (
+    LinearRing,
+    LineString,
+    MultiLineString,
+    MultiPolygon,
+    Polygon,
+)
 
 if TYPE_CHECKING:
     import geopandas as gpd
@@ -57,6 +63,98 @@ def _check_shapely_version() -> None:
             f"(coverage_simplify was added in that release). "
             f"Installed version: {shapely.__version__}"
         )
+
+
+def _densify_coords(coords: np.ndarray, max_segment_length: float) -> np.ndarray:
+    """Insert vertices along a coordinate sequence, independent of direction.
+
+    Each segment is split into ``ceil(length / max_segment_length)`` equal
+    parts, like ``shapely.segmentize``. Unlike ``shapely.segmentize``, the
+    inserted points are computed from a *canonical* segment orientation (the
+    lexicographically smaller endpoint first), so a segment and its reverse
+    yield bit-for-bit identical points. That is what keeps an edge shared by
+    two polygons identical on both sides after densification.
+
+    Parameters
+    ----------
+    coords :
+        ``(n, 2)`` array of coordinates.
+    max_segment_length :
+        Maximum segment length, in the coordinates' units.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``(m, 2)`` array with ``m >= n``; the input vertices are preserved
+        unchanged and in order.
+    """
+    if len(coords) < 2:
+        return coords
+
+    start = coords[:-1]
+    end = coords[1:]
+
+    # Canonical orientation: lexicographically smaller endpoint first.
+    swap = (start[:, 0] > end[:, 0]) | ((start[:, 0] == end[:, 0]) & (start[:, 1] > end[:, 1]))
+    a = np.where(swap[:, None], end, start)
+    b = np.where(swap[:, None], start, end)
+
+    lengths = np.hypot(b[:, 0] - a[:, 0], b[:, 1] - a[:, 1])
+    n_parts = np.maximum(np.ceil(lengths / max_segment_length).astype(np.int64), 1)
+
+    if not np.any(n_parts > 1):
+        return coords
+
+    # One output point per part (the part's start), plus the final vertex.
+    seg_index = np.repeat(np.arange(len(n_parts)), n_parts)
+    offsets = np.concatenate([[0], np.cumsum(n_parts)[:-1]])
+    k = np.arange(len(seg_index)) - offsets[seg_index]
+
+    # Parameter measured along the canonical direction, as an exact integer
+    # ratio on both sides: traversing the segment the other way turns index
+    # ``k`` into ``n - k``, and ``(n - k) / n`` is computed identically there.
+    k_canonical = np.where(swap[seg_index], n_parts[seg_index] - k, k)
+    t_canonical = k_canonical / n_parts[seg_index]
+
+    points = a[seg_index] + (b[seg_index] - a[seg_index]) * t_canonical[:, None]
+    # Keep original vertices exactly: t == 0 rounds to the segment start, but
+    # the canonical form may evaluate it as ``a + (b - a) * 1.0``.
+    points[k == 0] = start[seg_index[k == 0]]
+
+    return np.vstack([points, coords[-1]])
+
+
+def _segmentize_exact(geom, max_segment_length: float):
+    """Direction-independent replacement for ``shapely.segmentize``.
+
+    Supports (Multi)Polygon, (Multi)LineString and LinearRing; any other
+    geometry is returned unchanged.
+    """
+    if geom is None or geom.is_empty:
+        return geom
+
+    gtype = geom.geom_type
+
+    if gtype == "Polygon":
+        shell = _densify_coords(np.asarray(geom.exterior.coords), max_segment_length)
+        holes = [_densify_coords(np.asarray(r.coords), max_segment_length) for r in geom.interiors]
+        return Polygon(shell, holes)
+    if gtype == "LinearRing":
+        return LinearRing(_densify_coords(np.asarray(geom.coords), max_segment_length))
+    if gtype == "LineString":
+        return LineString(_densify_coords(np.asarray(geom.coords), max_segment_length))
+    if gtype == "MultiPolygon":
+        return MultiPolygon([_segmentize_exact(p, max_segment_length) for p in geom.geoms])
+    if gtype == "MultiLineString":
+        return MultiLineString([_segmentize_exact(p, max_segment_length) for p in geom.geoms])
+    if gtype == "GeometryCollection":
+        return shapely.geometry.GeometryCollection([_segmentize_exact(p, max_segment_length) for p in geom.geoms])
+    return geom
+
+
+def _segmentize_exact_array(geoms, max_segment_length: float) -> np.ndarray:
+    """Apply :func:`_segmentize_exact` to an array of geometries."""
+    return np.array([_segmentize_exact(g, max_segment_length) for g in geoms], dtype=object)
 
 
 def _remove_small_parts(
@@ -227,7 +325,7 @@ def simplify_coverage(
     simplified = shapely.coverage_simplify(geom_array, tolerance, simplify_boundary=simplify_outer)
 
     if max_segment_length is not None:
-        simplified = shapely.segmentize(simplified, max_segment_length)
+        simplified = _segmentize_exact_array(simplified, max_segment_length)
 
     result = gdf.copy()
     result.geometry = simplified
@@ -244,9 +342,14 @@ def densify_coverage(gdf: gpd.GeoDataFrame, max_segment_length: float) -> gpd.Ge
     Wyoming's borders after a 1000 m ``simplify_coverage`` have ~69 km
     segments) can stall convergence.
 
-    ``segmentize`` is applied independently per input segment and is
-    deterministic, so edges shared between adjacent polygons stay identical
-    after densification — no gaps or overlaps are introduced.
+    Note that ``shapely.segmentize`` itself is *not* safe on a coverage: it
+    interpolates from each polygon's own traversal direction, so the two sides
+    of a shared edge end up ~1e-9 units apart and the union of the coverage
+    grows invisible near-collinear "spike" rings (1e-11 .. 1e-6 m2 on the US
+    census data) that make GEOS overlays collapse. This function instead
+    interpolates from a canonical segment orientation and an exact integer
+    parameter, so a segment and its reverse produce bit-for-bit identical
+    points — no gaps or overlaps are introduced.
 
     Parameters
     ----------
@@ -274,5 +377,5 @@ def densify_coverage(gdf: gpd.GeoDataFrame, max_segment_length: float) -> gpd.Ge
     True
     """
     result = gdf.copy()
-    result.geometry = shapely.segmentize(gdf.geometry.to_numpy(), max_segment_length)
+    result.geometry = _segmentize_exact_array(gdf.geometry.to_numpy(), max_segment_length)
     return result

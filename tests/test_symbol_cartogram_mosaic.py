@@ -138,7 +138,8 @@ class TestTileCounts:
         metrics = result.metrics.algorithm
         assert isinstance(metrics, MosaicMetrics)
         assert metrics.regions_correct == metrics.regions_total == len(gdf)
-        assert result.metrics.converged
+        # ``converged`` is not asserted here: it now needs exact counts *and*
+        # region-level contiguity, which some of these fixtures do not reach.
         np.testing.assert_array_equal(tile_counts_per_geometry(result), counts)
         assert len(result.transforms) == sum(counts)
         assert metrics.tiling == tiling
@@ -196,10 +197,12 @@ class TestContiguity:
         strict=True,
         reason=(
             "Contiguity is best effort: on the 3x3 fixture (hexagon, morph=False) "
-            "2 of 9 regions come out split, unchanged by the group_ids_G fix. "
-            "The connectivity repair scores disconnected *tiles*, not split "
-            "regions, so it does not close these two. See issue #20 follow-ups "
-            "(plan 1.1, repair objective)."
+            "2 of 9 regions come out split, unchanged by the group_ids_G fix and "
+            "still 2 after the repair objective was changed to score split regions "
+            "(plan 1.1). The repair loop already keeps the best pass it sees; here "
+            "the raw Hungarian solve is that best pass, so nothing improves on it. "
+            "Closing these two needs a repair move the loop does not have (e.g. "
+            "swap repair, plan 1.1 follow-up)."
         ),
     )
     def test_all_regions_contiguous_3x3(self):
@@ -207,6 +210,58 @@ class TestContiguity:
         result = compute(gdf)
 
         assert non_contiguous_regions(result) == []
+
+    def test_repair_never_worse_than_raw_solve_3x3(self):
+        """The repair loop may not split more regions than the raw solve.
+
+        The loop used to score disconnected *tiles*, which is not monotone in
+        the number of split regions; it now ranks passes by split regions.
+        """
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        raw = compute(gdf, hungarian_options=HungarianOptions(max_connectivity_iters=0))
+        repaired = compute(gdf)
+
+        assert len(non_contiguous_regions(repaired)) <= len(non_contiguous_regions(raw))
+
+
+# ---------------------------------------------------------------------------
+# 2b. Topology metrics
+# ---------------------------------------------------------------------------
+
+
+class TestTopologyMetrics:
+    """``MosaicMetrics`` reports region-level topology, and ``converged`` uses it."""
+
+    def test_metrics_report_split_regions(self):
+        """The 3x3 fixture splits regions, so ``converged`` must be False."""
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        result = compute(gdf)
+
+        metrics = result.metrics.algorithm
+        assert metrics.n_noncontiguous_regions == len(non_contiguous_regions(result))
+        assert metrics.n_noncontiguous_regions > 0
+        assert metrics.n_split_groups == 0
+        assert result.metrics.converged is False
+        # Exact counts alone no longer imply convergence.
+        assert metrics.regions_correct == metrics.regions_total
+
+    def test_repair_passes_is_the_real_pass_count(self):
+        """``iterations`` reports passes run, not ``max_connectivity_iters``."""
+        gdf = grid_gdf(4, 3, COUNTS_4X3)
+        result = compute(gdf, hungarian_options=HungarianOptions(max_connectivity_iters=7))
+
+        metrics = result.metrics.algorithm
+        assert 1 <= metrics.repair_passes <= 8
+        assert result.metrics.iterations == metrics.repair_passes
+
+    def test_converged_true_when_contiguous(self):
+        """The 4x3 fixture is fully contiguous with exact counts."""
+        gdf = grid_gdf(4, 3, COUNTS_4X3)
+        result = compute(gdf)
+
+        assert non_contiguous_regions(result) == []
+        assert result.metrics.algorithm.n_noncontiguous_regions == 0
+        assert result.metrics.converged is True
 
 
 # ---------------------------------------------------------------------------
@@ -503,16 +558,23 @@ class TestSerialization:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(scope="module")
+def states_gdf() -> gpd.GeoDataFrame:
+    """Bundled US states with a ``tiles`` column totalling about 150 tiles."""
+    from carto_flow.data import load_us_census
+
+    gdf = load_us_census(level="state", population=True, contiguous_only=True)
+    population = gdf["Population"].to_numpy(dtype=float)
+    tiles = np.maximum(1, np.round(population / population.sum() * 150)).astype(int)
+    return gdf.assign(tiles=tiles)
+
+
 class TestUsStates:
     """One end-to-end run on the bundled US states (about 150 tiles, ~2 s)."""
 
-    def test_states_population_tiles(self):
-        from carto_flow.data import load_us_census
-
-        gdf = load_us_census(level="state", population=True, contiguous_only=True)
-        population = gdf["Population"].to_numpy(dtype=float)
-        tiles = np.maximum(1, np.round(population / population.sum() * 150)).astype(int)
-        gdf = gdf.assign(tiles=tiles)
+    def test_states_population_tiles(self, states_gdf):
+        gdf = states_gdf
+        tiles = gdf["tiles"].to_numpy()
 
         data = prepare_layout_data(gdf, tile_count="tiles")
         result = MosaicLayout().compute(data, show_progress=False)
@@ -525,3 +587,20 @@ class TestUsStates:
         assert len(result.regions_gdf) == len(gdf)
         np.testing.assert_array_equal(result.regions_gdf["tile_count"].to_numpy(), tiles)
         np.testing.assert_array_equal(result.regions_gdf["target_count"].to_numpy(), tiles)
+
+    def test_repair_never_worse_than_raw_solve(self, states_gdf):
+        """Regression: repair used to turn 2 split states into 9.
+
+        The loop scored disconnected tiles; the pass it preferred was worse in
+        the only number that shows, the count of states in more than one block.
+        """
+        data = prepare_layout_data(states_gdf, tile_count="tiles")
+        raw = MosaicLayout(hungarian_options=HungarianOptions(max_connectivity_iters=0)).compute(
+            data, show_progress=False
+        )
+        repaired = MosaicLayout().compute(data, show_progress=False)
+
+        n_raw = len(non_contiguous_regions(raw))
+        n_repaired = len(non_contiguous_regions(repaired))
+        assert n_repaired <= n_raw
+        assert repaired.metrics.algorithm.n_noncontiguous_regions == n_repaired

@@ -41,6 +41,11 @@ class MosaicMetrics:
         counts the tiles the solver had to take from the extra rings outside
         the core, which show up as protruding tails.  Unlike an enclosed-hole
         count it also catches gaps in concave boundary pockets.
+    n_enclosed_unassigned_tiles : int
+        Lattice cells that received no symbol yet have every lattice neighbour
+        assigned.  Deliberately independent of core status: a cell ringed by
+        assigned tiles reads as a hole whatever its overlap fraction, and a
+        core-only count misses the ones that fall below ``min_overlap_frac``.
     """
 
     tiling: str = ""
@@ -52,6 +57,23 @@ class MosaicMetrics:
     n_split_groups: int = 0
     repair_passes: int = 0
     n_unassigned_core_tiles: int = 0
+    n_enclosed_unassigned_tiles: int = 0
+
+
+def _enclosed_unassigned(occupied: set[int], adj_list: list[list[int]]) -> set[int]:
+    """Unassigned lattice cells whose every lattice neighbour is assigned.
+
+    Core status is ignored on purpose -- see ``MosaicMetrics``.  A cell with no
+    neighbours at all (an isolated lattice corner) is not a hole.
+    """
+    holes = set()
+    for t in range(len(adj_list)):
+        if t in occupied:
+            continue
+        nbs = adj_list[t]
+        if nbs and all(nb in occupied for nb in nbs):
+            holes.add(t)
+    return holes
 
 
 def _count_split_units(
@@ -114,11 +136,19 @@ def _relocate_ring_tiles(
     freed.  Every geometry on the path loses one tile and gains one, so per-region
     tile counts are preserved exactly.
 
-    A relocation is applied only when the number of unassigned core tiles strictly
-    decreases and neither the per-geometry nor the per-group split count increases,
-    so the step can never regress either metric relative to leaving it off.  The
-    ``max_hops`` bound keeps the search local; ``max_hops=0`` disables the step and
-    ``max_hops=1`` reproduces the plain adjacent-tile swap-back this generalises.
+    Targets are unassigned core tiles *and* enclosed unassigned cells whatever their
+    core status.  A cell ringed by assigned tiles is a visible hole even when its
+    overlap with the study union falls below ``min_overlap_frac``; filling one from a
+    protruding ring tile removes a hole and a tail at once, and leaves the empty-core
+    count untouched.
+
+    A relocation is applied only when the combined defect count (unassigned core tiles
+    plus enclosed unassigned non-core cells) strictly decreases, the unassigned-core
+    count on its own does not increase, and neither the per-geometry nor the per-group
+    split count increases -- so the step can never regress any of these relative to
+    leaving it off.  The ``max_hops`` bound keeps the search local; ``max_hops=0``
+    disables the step and ``max_hops=1`` reproduces the plain adjacent-tile swap-back
+    this generalises.
     """
     from collections import deque
 
@@ -128,10 +158,34 @@ def _relocate_ring_tiles(
 
     geom_units = np.arange(G, dtype=np.int32)
 
-    def score(a: np.ndarray) -> tuple[int, int]:
-        occupied = [t for t in range(len(a)) if a[t] >= 0]
-        by_group = _count_split_units(a, occupied, adj_list, group_labels) if group_labels is not None else 0
-        return by_group, _count_split_units(a, occupied, adj_list, geom_units)
+    def defect_holes(occupied: set[int]) -> set[int]:
+        """Enclosed unassigned cells outside the core."""
+        return _enclosed_unassigned(occupied, adj_list) - core_set
+
+    def score(a: np.ndarray) -> tuple[int, int, int, int]:
+        """(split groups, split geometries, empty core tiles, enclosed non-core holes)."""
+        occupied_l = [t for t in range(len(a)) if a[t] >= 0]
+        occupied = set(occupied_l)
+        by_group = _count_split_units(a, occupied_l, adj_list, group_labels) if group_labels is not None else 0
+        by_geom = _count_split_units(a, occupied_l, adj_list, geom_units)
+        n_empty_core = len(core_set - occupied)
+        n_enclosed = len(defect_holes(occupied))
+        return by_group, by_geom, n_empty_core, n_enclosed
+
+    def accept(after: tuple[int, int, int, int], before: tuple[int, int, int, int]) -> bool:
+        """No split regression, and holes strictly fall -- core tiles first.
+
+        The empty-core count can never rise here (the freed tile is always outside the
+        core), so comparing ``(empty_core, empty_core + enclosed)`` lexicographically
+        accepts every relocation onto an empty core tile exactly as before this
+        widening, and accepts one onto an enclosed non-core cell -- which leaves the
+        core count alone -- only when it removes a hole on balance.
+        """
+        return (
+            after[0] <= before[0]
+            and after[1] <= before[1]
+            and (after[2], after[2] + after[3]) < (before[2], before[2] + before[3])
+        )
 
     def candidate_paths(a: np.ndarray, start: int, empties: set[int]) -> list[list[int]]:
         """Shortest paths from ``start`` over occupied tiles to unassigned core tiles."""
@@ -160,32 +214,40 @@ def _relocate_ring_tiles(
 
     moved = 0
     before = score(assignment)
-    progress = True
-    while progress:
-        progress = False
-        occupied = {t for t in range(len(assignment)) if assignment[t] >= 0}
-        empties = core_set - occupied
-        if not empties:
-            break
-        for t in sorted(occupied - core_set):
-            for path in candidate_paths(assignment, t, empties):
-                trial = assignment.copy()
-                chain = [t, *path]
-                for i in range(len(chain) - 1, 0, -1):
-                    trial[chain[i]] = trial[chain[i - 1]]
-                trial[t] = -1
-                # Unassigned core tiles strictly decrease by construction: the path ends
-                # on an empty core tile and the tile freed is outside the core.  Only the
-                # split counts need an explicit guard.  (Tested in test_mosaic_*.)
-                after = score(trial)
-                if after[0] <= before[0] and after[1] <= before[1]:
-                    assignment = trial
-                    before = after
-                    moved += 1
-                    progress = True
-                    break
-            if progress:
+    # Two passes.  The first targets empty core tiles only and so reproduces the
+    # original swap-back move for move; the second additionally offers enclosed
+    # non-core holes, and is a no-op on inputs that have none.  Splitting them keeps
+    # the widening from perturbing the greedy order on inputs it should not touch.
+    for include_enclosed in (False, True):
+        progress = True
+        while progress:
+            progress = False
+            occupied = {t for t in range(len(assignment)) if assignment[t] >= 0}
+            empties = core_set - occupied
+            if include_enclosed:
+                empties = empties | defect_holes(occupied)
+            if not empties:
                 break
+            for t in sorted(occupied - core_set):
+                for path in candidate_paths(assignment, t, empties):
+                    trial = assignment.copy()
+                    chain = [t, *path]
+                    for i in range(len(chain) - 1, 0, -1):
+                        trial[chain[i]] = trial[chain[i - 1]]
+                    trial[t] = -1
+                    # Everything is guarded explicitly: an enclosed non-core target leaves
+                    # the empty-core count unchanged, and freeing the ring tile can in
+                    # principle open a fresh hole, so neither direction is safe by
+                    # construction.  (Tested in test_mosaic_*.)
+                    after = score(trial)
+                    if accept(after, before):
+                        assignment = trial
+                        before = after
+                        moved += 1
+                        progress = True
+                        break
+                if progress:
+                    break
 
     if show_progress:
         occupied = {t for t in range(len(assignment)) if assignment[t] >= 0}
@@ -693,6 +755,11 @@ class MosaicLayout(Layout):
         # extends past the core there may be no legal relocation to close them.
         n_unassigned_core_tiles = int(sum(1 for t in valid_tile_indices if assignment[t] < 0))
 
+        # Holes the core-only count cannot see: a lattice cell ringed by assigned tiles
+        # but below `min_overlap_frac`, so never a core tile.  Counted regardless of core
+        # status, which is the whole point -- see MosaicMetrics.
+        n_enclosed_unassigned_tiles = len(_enclosed_unassigned({t for t in range(T) if assignment[t] >= 0}, adj_list))
+
         from ..layout_result import AlgorithmMetrics, MosaicLayoutResult
 
         metrics = AlgorithmMetrics(
@@ -709,6 +776,7 @@ class MosaicLayout(Layout):
                 n_split_groups=n_split_groups,
                 repair_passes=repair_passes,
                 n_unassigned_core_tiles=n_unassigned_core_tiles,
+                n_enclosed_unassigned_tiles=n_enclosed_unassigned_tiles,
             ),
         )
 

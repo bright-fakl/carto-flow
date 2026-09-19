@@ -798,3 +798,190 @@ class TestUsStates:
         n_repaired = len(non_contiguous_regions(repaired))
         assert n_repaired <= n_raw
         assert repaired.metrics.algorithm.n_noncontiguous_regions == n_repaired
+
+
+# ---------------------------------------------------------------------------
+# 8. Enclosed unassigned cells, whatever their core status
+# ---------------------------------------------------------------------------
+
+
+def _enclosed_cells(result: MosaicLayoutResult) -> set[int]:
+    """Unassigned lattice cells whose every lattice neighbour is assigned.
+
+    Deliberately ignores core status: that is the whole point of the widening.
+    ``_core_holes`` above only looks at core tiles and cannot see a hole that
+    fell below ``min_overlap_frac``.
+    """
+    adjacency = result.tiling_result.adjacency
+    assigned = {int(t) for t in result.assignments}
+    out = set()
+    for t in range(len(result.tiling_result.polygons)):
+        if t in assigned:
+            continue
+        neighbours = np.flatnonzero(adjacency[t])
+        if len(neighbours) and all(int(nb) in assigned for nb in neighbours):
+            out.add(t)
+    return out
+
+
+def donut_gdf() -> gpd.GeoDataFrame:
+    """4x4 block of unit boxes with the 2x2 centre missing: a genuine inner sea."""
+    geoms, counts = [], []
+    for r in range(4):
+        for c in range(4):
+            if r in (1, 2) and c in (1, 2):
+                continue
+            geoms.append(box(c, r, c + 1, r + 1))
+            counts.append(4)
+    return gpd.GeoDataFrame({"tiles": counts}, geometry=geoms)
+
+
+class TestCoverageHoleDiscriminator:
+    """A lake must stay empty; a thin spot left by the morph must not."""
+
+    def test_interior_ring_cells_are_detected(self):
+        """The donut's missing centre is an interior ring, so its cells are lakes."""
+        from shapely.ops import unary_union
+
+        from carto_flow.symbol_cartogram.layouts.mosaic import _coverage_hole_tiles
+
+        gdf = donut_gdf()
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        result = MosaicLayout(morph=False).compute(data, show_progress=False)
+
+        lakes = _coverage_hole_tiles(result.tiling_result, unary_union(list(gdf.geometry)))
+
+        assert len(lakes) > 0
+
+    def test_solid_coverage_has_no_lakes(self):
+        """A gap-free grid has no interior ring, so nothing is excused as a lake."""
+        from shapely.ops import unary_union
+
+        from carto_flow.symbol_cartogram.layouts.mosaic import _coverage_hole_tiles
+
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        result = MosaicLayout(morph=False).compute(data, show_progress=False)
+
+        assert _coverage_hole_tiles(result.tiling_result, unary_union(list(gdf.geometry))) == set()
+
+    def test_relocation_does_not_fill_more_of_the_lake(self):
+        """The relocation must not spend tiles on an inner sea.
+
+        It cannot promise the lake is *empty*: calibration already classifies 8 of
+        this donut's 12 lake cells as core tiles, so the tile budget itself expects
+        some of the inner sea to be covered and 4 of them are occupied with the
+        relocation switched off.  That is a separate, pre-existing defect.  What is
+        guaranteed here is that the relocation never makes it worse.
+        """
+        from shapely.ops import unary_union
+
+        from carto_flow.symbol_cartogram.layouts.mosaic import _coverage_hole_tiles
+
+        gdf = donut_gdf()
+        data = prepare_layout_data(gdf, tile_count="tiles")
+
+        off = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=0)).compute(
+            data, show_progress=False
+        )
+        on = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=8)).compute(
+            data, show_progress=False
+        )
+        lakes = _coverage_hole_tiles(on.tiling_result, unary_union(list(gdf.geometry)))
+
+        assert len(lakes & {int(t) for t in on.assignments}) <= len(lakes & {int(t) for t in off.assignments})
+        np.testing.assert_array_equal(tile_counts_per_geometry(on), gdf["tiles"].to_numpy())
+
+    def test_lake_cells_are_not_counted_as_defects(self):
+        """An empty inner sea is legitimate, so it must not inflate the hole count."""
+        from shapely.ops import unary_union
+
+        from carto_flow.symbol_cartogram.layouts.mosaic import _coverage_hole_tiles
+
+        gdf = donut_gdf()
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        result = MosaicLayout(morph=False).compute(data, show_progress=False)
+
+        lakes = _coverage_hole_tiles(result.tiling_result, unary_union(list(gdf.geometry)))
+
+        assert result.metrics.algorithm.n_enclosed_unassigned_tiles == len(_enclosed_cells(result) - lakes)
+
+
+class TestEnclosedUnassignedMetric:
+    """``n_enclosed_unassigned_tiles`` is the widened, core-status-blind count."""
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_metric_matches_recomputation(self, cols, rows, counts):
+        result = compute(grid_gdf(cols, rows, counts))
+
+        assert result.metrics.algorithm.n_enclosed_unassigned_tiles == len(_enclosed_cells(result))
+
+    def test_metric_is_not_bounded_by_the_core_only_count(self):
+        """The widened count sees at least what the core-only hole count sees.
+
+        ``_core_holes`` is the metric PR #30/#31 used; every hole it finds is a
+        lattice cell with all neighbours assigned, so the widened count must
+        include it.  The reverse does not hold, which is the defect.
+        """
+        result = compute(grid_gdf(4, 3, COUNTS_4X3))
+
+        assert result.metrics.algorithm.n_enclosed_unassigned_tiles >= _core_holes(result)
+
+
+class TestEnclosedHoleRelocation:
+    """Enclosed cells are relocation targets whatever their core status."""
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_exact_tile_counts_preserved(self, cols, rows, counts):
+        """Ownership shifts along a path, so every region loses and gains one tile."""
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=8))
+
+        np.testing.assert_array_equal(tile_counts_per_geometry(off), counts)
+        np.testing.assert_array_equal(tile_counts_per_geometry(on), counts)
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_enclosed_cells_never_increase(self, cols, rows, counts):
+        """The guard makes 'never regress' structural rather than tuned."""
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=8))
+
+        assert len(_enclosed_cells(on)) <= len(_enclosed_cells(off))
+        assert _unassigned_core(on) <= _unassigned_core(off)
+        assert len(non_contiguous_regions(on)) <= len(non_contiguous_regions(off))
+
+    def test_enclosed_cells_never_increase_without_morph(self):
+        """``morph=False`` is the harder case for the assignment and was untested."""
+        gdf = grid_gdf(4, 3, COUNTS_4X3)
+        data = prepare_layout_data(gdf, tile_count="tiles")
+
+        off = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=0)).compute(
+            data, show_progress=False
+        )
+        on = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=8)).compute(
+            data, show_progress=False
+        )
+
+        assert len(_enclosed_cells(on)) <= len(_enclosed_cells(off))
+        assert _unassigned_core(on) <= _unassigned_core(off)
+        assert on.metrics.algorithm.n_split_groups <= off.metrics.algorithm.n_split_groups
+        np.testing.assert_array_equal(tile_counts_per_geometry(on), COUNTS_4X3)
+
+    def test_groups_never_split_more_without_morph(self):
+        """Grouped path, no pre-morph: the split guard still holds."""
+        gdf, _, _ = group_fixture()
+        data = prepare_layout_data(gdf, group_by="grp")
+
+        off = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=0)).compute(
+            data, show_progress=False
+        )
+        on = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=8)).compute(
+            data, show_progress=False
+        )
+
+        assert on.metrics.algorithm.n_split_groups <= off.metrics.algorithm.n_split_groups
+        assert len(_enclosed_cells(on)) <= len(_enclosed_cells(off))

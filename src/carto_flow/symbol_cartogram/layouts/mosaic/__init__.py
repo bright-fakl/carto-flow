@@ -95,7 +95,9 @@ def _coverage_hole_tiles(tiling_result, working_union) -> set[int]:
     if not rings:
         return set()
     tree = STRtree(rings)
-    return {t for t, poly in enumerate(tiling_result.polygons) if len(tree.query(poly.centroid, predicate="contains"))}
+    # shapely applies the predicate as input.predicate(tree_geometry), so the centroid
+    # must be "within" the ring -- "contains" here silently matches nothing at all.
+    return {t for t, poly in enumerate(tiling_result.polygons) if len(tree.query(poly.centroid, predicate="within"))}
 
 
 def _count_split_units(

@@ -46,8 +46,6 @@ class MosaicMetrics:
         assigned.  Deliberately independent of core status: a cell ringed by
         assigned tiles reads as a hole whatever its overlap fraction, and a
         core-only count misses the ones that fall below ``min_overlap_frac``.
-        Cells over a genuine hole in the coverage (an inner sea or lake, i.e. an
-        interior ring of the morphed union) are legitimately empty and excluded.
     """
 
     tiling: str = ""
@@ -76,28 +74,6 @@ def _enclosed_unassigned(occupied: set[int], adj_list: list[list[int]]) -> set[i
         if nbs and all(nb in occupied for nb in nbs):
             holes.add(t)
     return holes
-
-
-def _coverage_hole_tiles(tiling_result, working_union) -> set[int]:
-    """Lattice cells sitting over a genuine hole in the coverage.
-
-    An inner sea or lake -- anywhere the input geometries genuinely do not cover --
-    shows up as an *interior ring* of the union the lattice was built on.  A cell
-    whose centroid falls in one is legitimately empty and must never be filled; a
-    cell merely left thin by the morph is not, and is a defect.  The union must be
-    the morphed one: the lattice lives in morphed space.
-    """
-    from shapely.geometry import Polygon
-    from shapely.strtree import STRtree
-
-    polys = [working_union] if working_union.geom_type == "Polygon" else list(working_union.geoms)
-    rings = [Polygon(r) for p in polys if p.geom_type == "Polygon" for r in p.interiors]
-    if not rings:
-        return set()
-    tree = STRtree(rings)
-    # shapely applies the predicate as input.predicate(tree_geometry), so the centroid
-    # must be "within" the ring -- "contains" here silently matches nothing at all.
-    return {t for t, poly in enumerate(tiling_result.polygons) if len(tree.query(poly.centroid, predicate="within"))}
 
 
 def _count_split_units(
@@ -144,7 +120,6 @@ def _relocate_ring_tiles(
     G: int,
     group_labels: np.ndarray | None,
     max_hops: int,
-    coverage_holes: set[int] | None = None,
     show_progress: bool = False,
 ) -> np.ndarray:
     """Pull assigned extra-ring tiles back into unassigned core tiles.
@@ -182,11 +157,10 @@ def _relocate_ring_tiles(
     max_candidate_paths = 20
 
     geom_units = np.arange(G, dtype=np.int32)
-    lakes = coverage_holes or set()
 
     def defect_holes(occupied: set[int]) -> set[int]:
-        """Enclosed unassigned cells outside the core that are not genuine coverage holes."""
-        return _enclosed_unassigned(occupied, adj_list) - core_set - lakes
+        """Enclosed unassigned cells outside the core."""
+        return _enclosed_unassigned(occupied, adj_list) - core_set
 
     def score(a: np.ndarray) -> tuple[int, int, int, int]:
         """(split groups, split geometries, empty core tiles, enclosed non-core holes)."""
@@ -695,11 +669,6 @@ class MosaicLayout(Layout):
         # the protruding tail and the hole are the same defect.  The relocation below walks
         # a BFS path of occupied tiles from the ring tile to the nearest empty core tile and
         # shifts ownership along it, which preserves every region's tile count exactly.
-        # Cells over a genuine hole in the coverage -- an inner sea or lake, i.e. an
-        # interior ring of the morphed union -- are legitimately empty: they are neither
-        # relocation targets nor counted as defects.
-        coverage_holes = _coverage_hole_tiles(tiling_result, working_union)
-
         if opts.extra_tile_rings > 0:
             assignment = _relocate_ring_tiles(
                 assignment,
@@ -708,7 +677,6 @@ class MosaicLayout(Layout):
                 G,
                 group_labels,
                 max_hops=hopts.ring_swapback_max_hops,
-                coverage_holes=coverage_holes,
                 show_progress=show_progress,
             )
 
@@ -790,9 +758,7 @@ class MosaicLayout(Layout):
         # Holes the core-only count cannot see: a lattice cell ringed by assigned tiles
         # but below `min_overlap_frac`, so never a core tile.  Counted regardless of core
         # status, which is the whole point -- see MosaicMetrics.
-        n_enclosed_unassigned_tiles = len(
-            _enclosed_unassigned({t for t in range(T) if assignment[t] >= 0}, adj_list) - coverage_holes
-        )
+        n_enclosed_unassigned_tiles = len(_enclosed_unassigned({t for t in range(T) if assignment[t] >= 0}, adj_list))
 
         from ..layout_result import AlgorithmMetrics, MosaicLayoutResult
 

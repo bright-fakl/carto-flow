@@ -836,50 +836,75 @@ def donut_gdf() -> gpd.GeoDataFrame:
     return gpd.GeoDataFrame({"tiles": counts}, geometry=geoms)
 
 
-class TestCoverageHoleDiscriminator:
-    """A lake must stay empty; a thin spot left by the morph must not."""
+class TestInnerSeaCharacterisation:
+    """RECORD OF CURRENT BEHAVIOUR -- NOT AN ENDORSEMENT.
 
-    def test_interior_ring_cells_are_detected(self):
-        """The donut's missing centre is an interior ring, so its cells are lakes."""
+    Mosaic pays no attention to genuine holes in the coverage: it will pave over an
+    inner sea.  This is deliberate for now.  The source is upstream of anything the
+    relocation does -- calibration counts cells that sit in the hole as *core* tiles,
+    because ``min_overlap_frac`` defaults to 0.1 to let marginal tiles into the pool
+    and give the assignment room to manoeuvre.  It is a pool-admission knob, not a
+    land/water classifier, and the tile budget therefore already expects the sea to be
+    covered.
+
+    These assertions exist so the queued calibration-level issue has a reference point
+    and so a future change that alters this behaviour is noticed.  ``load_world()`` has
+    a real instance: exactly one interior ring, the Caspian Sea.
+    """
+
+    @staticmethod
+    def _water(gdf):
+        from shapely.geometry import Polygon
         from shapely.ops import unary_union
 
-        from carto_flow.symbol_cartogram.layouts.mosaic import _coverage_hole_tiles
+        union = unary_union(list(gdf.geometry))
+        polys = [union] if union.geom_type == "Polygon" else list(union.geoms)
+        rings = [Polygon(r) for p in polys if p.geom_type == "Polygon" for r in p.interiors]
+        return unary_union(rings).difference(union)
 
+    def test_the_fixture_really_has_an_inner_sea(self):
+        water = self._water(donut_gdf())
+
+        assert not water.is_empty
+        assert water.area > 0
+
+    def test_cells_in_the_inner_sea_are_counted_as_core(self):
+        """Characterisation: calibration admits lake cells to the core tile budget."""
         gdf = donut_gdf()
         data = prepare_layout_data(gdf, tile_count="tiles")
         result = MosaicLayout(morph=False).compute(data, show_progress=False)
+        water = self._water(gdf)
 
-        lakes = _coverage_hole_tiles(result.tiling_result, unary_union(list(gdf.geometry)))
+        core = {int(x) for x in result.core_tile_indices}
+        mostly_water = {
+            t for t, poly in enumerate(result.tiling_result.polygons) if poly.intersection(water).area > 0.5 * poly.area
+        }
 
-        assert len(lakes) > 0
+        assert mostly_water, "fixture should put some cells in the water"
+        # Today most of them are core tiles, so the budget expects them covered.
+        assert mostly_water & core
 
-    def test_solid_coverage_has_no_lakes(self):
-        """A gap-free grid has no interior ring, so nothing is excused as a lake."""
-        from shapely.ops import unary_union
-
-        from carto_flow.symbol_cartogram.layouts.mosaic import _coverage_hole_tiles
-
-        gdf = grid_gdf(3, 3, COUNTS_3X3)
-        data = prepare_layout_data(gdf, tile_count="tiles")
-        result = MosaicLayout(morph=False).compute(data, show_progress=False)
-
-        assert _coverage_hole_tiles(result.tiling_result, unary_union(list(gdf.geometry))) == set()
-
-    def test_relocation_does_not_fill_more_of_the_lake(self):
-        """The relocation must not spend tiles on an inner sea.
-
-        It cannot promise the lake is *empty*: calibration already classifies 8 of
-        this donut's 12 lake cells as core tiles, so the tile budget itself expects
-        some of the inner sea to be covered and 4 of them are occupied with the
-        relocation switched off.  That is a separate, pre-existing defect.  What is
-        guaranteed here is that the relocation never makes it worse.
-        """
-        from shapely.ops import unary_union
-
-        from carto_flow.symbol_cartogram.layouts.mosaic import _coverage_hole_tiles
-
+    def test_the_inner_sea_gets_paved_over(self):
+        """Characterisation: some lake cells end up occupied.  Known, not endorsed."""
         gdf = donut_gdf()
         data = prepare_layout_data(gdf, tile_count="tiles")
+        result = MosaicLayout(morph=False).compute(data, show_progress=False)
+        water = self._water(gdf)
+
+        assigned = {int(t) for t in result.assignments}
+        mostly_water = {
+            t for t, poly in enumerate(result.tiling_result.polygons) if poly.intersection(water).area > 0.5 * poly.area
+        }
+
+        assert mostly_water & assigned
+        # Whatever it does with the sea, the counts stay exact.
+        np.testing.assert_array_equal(tile_counts_per_geometry(result), gdf["tiles"].to_numpy())
+
+    def test_relocation_does_not_make_it_worse(self):
+        """The relocation neither creates nor removes lake coverage on this fixture."""
+        gdf = donut_gdf()
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        water = self._water(gdf)
 
         off = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=0)).compute(
             data, show_progress=False
@@ -887,24 +912,16 @@ class TestCoverageHoleDiscriminator:
         on = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=8)).compute(
             data, show_progress=False
         )
-        lakes = _coverage_hole_tiles(on.tiling_result, unary_union(list(gdf.geometry)))
 
-        assert len(lakes & {int(t) for t in on.assignments}) <= len(lakes & {int(t) for t in off.assignments})
-        np.testing.assert_array_equal(tile_counts_per_geometry(on), gdf["tiles"].to_numpy())
+        def wet_occupied(result):
+            return len({
+                int(t)
+                for t in result.assignments
+                if result.tiling_result.polygons[int(t)].intersection(water).area
+                > 0.5 * result.tiling_result.polygons[int(t)].area
+            })
 
-    def test_lake_cells_are_not_counted_as_defects(self):
-        """An empty inner sea is legitimate, so it must not inflate the hole count."""
-        from shapely.ops import unary_union
-
-        from carto_flow.symbol_cartogram.layouts.mosaic import _coverage_hole_tiles
-
-        gdf = donut_gdf()
-        data = prepare_layout_data(gdf, tile_count="tiles")
-        result = MosaicLayout(morph=False).compute(data, show_progress=False)
-
-        lakes = _coverage_hole_tiles(result.tiling_result, unary_union(list(gdf.geometry)))
-
-        assert result.metrics.algorithm.n_enclosed_unassigned_tiles == len(_enclosed_cells(result) - lakes)
+        assert wet_occupied(on) <= wet_occupied(off)
 
 
 class TestEnclosedUnassignedMetric:

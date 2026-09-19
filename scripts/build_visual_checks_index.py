@@ -1,0 +1,510 @@
+#!/usr/bin/env python3
+"""Regenerate the visual_checks/ table-of-contents and per-PR pages.
+
+Each subdirectory of the root holds a set of PNGs and a ``summary.md``
+written by hand for a PR's before/after visual review. ``summary.md`` must
+start with a fenced metadata block, parsed as simple ``key: value`` lines
+(no YAML library, no nesting):
+
+    ---
+    pr: 27
+    title: Fix coverage_simplify tolerance units in raster Voronoi cells
+    description: One-line what changed and what to look for in the figures.
+    url: https://github.com/bright-fakl/carto-flow/pull/27
+    branch: fix/voronoi-smoothing-tolerance
+    base: fix/voronoi-cell-extraction
+    date: 2026-09-18
+    before: origin/fix/voronoi-cell-extraction
+    after: fix/voronoi-smoothing-tolerance @ <sha>
+    inputs: districts (bundled, simplify 5000 m, min_island 50000), states (bundled)
+    ---
+
+``pr``, ``title``, ``description``, and ``url`` are required - a missing one
+prints a warning naming the directory and falls back to the directory name
+(``pr`` falls back to ``None``, sorted last by mtime; ``url`` falls back to no
+link). ``branch``, ``base``, ``date``, ``before``, ``after``, and ``inputs``
+are optional and, when present, are rendered in the PR page's definition
+list.
+
+Below the metadata block, ``summary.md`` may contain any number of caption
+lines anywhere in the file:
+
+    figure: <filename> — <caption>
+
+Each PNG with a matching ``figure:`` line uses that caption; otherwise the
+filename itself is used as the caption.
+
+This script builds:
+
+- ``<root>/index.html`` - a table of contents: a table of PR (linked to the
+  GitHub PR), Title (linked to the page), Description, Date, Figures -
+  sorted by PR number descending (dirs without ``pr`` fall back to mtime,
+  sorted after the numbered ones).
+- ``<root>/<subdir>/index.html`` - a standalone page per subdirectory:
+  ``<h1>PR #N: title</h1>``, a definition list (URL, branch, base, date,
+  before/after, inputs), the description, the rest of ``summary.md``
+  rendered as HTML, and every PNG in the directory as an ``<img>`` with its
+  caption (relative link, not embedded). A "back to index" link appears at
+  top and bottom.
+- ``<root>/README.md`` - a short note on how to add a check, the header
+  format, and the command to rebuild.
+
+Only stdlib is used - no markdown library, no third-party dependencies.
+
+Usage:
+    uv run python scripts/build_visual_checks_index.py
+    uv run python scripts/build_visual_checks_index.py --root visual_checks
+    uv run python scripts/build_visual_checks_index.py --root /path/to/visual_checks
+"""
+
+from __future__ import annotations
+
+import argparse
+import html
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+STYLE = """
+  :root { color-scheme: light dark; }
+  body {
+    margin: 0;
+    padding: 24px;
+    padding-top: calc(24px + env(safe-area-inset-top, 0px));
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: #fafafa;
+    color: #1a1a1a;
+    line-height: 1.5;
+  }
+  h1 { font-size: 1.6rem; }
+  h2 { font-size: 1.3rem; margin-top: 2rem; border-bottom: 2px solid #ddd; padding-bottom: 0.3rem; }
+  h3, h4 { font-size: 1.05rem; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.85rem; }
+  th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+  th { background: rgba(0,0,0,0.05); }
+  code { background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
+  ul { padding-left: 1.4rem; }
+  dl.meta-list { margin: 1rem 0; }
+  dl.meta-list dt { font-weight: 600; float: left; clear: left; width: 8rem; color: #555; }
+  dl.meta-list dd { margin-left: 8rem; margin-bottom: 0.35rem; }
+  .figure { margin: 1.5rem 0; padding: 12px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; }
+  .caption { font-size: 0.85rem; color: #555; margin: 0.5rem 0 0; }
+  img { display: block; margin: 0 auto; max-width: 100%; }
+  .toc-item { margin: 1rem 0; padding: 12px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px; }
+  .toc-item h2 { margin-top: 0; border-bottom: none; padding-bottom: 0; }
+  .meta { font-size: 0.8rem; color: #777; }
+  .desc { color: #333; }
+  .back { display: inline-block; margin: 1rem 0; font-size: 0.9rem; }
+  a { color: #0645ad; }
+  table { overflow-x: auto; display: block; }
+"""
+
+DARK_STYLE = """
+  @media (prefers-color-scheme: dark) {
+    body { background: #1a1a1a; color: #eee; }
+    table, th, td { border-color: #444 !important; }
+    th { background: rgba(255,255,255,0.08); }
+    code { background: rgba(255,255,255,0.1); }
+    .figure, .toc-item { background: #242424; border-color: #333; }
+    .meta { color: #999; }
+    .desc { color: #ddd; }
+    dl.meta-list dt { color: #aaa; }
+    a { color: #7fb3ff; }
+  }
+"""
+
+README_TEXT = """# Visual checks
+
+Before/after visual review pages for PRs, built by
+`scripts/build_visual_checks_index.py`. This directory is gitignored - it is
+a local review workspace, not part of the repo.
+
+## Adding a check
+
+1. Create a subdirectory (any name, e.g. `pr27-voronoi-smoothing-tolerance`).
+2. Drop PNGs and a `summary.md` in it. `summary.md` must start with a fenced
+   metadata header:
+
+   ```
+   ---
+   pr: 27
+   title: Fix coverage_simplify tolerance units in raster Voronoi cells
+   description: One-line what changed and what to look for in the figures.
+   url: https://github.com/bright-fakl/carto-flow/pull/27
+   branch: fix/voronoi-smoothing-tolerance
+   base: fix/voronoi-cell-extraction
+   date: 2026-09-18
+   before: origin/fix/voronoi-cell-extraction
+   after: fix/voronoi-smoothing-tolerance @ <sha>
+   inputs: districts (bundled, simplify 5000 m, min_island 50000), states (bundled)
+   ---
+   ```
+
+   `pr`, `title`, `description`, and `url` are required; `branch`, `base`,
+   `date`, `before`, `after`, and `inputs` are optional and rendered in a
+   definition list on the page.
+
+3. Optionally caption a figure by adding a line anywhere below the header:
+
+   ```
+   figure: <filename> — <caption>
+   ```
+
+   One line per PNG that needs a caption; PNGs without one use their
+   filename.
+
+4. Write the rest of `summary.md` freely (headings, tables, bullet lists,
+   paragraphs, inline code) - it is rendered below the description.
+
+## Rebuilding
+
+```
+uv run python scripts/build_visual_checks_index.py --root /path/to/visual_checks
+```
+
+Regenerates `index.html` and every `<subdir>/index.html`, plus this file.
+"""
+
+
+def _page_shell(title: str, body: str) -> str:
+    return f"""<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>{html.escape(title)}</title>
+<style>
+{STYLE}
+{DARK_STYLE}
+</style>
+</head>
+<body>
+{body}
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Tiny Markdown -> HTML converter (headings, paragraphs, pipe tables,
+# bullet lists, inline code). Deliberately minimal - not a general parser.
+# ---------------------------------------------------------------------------
+
+
+def _render_inline(text: str) -> str:
+    text = html.escape(text)
+    # Inline code: `...`
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+    return text
+
+
+def _render_table(lines: list[str]) -> str:
+    rows = [line.strip().strip("|").split("|") for line in lines]
+    rows = [[cell.strip() for cell in row] for row in rows]
+    header, *rest = rows
+    # Second row is the separator (e.g. "---|---"); drop it if present.
+    if rest and all(re.fullmatch(r":?-{2,}:?", cell) for cell in rest[0]):
+        rest = rest[1:]
+    out = ["<table>", "<tr>" + "".join(f"<th>{_render_inline(c)}</th>" for c in header) + "</tr>"]
+    for row in rest:
+        out.append("<tr>" + "".join(f"<td>{_render_inline(c)}</td>" for c in row) + "</tr>")
+    out.append("</table>")
+    return "\n".join(out)
+
+
+def render_markdown(text: str) -> str:
+    lines = text.splitlines()
+    html_parts: list[str] = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+
+        if not stripped:
+            i += 1
+            continue
+
+        # Skip `figure: ...` caption directives - they are metadata, not prose.
+        if re.match(r"^figure:\s*\S", stripped):
+            i += 1
+            continue
+
+        heading_match = re.match(r"^(#{1,6})\s+(.*)$", stripped)
+        if heading_match:
+            level = len(heading_match.group(1))
+            html_parts.append(f"<h{level}>{_render_inline(heading_match.group(2))}</h{level}>")
+            i += 1
+            continue
+
+        if stripped.startswith("|"):
+            table_lines = []
+            while i < n and lines[i].strip().startswith("|"):
+                table_lines.append(lines[i])
+                i += 1
+            html_parts.append(_render_table(table_lines))
+            continue
+
+        if re.match(r"^[-*]\s+", stripped):
+            items = []
+            while i < n and re.match(r"^[-*]\s+", lines[i].strip()):
+                items.append(re.sub(r"^[-*]\s+", "", lines[i].strip()))
+                i += 1
+            html_parts.append("<ul>" + "".join(f"<li>{_render_inline(item)}</li>" for item in items) + "</ul>")
+            continue
+
+        # Paragraph: gather consecutive non-blank, non-special lines.
+        para_lines = [stripped]
+        i += 1
+        while i < n and lines[i].strip() and not re.match(r"^(#{1,6}\s|\||[-*]\s|figure:\s*\S)", lines[i].strip()):
+            para_lines.append(lines[i].strip())
+            i += 1
+        html_parts.append(f"<p>{_render_inline(' '.join(para_lines))}</p>")
+
+    return "\n".join(html_parts)
+
+
+# ---------------------------------------------------------------------------
+# summary.md metadata header parsing
+# ---------------------------------------------------------------------------
+
+REQUIRED_META_KEYS = ("pr", "title", "description", "url")
+OPTIONAL_META_KEYS = ("branch", "base", "date", "before", "after", "inputs")
+META_LABELS = {
+    "url": "URL",
+    "branch": "Branch",
+    "base": "Base",
+    "date": "Date",
+    "before": "Before",
+    "after": "After",
+    "inputs": "Inputs",
+}
+
+
+def _split_metadata_block(summary_text: str) -> tuple[dict[str, str], str]:
+    """Parse a leading ``---`` fenced ``key: value`` block, if present.
+
+    Returns (metadata dict, remaining text after the block). If there is no
+    metadata block, returns ({}, summary_text) unchanged.
+    """
+    lines = summary_text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, summary_text
+
+    meta: dict[str, str] = {}
+    end_index = None
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            end_index = i
+            break
+        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$", line)
+        if match:
+            meta[match.group(1).strip().lower()] = match.group(2).strip()
+
+    if end_index is None:
+        # Unterminated block - treat as no metadata rather than swallow the file.
+        return {}, summary_text
+
+    remainder = "\n".join(lines[end_index + 1 :])
+    return meta, remainder
+
+
+def _parse_figure_captions(text: str) -> dict[str, str]:
+    """Parse ``figure: <filename> — <caption>`` lines anywhere in text."""
+    captions: dict[str, str] = {}
+    for line in text.splitlines():
+        match = re.match(r"^\s*figure:\s*(\S+)\s*[-\u2013\u2014]\s*(.+?)\s*$", line)
+        if match:
+            captions[match.group(1)] = match.group(2)
+    return captions
+
+
+def _dir_mtime(directory: Path) -> float:
+    """Newest mtime among files directly in the directory."""
+    mtimes = [p.stat().st_mtime for p in directory.iterdir() if p.is_file()]
+    return max(mtimes) if mtimes else directory.stat().st_mtime
+
+
+# ---------------------------------------------------------------------------
+# Directory scanning
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PrDir:
+    path: Path
+    pr: int | None
+    title: str
+    description: str
+    url: str | None
+    meta: dict[str, str]
+    body_text: str
+    figure_count: int
+    mtime: float
+    warnings: list[str] = field(default_factory=list)
+
+
+def scan_pr_dir(directory: Path) -> PrDir:
+    summary_path = directory / "summary.md"
+    summary_text = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
+    meta, body_text = _split_metadata_block(summary_text)
+
+    warnings: list[str] = []
+    for key in REQUIRED_META_KEYS:
+        if not meta.get(key):
+            warnings.append(f"visual_checks/{directory.name}: missing required metadata key '{key}' in summary.md")
+
+    pr_raw = meta.get("pr")
+    pr_number: int | None = None
+    if pr_raw:
+        try:
+            pr_number = int(pr_raw)
+        except ValueError:
+            warnings.append(f"visual_checks/{directory.name}: metadata 'pr' is not an integer ({pr_raw!r})")
+
+    title = meta.get("title") or directory.name
+    description = meta.get("description") or ""
+    url = meta.get("url") or None
+
+    figure_count = len(sorted(directory.glob("*.png")))
+
+    for msg in warnings:
+        print(f"WARNING: {msg}", file=sys.stderr)
+
+    return PrDir(
+        path=directory,
+        pr=pr_number,
+        title=title,
+        description=description,
+        url=url,
+        meta=meta,
+        body_text=body_text,
+        figure_count=figure_count,
+        mtime=_dir_mtime(directory),
+        warnings=warnings,
+    )
+
+
+def build_pr_page(pr: PrDir) -> str:
+    captions = _parse_figure_captions(pr.body_text)
+
+    dl_items = []
+    if pr.url:
+        dl_items.append(("URL", f'<a href="{html.escape(pr.url)}">{html.escape(pr.url)}</a>'))
+    else:
+        dl_items.append(("URL", "(missing)"))
+    for key in ("branch", "base", "date", "before", "after", "inputs"):
+        value = pr.meta.get(key)
+        if value:
+            dl_items.append((META_LABELS[key], _render_inline(value)))
+    dl_html = (
+        '<dl class="meta-list">\n'
+        + "\n".join(f"<dt>{html.escape(label)}</dt><dd>{value}</dd>" for label, value in dl_items)
+        + "\n</dl>"
+    )
+
+    description_html = f'<p class="desc">{_render_inline(pr.description)}</p>' if pr.description else ""
+
+    body_html = render_markdown(pr.body_text)
+
+    figures = []
+    for png in sorted(pr.path.glob("*.png")):
+        caption = captions.get(png.name, png.name)
+        figures.append(
+            f'<div class="figure">\n'
+            f'<img src="{html.escape(png.name)}" alt="{html.escape(caption)}">\n'
+            f'<p class="caption">{_render_inline(caption)}</p>\n'
+            f"</div>"
+        )
+
+    heading = f"PR #{pr.pr}: {pr.title}" if pr.pr is not None else pr.title
+    back_link = '<a class="back" href="../index.html">&larr; back to index</a>'
+
+    body = (
+        f"{back_link}\n"
+        f"<h1>{html.escape(heading)}</h1>\n"
+        f"{dl_html}\n"
+        f"{description_html}\n"
+        f"{body_html}\n"
+        f"{''.join(figures)}\n"
+        f"{back_link}\n"
+    )
+    return _page_shell(heading, body)
+
+
+def build_index_page(pr_dirs: list[PrDir]) -> str:
+    rows = []
+    for pr in pr_dirs:
+        pr_cell = (
+            f'<a href="{html.escape(pr.url)}">#{pr.pr}</a>'
+            if pr.url and pr.pr is not None
+            else (str(pr.pr) if pr.pr is not None else "-")
+        )
+        title_cell = f'<a href="{html.escape(pr.path.name)}/index.html">{html.escape(pr.title)}</a>'
+        desc_cell = html.escape(pr.description)
+        date_cell = html.escape(pr.meta.get("date", ""))
+        rows.append(
+            "<tr>"
+            f"<td>{pr_cell}</td>"
+            f"<td>{title_cell}</td>"
+            f"<td>{desc_cell}</td>"
+            f"<td>{date_cell}</td>"
+            f"<td>{pr.figure_count}</td>"
+            "</tr>"
+        )
+
+    table = (
+        "<table>\n"
+        "<tr><th>PR</th><th>Title</th><th>Description</th><th>Date</th><th>Figures</th></tr>\n"
+        + "\n".join(rows)
+        + "\n</table>"
+    )
+
+    body = "<h1>Visual checks</h1>\n<p>Before/after visual review pages for PRs.</p>\n" + table
+    return _page_shell("Visual checks", body)
+
+
+def _sort_key(pr: PrDir) -> tuple[int, int, float]:
+    # Numbered PRs first (sorted by pr desc), then unnumbered ones by mtime desc.
+    if pr.pr is not None:
+        return (0, pr.pr, 0.0)
+    return (1, 0, pr.mtime)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Regenerate visual_checks/index.html and per-PR pages.")
+    parser.add_argument(
+        "--root",
+        default="visual_checks",
+        help="Root directory containing per-PR subdirectories (default: visual_checks, relative to cwd).",
+    )
+    args = parser.parse_args()
+
+    root = Path(args.root)
+    if not root.is_dir():
+        raise SystemExit(f"Root directory not found: {root}")
+
+    pr_dirs = [scan_pr_dir(p) for p in root.iterdir() if p.is_dir()]
+
+    # Numbered dirs sorted by pr descending; unnumbered dirs sorted by mtime
+    # descending, placed after all numbered ones.
+    numbered = sorted((p for p in pr_dirs if p.pr is not None), key=lambda p: p.pr, reverse=True)
+    unnumbered = sorted((p for p in pr_dirs if p.pr is None), key=lambda p: p.mtime, reverse=True)
+    pr_dirs = numbered + unnumbered
+
+    for pr in pr_dirs:
+        (pr.path / "index.html").write_text(build_pr_page(pr), encoding="utf-8")
+
+    (root / "index.html").write_text(build_index_page(pr_dirs), encoding="utf-8")
+    (root / "README.md").write_text(README_TEXT, encoding="utf-8")
+
+    total_warnings = sum(len(pr.warnings) for pr in pr_dirs)
+    print(f"Wrote {root / 'index.html'}, {root / 'README.md'}, and {len(pr_dirs)} PR page(s).")
+    if total_warnings:
+        print(f"{total_warnings} warning(s) - see above.", file=sys.stderr)
+
+
+if __name__ == "__main__":
+    main()

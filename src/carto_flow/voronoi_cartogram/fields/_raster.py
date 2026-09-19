@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import warnings
 from typing import Any, cast
 
@@ -23,6 +24,17 @@ ENSURE_NONEMPTY_POWER_CELLS = True
 # 1 -> 0 at 128) but it perturbs the Lloyd trajectory, and at res 256 it raised
 # the satellite-component count from 16 to 19.  See the PR for the measurement.
 ENSURE_NONEMPTY_POWER_CELLS_IN_RELAXATION = False
+
+# Default coverage_simplify distance tolerance for smoothing raster pixel
+# staircases, expressed in pixel units (multiples of sqrt(dx * dy)) rather
+# than as an absolute distance, so it scales with grid resolution.  1.0 ==
+# one pixel.  This is only the *default*; the actual tolerance used by a
+# given field is ``RasterField._cell_smoothing_px`` (settable per-call via
+# ``RasterBackend.cell_smoothing_px``).  See the PR's tolerance sweep: 0.7
+# (the original grid-diagonal-derived value) and even 2.0 still show visible
+# staircasing on real boundaries at map scale; 3.0 was chosen as the default
+# that reads as smooth without over-simplifying corners.
+CELL_SMOOTHING_TOLERANCE_PX = 3.0
 
 
 class RasterField(BaseField):
@@ -54,6 +66,13 @@ class RasterField(BaseField):
     debug_geodesic : bool
         When ``True`` and ``labeling="geodesic"``, emit warnings for
         misplaced BFS seeds (cross-water labeling diagnostics).
+    cell_smoothing_px : float
+        Tolerance for smoothing pixel staircases on extracted cells, in
+        final-grid pixels (the extraction grid is ``final_resolution`` or
+        4x ``resolution``).  Resolution-independent by construction.
+        ``0`` disables smoothing.  For cartographic generalisation in map
+        units, apply :func:`carto_flow.geo_utils.simplify_coverage` to the
+        result instead.
     adj_pairs, boundary_mask, adhesion_boundary, adhesion_strength, weights
         See :class:`BaseField`.
     """
@@ -73,6 +92,7 @@ class RasterField(BaseField):
         area_eq_weight: float = 0.0,
         weight_ramp_iters: int = 0,
         debug_geodesic: bool = False,
+        cell_smoothing_px: float = CELL_SMOOTHING_TOLERANCE_PX,
         adj_pairs=None,
         intra_adj_pairs=None,
         boundary_mask=None,
@@ -100,6 +120,9 @@ class RasterField(BaseField):
         self._geodesic_voronoi = labeling == "geodesic"
         self._area_eq_weight = float(area_eq_weight)
         self._weight_ramp_iters = int(weight_ramp_iters)
+        if cell_smoothing_px < 0:
+            raise ValueError(f"cell_smoothing_px must be >= 0, got {cell_smoothing_px}")
+        self._cell_smoothing_px = float(cell_smoothing_px)
         self._power_offsets = np.zeros(len(arr), dtype=np.float64)
         self._debug_geodesic = bool(debug_geodesic)
         if self._geodesic_voronoi and self._weights is not None:
@@ -463,8 +486,9 @@ class RasterField(BaseField):
         water-tight cell polygons.
 
         After polygon construction, ``shapely.coverage_simplify`` is applied
-        with a half-pixel-area tolerance and ``simplify_boundary=False`` to
-        smooth out pixel staircases while preserving the outer coverage boundary.
+        with a ``self._cell_smoothing_px * sqrt(dx * dy)`` distance
+        tolerance and ``simplify_boundary=False`` to smooth out pixel
+        staircases while preserving the outer coverage boundary.
 
         Optional keyword overrides (*nx*, *ny*, *dx*, *dy*, *x_coords*,
         *y_coords*, *boundary*) replace the corresponding ``self._grid_*``
@@ -562,9 +586,13 @@ class RasterField(BaseField):
             cell_polys[i] = clipped if not sh.is_empty(clipped) else Point(self.points[i])
 
         # Smooth pixel staircases: coverage_simplify on shared interior edges only.
-        tol = dx * dy / 2.0
+        # `tol` is a distance tolerance in shapely (max vertex displacement),
+        # not an area: scale a pixel-unit setting by sqrt(dx*dy) (one grid
+        # cell's characteristic size), not by dx*dy, which would be ~1e8x too
+        # large at typical grid resolutions and over-smooth into straight lines.
+        tol = self._cell_smoothing_px * math.sqrt(dx * dy)
         valid = np.array([c.geom_type in ("Polygon", "MultiPolygon") for c in cell_polys])
-        if valid.any():
+        if tol > 0.0 and valid.any():
             try:
                 cell_polys[valid] = sh.coverage_simplify(cell_polys[valid], tol, simplify_boundary=False)
             except (ShapelyError, ValueError) as exc:  # degenerate coverage

@@ -678,11 +678,17 @@ class TestSliverHoleBoundary:
             boundary=boundary,
         )
         # Staircase smoothing (coverage_simplify) moves area between the two
-        # cells, so compare generously per cell but exactly over the coverage.
+        # cells but, with a correctly-scaled (length, not area) tolerance,
+        # stays roughly close to each cell's raw pixel count; total coverage
+        # is exact. CELL_SMOOTHING_TOLERANCE_PX=2.0 (picked for visually
+        # smooth borders on real, much finer grids -- see the PR #27 sweep)
+        # is a large tolerance relative to this coarse 4x4 synthetic grid, so
+        # the per-cell bound is wider than it would need to be at the old
+        # 0.7 px value (measured ratios: cell 0 ~1.29x, cell 1 ~0.37x).
         for i in (0, 1):
             n_px = int((label_2d == i).sum())
             assert cells[i].geom_type in ("Polygon", "MultiPolygon"), cells[i].geom_type
-            assert cells[i].area > 0.25 * n_px * dx * dy
+            assert cells[i].area == pytest.approx(n_px * dx * dy, rel=0.7)
         assert sum(c.area for c in cells) == pytest.approx(boundary.area, rel=1e-9)
 
     def test_field_strips_sliver_rings_from_the_boundary(self):
@@ -739,7 +745,10 @@ class TestSliverHoleBoundary:
             )
 
         assert cells[1].geom_type in ("Polygon", "MultiPolygon")
-        assert cells[1].area > 0.25 * 5 * dx * dy
+        # Widened for the same reason as test_spike_ring_does_not_collapse_a_cell
+        # above (measured ratio ~0.30x at CELL_SMOOTHING_TOLERANCE_PX=2.0 on
+        # this coarse 4x4 grid).
+        assert cells[1].area == pytest.approx(5 * dx * dy, rel=0.75)
         messages = [str(w.message) for w in caught]
         assert any("extraction failed for seed 1" in m for m in messages), messages
 

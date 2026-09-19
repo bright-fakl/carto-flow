@@ -330,6 +330,13 @@ class RasterBackend:
         ``distance_mode="geodesic"`` or ``area_equalizer_rate > 0``.
         Ignored for plain euclidean with ``area_equalizer_rate=0``.  ``None`` = same as
         ``resolution``.
+    cell_smoothing_px : float
+        Tolerance for smoothing pixel staircases on extracted cells, in
+        final-grid pixels (the extraction grid is ``output_resolution`` or
+        4x ``resolution``). Resolution-independent by construction. For
+        cartographic generalisation in map units, apply
+        :func:`carto_flow.geo_utils.simplify_coverage` to the result
+        instead. ``0`` disables smoothing. Default ``3.0``.
 
     Examples
     --------
@@ -364,12 +371,15 @@ class RasterBackend:
     area_equalizer_rate: float = 0.1
     weight_ramp_iters: int = 10
     output_resolution: int | None = None
+    cell_smoothing_px: float = 3.0
 
     def __post_init__(self) -> None:
         if self.resolution < 10:
             raise ValueError(f"resolution must be >= 10, got {self.resolution}")
         if self.output_resolution is not None and self.output_resolution < 10:
             raise ValueError(f"output_resolution must be >= 10, got {self.output_resolution}")
+        if self.cell_smoothing_px < 0:
+            raise ValueError(f"cell_smoothing_px must be >= 0, got {self.cell_smoothing_px}")
         _resolve_relaxation(self.relaxation)  # validate early
         if self.adjacency_spring < 0:
             raise ValueError(f"adjacency_spring must be >= 0, got {self.adjacency_spring}")
@@ -420,6 +430,7 @@ class RasterBackend:
             area_eq_weight=self.area_equalizer_rate,
             weight_ramp_iters=self.weight_ramp_iters,
             debug_geodesic=debug,
+            cell_smoothing_px=self.cell_smoothing_px,
             adj_pairs=adj_pairs,
             intra_adj_pairs=intra_adj_pairs,
             boundary_mask=boundary_mask,

@@ -35,6 +35,12 @@ class MosaicMetrics:
     repair_passes : int
         Linear-assignment solves actually run by the connectivity-repair loop
         (the maximum over components, so 1 means "no repair pass was needed").
+    n_unassigned_core_tiles : int
+        Core tiles (inside the study union) that received no symbol.  Because
+        calibration matches the core tile count to the tile budget, this also
+        counts the tiles the solver had to take from the extra rings outside
+        the core, which show up as protruding tails.  Unlike an enclosed-hole
+        count it also catches gaps in concave boundary pockets.
     """
 
     tiling: str = ""
@@ -45,6 +51,7 @@ class MosaicMetrics:
     n_noncontiguous_regions: int = 0
     n_split_groups: int = 0
     repair_passes: int = 0
+    n_unassigned_core_tiles: int = 0
 
 
 def _count_split_units(
@@ -82,6 +89,112 @@ def _count_split_units(
         if len(visited) != len(tile_set):
             split += 1
     return split
+
+
+def _relocate_ring_tiles(
+    assignment: np.ndarray,
+    adj_list: list[list[int]],
+    core_set: set[int],
+    G: int,
+    group_labels: np.ndarray | None,
+    max_hops: int,
+    show_progress: bool = False,
+) -> np.ndarray:
+    """Pull assigned extra-ring tiles back into unassigned core tiles.
+
+    A tile the solver took from an extra ring sits outside the core, so — because
+    calibration matches the core tile count to the tile budget — it leaves a core
+    tile empty one-for-one.  The ring tile reads as a protruding tail and the core
+    tile as a hole; they are the same defect.
+
+    BFS runs from each assigned ring tile over *occupied* tiles until it reaches an
+    unassigned core tile, then ownership is shifted one step along the path
+    ``t -> n1 -> ... -> nk -> empty``: the empty tile takes ``n_k``'s geometry, each
+    ``n_i`` takes ``n_{i-1}``'s, ``n_1`` takes the ring tile's, and the ring tile is
+    freed.  Every geometry on the path loses one tile and gains one, so per-region
+    tile counts are preserved exactly.
+
+    A relocation is applied only when the number of unassigned core tiles strictly
+    decreases and neither the per-geometry nor the per-group split count increases,
+    so the step can never regress either metric relative to leaving it off.  The
+    ``max_hops`` bound keeps the search local; ``max_hops=0`` disables the step and
+    ``max_hops=1`` reproduces the plain adjacent-tile swap-back this generalises.
+    """
+    from collections import deque
+
+    # Endpoints scored per ring tile.  The first (shortest) path is usually accepted;
+    # the cap only bounds the pathological case where many are rejected in a row.
+    max_candidate_paths = 20
+
+    geom_units = np.arange(G, dtype=np.int32)
+
+    def score(a: np.ndarray) -> tuple[int, int]:
+        occupied = [t for t in range(len(a)) if a[t] >= 0]
+        by_group = _count_split_units(a, occupied, adj_list, group_labels) if group_labels is not None else 0
+        return by_group, _count_split_units(a, occupied, adj_list, geom_units)
+
+    def candidate_paths(a: np.ndarray, start: int, empties: set[int]) -> list[list[int]]:
+        """Shortest paths from ``start`` over occupied tiles to unassigned core tiles."""
+        found: list[list[int]] = []
+        prev: dict[int, int | None] = {start: None}
+        queue: deque[tuple[int, int]] = deque([(start, 0)])
+        while queue and len(found) < max_candidate_paths:
+            u, d = queue.popleft()
+            if d >= max_hops:
+                continue
+            for nb in adj_list[u]:
+                if nb in prev:
+                    continue
+                prev[nb] = u
+                if nb in empties:
+                    path, p = [nb], u
+                    while p != start:
+                        path.append(p)
+                        p = prev[p]  # type: ignore[assignment]
+                    found.append(path[::-1])
+                    if len(found) >= max_candidate_paths:
+                        break
+                elif a[nb] >= 0:
+                    queue.append((nb, d + 1))
+        return found
+
+    moved = 0
+    before = score(assignment)
+    progress = True
+    while progress:
+        progress = False
+        occupied = {t for t in range(len(assignment)) if assignment[t] >= 0}
+        empties = core_set - occupied
+        if not empties:
+            break
+        for t in sorted(occupied - core_set):
+            for path in candidate_paths(assignment, t, empties):
+                trial = assignment.copy()
+                chain = [t, *path]
+                for i in range(len(chain) - 1, 0, -1):
+                    trial[chain[i]] = trial[chain[i - 1]]
+                trial[t] = -1
+                # Unassigned core tiles strictly decrease by construction: the path ends
+                # on an empty core tile and the tile freed is outside the core.  Only the
+                # split counts need an explicit guard.  (Tested in test_mosaic_*.)
+                after = score(trial)
+                if after[0] <= before[0] and after[1] <= before[1]:
+                    assignment = trial
+                    before = after
+                    moved += 1
+                    progress = True
+                    break
+            if progress:
+                break
+
+    if show_progress:
+        occupied = {t for t in range(len(assignment)) if assignment[t] >= 0}
+        print(
+            f"[mosaic]   ring swap-back: {moved} tile(s) relocated; "
+            f"{len(occupied - core_set)} ring tile(s) and {len(core_set - occupied)} "
+            f"unassigned core tile(s) remain"
+        )
+    return assignment
 
 
 def _chain_swap_repair(
@@ -197,6 +310,13 @@ class HungarianOptions:
         and the occupied tile set are preserved exactly, and the result is
         kept only when it strictly reduces the number of split regions or
         groups without increasing either.  0 disables it.  Default 10.
+    ring_swapback_max_hops : int
+        How far the extra-ring swap-back may search for an unassigned core
+        tile to pull a stranded ring tile into.  Ownership is shifted along
+        the path, so tile counts are preserved and the move is kept only when
+        it increases neither the split-region nor the split-group count.
+        0 disables the swap-back; 1 restricts it to directly adjacent tiles.
+        Default 8 — on US states the fixable count saturates at 8 hops.
     """
 
     distance_weight: float = 1.0
@@ -209,10 +329,13 @@ class HungarianOptions:
     neighbor_weight: float = 0.3
     neighbor_bfs: bool = False
     swap_repair_passes: int = 10
+    ring_swapback_max_hops: int = 8
 
     def __post_init__(self) -> None:
         if self.max_connectivity_iters < 0:
             raise ValueError(f"max_connectivity_iters must be >= 0, got {self.max_connectivity_iters}")
+        if self.ring_swapback_max_hops < 0:
+            raise ValueError(f"ring_swapback_max_hops must be >= 0, got {self.ring_swapback_max_hops}")
 
 
 @dataclass
@@ -479,25 +602,21 @@ class MosaicLayout(Layout):
                     assignment[t] = int(geom_indices_arr[local_g])
 
         # Post-process: swap extra-ring tiles back to unassigned core tiles where possible.
-        # Extra-ring tiles that ended up assigned create visual holes (gaps inside the core
-        # pool). Greedily replace each extra-ring tile with an adjacent unassigned core tile
-        # of the same geometry to eliminate holes without breaking tile counts.
+        # A ring tile the solver used sits outside the core and — since calibration matches
+        # the core tile count to the tile budget — leaves a core tile empty one-for-one, so
+        # the protruding tail and the hole are the same defect.  The relocation below walks
+        # a BFS path of occupied tiles from the ring tile to the nearest empty core tile and
+        # shifts ownership along it, which preserves every region's tile count exactly.
         if opts.extra_tile_rings > 0:
-            valid_set = set(valid_tile_indices)
-            unassigned_core = {t for t in valid_tile_indices if assignment[t] < 0}
-            changed = True
-            while changed:
-                changed = False
-                for t in [t for t in range(T) if assignment[t] >= 0 and t not in valid_set]:
-                    g = int(assignment[t])
-                    for nb in adj_list[t]:
-                        if nb in unassigned_core:
-                            assignment[nb] = g
-                            assignment[t] = -1
-                            unassigned_core.discard(nb)
-                            unassigned_core.discard(t)
-                            changed = True
-                            break
+            assignment = _relocate_ring_tiles(
+                assignment,
+                adj_list,
+                set(valid_tile_indices),
+                G,
+                group_labels,
+                max_hops=hopts.ring_swapback_max_hops,
+                show_progress=show_progress,
+            )
 
         # Post-process: close any remaining split regions/groups by swapping
         # geometry ownership along tile chains.  Runs after the extra-ring
@@ -569,6 +688,11 @@ class MosaicLayout(Layout):
             else 0
         )
 
+        # Core tiles left empty.  Deliberately *not* folded into `converged`: that
+        # would be a public behaviour change, and on inputs where a region genuinely
+        # extends past the core there may be no legal relocation to close them.
+        n_unassigned_core_tiles = int(sum(1 for t in valid_tile_indices if assignment[t] < 0))
+
         from ..layout_result import AlgorithmMetrics, MosaicLayoutResult
 
         metrics = AlgorithmMetrics(
@@ -584,6 +708,7 @@ class MosaicLayout(Layout):
                 n_noncontiguous_regions=n_noncontiguous_regions,
                 n_split_groups=n_split_groups,
                 repair_passes=repair_passes,
+                n_unassigned_core_tiles=n_unassigned_core_tiles,
             ),
         )
 

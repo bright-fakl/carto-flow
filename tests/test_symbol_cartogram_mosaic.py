@@ -238,6 +238,88 @@ def _core_holes(result: MosaicLayoutResult) -> int:
     return holes
 
 
+def _unassigned_core(result: MosaicLayoutResult) -> int:
+    """Core tiles that received no symbol."""
+    assigned = {int(t) for t in result.assignments}
+    return sum(1 for t in (int(x) for x in result.core_tile_indices) if t not in assigned)
+
+
+def _ring_tiles_used(result: MosaicLayoutResult) -> int:
+    """Assigned tiles that lie outside the core pool."""
+    core = {int(x) for x in result.core_tile_indices}
+    return len({int(t) for t in result.assignments} - core)
+
+
+class TestRingSwapBack:
+    """Stranded extra-ring tiles are pulled back into unassigned core tiles.
+
+    A ring tile sits outside the core and leaves a core tile empty one-for-one,
+    so the protruding tail and the hole are the same defect.  The swap-back
+    walks a BFS path of occupied tiles to the nearest empty core tile and shifts
+    ownership along it.
+    """
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_exact_tile_counts_preserved(self, cols, rows, counts):
+        """Shifting ownership along a path makes every region lose and gain one tile."""
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=8))
+
+        np.testing.assert_array_equal(tile_counts_per_geometry(off), counts)
+        np.testing.assert_array_equal(tile_counts_per_geometry(on), counts)
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_unassigned_core_tiles_never_increase(self, cols, rows, counts):
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=8))
+
+        assert _unassigned_core(on) <= _unassigned_core(off)
+        assert _ring_tiles_used(on) <= _ring_tiles_used(off)
+
+    @pytest.mark.parametrize(("cols", "rows", "counts"), [(3, 3, COUNTS_3X3), (4, 3, COUNTS_4X3)])
+    def test_split_regions_never_increase(self, cols, rows, counts):
+        """The accept-guard makes 'never regress' structural, not tuned."""
+        gdf = grid_gdf(cols, rows, counts)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=0))
+        on = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=8))
+
+        assert len(non_contiguous_regions(on)) <= len(non_contiguous_regions(off))
+
+    def test_split_groups_never_increase(self):
+        """Same guard on the grouped path, where the unit is the group."""
+        gdf, _, _ = group_fixture()
+        data = prepare_layout_data(gdf, group_by="grp")
+
+        off = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=0)).compute(
+            data, show_progress=False
+        )
+        on = MosaicLayout(morph=False, hungarian_options=HungarianOptions(ring_swapback_max_hops=8)).compute(
+            data, show_progress=False
+        )
+
+        assert on.metrics.algorithm.n_split_groups <= off.metrics.algorithm.n_split_groups
+        assert _unassigned_core(on) <= _unassigned_core(off)
+
+    def test_zero_hops_disables_and_one_hop_is_adjacent_only(self):
+        """The single knob spans "off" and the old adjacent-only behaviour."""
+        gdf = grid_gdf(4, 3, COUNTS_4X3)
+
+        off = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=0))
+        adjacent_only = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=1))
+        far = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=8))
+
+        assert _unassigned_core(far) <= _unassigned_core(adjacent_only) <= _unassigned_core(off)
+
+    def test_negative_hops_rejected(self):
+        with pytest.raises(ValueError, match="ring_swapback_max_hops must be >= 0"):
+            HungarianOptions(ring_swapback_max_hops=-1)
+
+
 class TestChainSwapRepair:
     """The post-ring chain-swap repair closes splits without side effects."""
 
@@ -306,6 +388,22 @@ class TestTopologyMetrics:
         assert metrics.n_split_groups == 0
         assert result.metrics.converged is False
         assert metrics.regions_correct == metrics.regions_total
+
+    def test_metrics_report_unassigned_core_tiles(self):
+        """``n_unassigned_core_tiles`` counts every empty core tile, enclosed or not.
+
+        The enclosed-hole check misses gaps in concave boundary pockets — on US
+        states it reported 0 while five were plainly visible — so the metric is
+        deliberately the wider count.  It is *not* folded into ``converged``:
+        that would be a public behaviour change, and on some inputs no legal
+        relocation exists.
+        """
+        gdf = grid_gdf(4, 3, COUNTS_4X3)
+        result = compute(gdf, hungarian_options=HungarianOptions(ring_swapback_max_hops=0))
+
+        metrics = result.metrics.algorithm
+        assert metrics.n_unassigned_core_tiles == _unassigned_core(result)
+        assert metrics.n_unassigned_core_tiles >= _core_holes(result)
 
     def test_metrics_report_convergence_after_repair(self):
         """With the repair on (the default) the same fixture converges."""
@@ -658,6 +756,31 @@ class TestUsStates:
         assert len(result.regions_gdf) == len(gdf)
         np.testing.assert_array_equal(result.regions_gdf["tile_count"].to_numpy(), tiles)
         np.testing.assert_array_equal(result.regions_gdf["target_count"].to_numpy(), tiles)
+
+    def test_ring_swapback_recovers_stranded_tiles(self, states_gdf):
+        """Regression: 5 ring tiles and 5 empty core tiles, 4 of them by the Great Lakes.
+
+        Michigan's empty core tile is two rows from its ring tile, so the old
+        adjacent-only swap-back could never make the first hop.  Three of the
+        five are legally recoverable; Florida's and Washington's only reachable
+        empty tiles are ten-plus hops away and moving them would split
+        intervening states, so the guard correctly declines.
+        """
+        data = prepare_layout_data(states_gdf, tile_count="tiles")
+        tiles = states_gdf["tiles"].to_numpy()
+
+        off = MosaicLayout(hungarian_options=HungarianOptions(ring_swapback_max_hops=0)).compute(
+            data, show_progress=False
+        )
+        on = MosaicLayout().compute(data, show_progress=False)
+
+        assert _unassigned_core(on) < _unassigned_core(off)
+        assert _ring_tiles_used(on) < _ring_tiles_used(off)
+        # Never regress the topology metrics while doing it.
+        assert on.metrics.algorithm.n_noncontiguous_regions <= off.metrics.algorithm.n_noncontiguous_regions
+        assert on.metrics.algorithm.n_split_groups <= off.metrics.algorithm.n_split_groups
+        # Exact tile counts stay structural.
+        np.testing.assert_array_equal(tile_counts_per_geometry(on), tiles)
 
     def test_repair_never_worse_than_raw_solve(self, states_gdf):
         """Regression: repair used to turn 2 split states into 9.

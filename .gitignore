@@ -225,5 +225,5 @@ Untitled*.ipynb
 .kilo/package.json
 .kilo/package-lock.json
 
-# PR before/after visual review pages (regenerate with scripts/build_visual_checks_index.py)
+# Local before/after visual review pages (regenerate with scripts/build_visual_checks_index.py)
 visual_checks/

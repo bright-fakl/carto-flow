@@ -60,7 +60,17 @@ class LayoutData:
     group_ids : NDArray[np.intp] | None
         Integer group label per item at N-level, shape (N,).
         None when neither group_by nor tile_count is set.
-        Already expanded via source_indices when tile_count is used.
+        Already expanded via source_indices when tile_count is used, where
+        each geometry is its own group (group k = geometry k), so this is a
+        per-symbol source label rather than a user grouping.
+    group_ids_G : NDArray[np.intp] | None
+        User grouping at G-level (one entry per geometry), shape (G,).
+        Set only when ``group_by`` was used (``tile_count`` and ``group_by``
+        cannot be combined). None means each geometry is its own group: with
+        ``tile_count``, a geometry and its tiles form one block and
+        MosaicLayout still enforces per-geometry contiguity. Layouts that
+        group geometries rather than symbols (e.g. mosaic) must use this,
+        not ``group_ids``.
 
     """
 
@@ -74,6 +84,7 @@ class LayoutData:
     geometry_positions: NDArray[np.floating] | None = None
     source_indices: NDArray[np.intp] | None = None
     group_ids: NDArray[np.intp] | None = None
+    group_ids_G: NDArray[np.intp] | None = None
     counts_G: NDArray[np.int32] | None = None
     sizes_G: NDArray[np.floating] | None = None
     components: list[list[int]] | None = None
@@ -439,15 +450,21 @@ def prepare_layout_data(
     # 6. group_by / tile_count group encoding — always expanded to N-level
     # When tile_count is set, each geometry is its own group: group k = geometry k.
     # When group_by is set, encode the column as zero-based integers.
-    # Always stored at N-level so layouts receive a ready-to-use array.
+    # `group_ids` is always N-level (one entry per symbol); `group_ids_G` is
+    # G-level (one entry per geometry) and is only set when the user asked for
+    # a grouping via group_by. With tile_count alone it stays None, which means
+    # each geometry is its own group (its tiles must stay together), not that
+    # grouping is switched off. See the LayoutData docstring.
     group_ids = None
+    group_ids_G = None
     if tile_count is not None:
-        group_ids_G = np.arange(G, dtype=np.intp)  # geometry k is group k
-        group_ids = group_ids_G[source_indices]  # expand to N-level
+        geometry_group_ids = np.arange(G, dtype=np.intp)  # geometry k is group k
+        group_ids = geometry_group_ids[source_indices]  # expand to N-level
     elif group_by is not None:
         labels = gdf[group_by].to_numpy()
         _, group_ids_arr = np.unique(labels, return_inverse=True)
         group_ids = group_ids_arr.astype(np.intp)  # already G-level = N-level (no tile_count)
+        group_ids_G = group_ids
 
     # 7. Collapse positions toward group centroid when requested.
     # For group_by (no tile expansion), use area-weighted centroid so that
@@ -481,6 +498,7 @@ def prepare_layout_data(
         geometry_positions=geometry_positions,
         source_indices=source_indices,
         group_ids=group_ids,
+        group_ids_G=group_ids_G,
         counts_G=counts_G_out,
         sizes_G=sizes_G_out,
         components=components_out,

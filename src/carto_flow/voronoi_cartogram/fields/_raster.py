@@ -2,14 +2,39 @@
 
 from __future__ import annotations
 
-import contextlib
+import math
+import warnings
 from typing import Any, cast
 
 import numpy as np
+from shapely.errors import ShapelyError
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
-from ._base import BaseField, _extract_exact_cells
+from ._base import BaseField, _extract_exact_cells, _keep_polygonal, drop_sliver_holes
+
+# Keep every power-diagram cell non-empty when extracting the final cells
+# (see ``RasterField._nonempty_offsets``).  Module-level constants rather than
+# options: set to False to restore the unguarded solver.
+ENSURE_NONEMPTY_POWER_CELLS = True
+
+# Apply the same guard during relaxation, to seeds that lost all their pixels.
+# Off by default: on top of the guard above it removes further degenerate cells
+# at coarse resolutions (districts + 5000 m: 46 -> 35 at res 32, 9 -> 7 at 48,
+# 1 -> 0 at 128) but it perturbs the Lloyd trajectory, and at res 256 it raised
+# the satellite-component count from 16 to 19.  See the PR for the measurement.
+ENSURE_NONEMPTY_POWER_CELLS_IN_RELAXATION = False
+
+# Default coverage_simplify distance tolerance for smoothing raster pixel
+# staircases, expressed in pixel units (multiples of sqrt(dx * dy)) rather
+# than as an absolute distance, so it scales with grid resolution.  1.0 ==
+# one pixel.  This is only the *default*; the actual tolerance used by a
+# given field is ``RasterField._cell_smoothing_px`` (settable per-call via
+# ``RasterBackend.cell_smoothing_px``).  See the PR's tolerance sweep: 0.7
+# (the original grid-diagonal-derived value) and even 2.0 still show visible
+# staircasing on real boundaries at map scale; 3.0 was chosen as the default
+# that reads as smooth without over-simplifying corners.
+CELL_SMOOTHING_TOLERANCE_PX = 3.0
 
 
 class RasterField(BaseField):
@@ -41,6 +66,13 @@ class RasterField(BaseField):
     debug_geodesic : bool
         When ``True`` and ``labeling="geodesic"``, emit warnings for
         misplaced BFS seeds (cross-water labeling diagnostics).
+    cell_smoothing_px : float
+        Tolerance for smoothing pixel staircases on extracted cells, in
+        final-grid pixels (the extraction grid is ``final_resolution`` or
+        4x ``resolution``).  Resolution-independent by construction.
+        ``0`` disables smoothing.  For cartographic generalisation in map
+        units, apply :func:`carto_flow.geo_utils.simplify_coverage` to the
+        result instead.
     adj_pairs, boundary_mask, adhesion_boundary, adhesion_strength, weights
         See :class:`BaseField`.
     """
@@ -60,6 +92,7 @@ class RasterField(BaseField):
         area_eq_weight: float = 0.0,
         weight_ramp_iters: int = 0,
         debug_geodesic: bool = False,
+        cell_smoothing_px: float = CELL_SMOOTHING_TOLERANCE_PX,
         adj_pairs=None,
         intra_adj_pairs=None,
         boundary_mask=None,
@@ -87,6 +120,9 @@ class RasterField(BaseField):
         self._geodesic_voronoi = labeling == "geodesic"
         self._area_eq_weight = float(area_eq_weight)
         self._weight_ramp_iters = int(weight_ramp_iters)
+        if cell_smoothing_px < 0:
+            raise ValueError(f"cell_smoothing_px must be >= 0, got {cell_smoothing_px}")
+        self._cell_smoothing_px = float(cell_smoothing_px)
         self._power_offsets = np.zeros(len(arr), dtype=np.float64)
         self._debug_geodesic = bool(debug_geodesic)
         if self._geodesic_voronoi and self._weights is not None:
@@ -394,7 +430,7 @@ class RasterField(BaseField):
                     polys = [g for g in getattr(vp, "geoms", [vp]) if g.geom_type == "Polygon"]
                     valid_parts.extend(polys)
             new_geom = unary_union(valid_parts) if valid_parts else self._current_boundary
-        self._current_boundary = new_geom
+        self._current_boundary = drop_sliver_holes(new_geom)
         sh.prepare(self._current_boundary)
         self._elastic_active_mask = sh.contains_xy(self._current_boundary, self._grid_pts_x, self._grid_pts_y)
         # Keep adhesion snap target aligned with the deformed boundary so that
@@ -450,8 +486,9 @@ class RasterField(BaseField):
         water-tight cell polygons.
 
         After polygon construction, ``shapely.coverage_simplify`` is applied
-        with a half-pixel-area tolerance and ``simplify_boundary=False`` to
-        smooth out pixel staircases while preserving the outer coverage boundary.
+        with a ``self._cell_smoothing_px * sqrt(dx * dy)`` distance
+        tolerance and ``simplify_boundary=False`` to smooth out pixel
+        staircases while preserving the outer coverage boundary.
 
         Optional keyword overrides (*nx*, *ny*, *dx*, *dy*, *x_coords*,
         *y_coords*, *boundary*) replace the corresponding ``self._grid_*``
@@ -472,6 +509,9 @@ class RasterField(BaseField):
         boundary = boundary if boundary is not None else self._current_boundary
         half_dx = dx / 2.0
         half_dy = dy / 2.0
+        # A cell that clips to less than a millionth of a pixel is not a cell.
+        min_cell_area = 1e-6 * dx * dy
+        grid_size = 1e-6 * min(dx, dy)
 
         x_edges = np.empty(nx + 1)
         x_edges[0] = x_coords[0] - half_dx
@@ -513,20 +553,54 @@ class RasterField(BaseField):
                 continue
             poly = polys[0] if len(polys) == 1 else ops_unary_union(polys)
             clipped = sh.intersection(poly, boundary)
-            if clipped.geom_type == "GeometryCollection":
-                # Clipping along the boundary can leave zero-area line/point
-                # parts; keep only the polygonal parts so downstream code
-                # (e.g. shapely.boundary in find_adjacent_pairs) sees a Polygon.
-                parts = [g for g in clipped.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
-                clipped = ops_unary_union(parts) if parts else sh.Polygon()
+            # Clipping along the boundary can leave zero-area line/point parts,
+            # or collapse the cell to a bare Line/MultiLineString; keep only the
+            # polygonal parts so downstream code (shapely.boundary in
+            # find_adjacent_pairs, coverage_simplify below) sees a Polygon.
+            clipped = _keep_polygonal(clipped)
+            if clipped.area <= min_cell_area < poly.area:
+                # The clip lost a cell that owns pixels.  This should not happen
+                # now that the boundary is cleaned of degenerate rings (see
+                # drop_sliver_holes), but never report a phantom point cell for
+                # a cell that really is inside the boundary: retry on a coarse
+                # precision grid, and otherwise keep the raw pixel union.
+                # (A cell whose pixels genuinely lie outside the boundary -- the
+                # NN fill labels those too -- is left as the empty clip.)
+                fallback = how = None
+                retry = _keep_polygonal(
+                    sh.intersection(sh.set_precision(poly, grid_size), sh.set_precision(boundary, grid_size))
+                )
+                if retry.area > min_cell_area:
+                    fallback, how = retry, "reduced-precision clip"
+                elif sh.covers(boundary, poly):
+                    fallback, how = poly, "raw pixel union"
+                if fallback is not None:
+                    warnings.warn(
+                        f"raster cell extraction failed for seed {i} ({int(mask.sum())} pixel(s)): "
+                        f"clipping to the boundary collapsed the cell to a zero-area "
+                        f"{clipped.geom_type.lower()}; falling back to the {how}",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
+                    clipped = fallback
             cell_polys[i] = clipped if not sh.is_empty(clipped) else Point(self.points[i])
 
         # Smooth pixel staircases: coverage_simplify on shared interior edges only.
-        tol = dx * dy / 2.0
-        valid = np.array([c.geom_type != "Point" for c in cell_polys])
-        if valid.any():
-            with contextlib.suppress(Exception):  # shapely < 2.1 or degenerate coverage
+        # `tol` is a distance tolerance in shapely (max vertex displacement),
+        # not an area: scale a pixel-unit setting by sqrt(dx*dy) (one grid
+        # cell's characteristic size), not by dx*dy, which would be ~1e8x too
+        # large at typical grid resolutions and over-smooth into straight lines.
+        tol = self._cell_smoothing_px * math.sqrt(dx * dy)
+        valid = np.array([c.geom_type in ("Polygon", "MultiPolygon") for c in cell_polys])
+        if tol > 0.0 and valid.any():
+            try:
                 cell_polys[valid] = sh.coverage_simplify(cell_polys[valid], tol, simplify_boundary=False)
+            except (ShapelyError, ValueError) as exc:  # degenerate coverage
+                warnings.warn(
+                    f"coverage_simplify failed; cell boundaries are left unsmoothed ({exc})",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
 
         return cell_polys
 
@@ -646,7 +720,8 @@ class RasterField(BaseField):
                 chunk = 4096
                 labels_active = np.empty(m_active, dtype=np.int32)
                 w32 = self._weights.astype(np.float32) if use_weights else None
-                lam32 = self._power_offsets.astype(np.float32) if use_offsets else None
+                lam = self._nonempty_offsets() if ENSURE_NONEMPTY_POWER_CELLS else self._power_offsets
+                lam32 = lam.astype(np.float32) if use_offsets else None
                 for start in range(0, m_active, chunk):
                     end = min(start + chunk, m_active)
                     dx = gx_active[start:end, None] - pts32[None, :, 0]
@@ -691,6 +766,34 @@ class RasterField(BaseField):
         # Use computation-resolution raster cells: faster than exact Voronoi,
         # and correctly reflects the topology used during Lloyd relaxation.
         return self._build_cells_upsampled(self._raster_resolution)
+
+    # -- Power-offset guard -------------------------------------------------
+
+    def _nonempty_offsets(self, max_passes: int = 5) -> np.ndarray:
+        """Raise power offsets until every seed owns at least its own position.
+
+        A seed's power cell is ``{x : |x - p_i|^2 - lambda_i <= |x - p_j|^2 - lambda_j}``.
+        When ``lambda_i`` falls far enough below a neighbour's, that set becomes
+        empty: the cell degrades to a Point, and because a pixel-less seed takes
+        its own position as the Lloyd target, it is frozen there and can never
+        win territory back.  ``lambda_i >= max_j(lambda_j - d_ij^2)`` is the
+        weakest condition that keeps ``p_i`` itself inside cell *i*, so clamping
+        the offsets from below by that value is enough to keep every power cell
+        non-empty.  Raising one offset raises other seeds' floors, hence the
+        (cheap, usually single-pass) repetition.
+        """
+        pts = self.points
+        sq = np.einsum("ij,ij->i", pts, pts)
+        d2 = sq[:, None] + sq[None, :] - 2.0 * (pts @ pts.T)
+        np.fill_diagonal(d2, np.inf)
+        offsets = self._power_offsets
+        for _ in range(max_passes):
+            floor = (offsets[None, :] - d2).max(axis=1)
+            raised = np.maximum(offsets, floor)
+            if np.array_equal(raised, offsets):
+                break
+            offsets = raised
+        return offsets
 
     # -- Lloyd step ---------------------------------------------------------
 
@@ -790,6 +893,10 @@ class RasterField(BaseField):
             target_counts = float(m) / G
             self._power_offsets *= 1.0 - area_eq_weight
             self._power_offsets += area_eq_weight * 2.0 * self._pixel_area * (target_counts - counts)
+            if ENSURE_NONEMPTY_POWER_CELLS_IN_RELAXATION:
+                starved = counts == 0
+                if starved.any():
+                    self._power_offsets[starved] = self._nonempty_offsets()[starved]
 
         self.points = (
             self.points

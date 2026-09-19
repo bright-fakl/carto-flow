@@ -51,6 +51,9 @@ class TopologyAnalysis:
         Mean cosine similarity across **all** Voronoi-adjacent pairs that
         appear in the input adjacency list.  ``None`` when adjacency was not
         available or no Voronoi-adjacent pairs exist.
+    degenerate_cells : list of gdf_label
+        GDF index labels of cells that collapsed to a Point or a zero-area
+        geometry (see :attr:`VoronoiCartogram.degenerate_cells`).
     """
 
     discontiguous_groups: list[tuple[Any, list[Any]]]
@@ -58,6 +61,7 @@ class TopologyAnalysis:
     n_adjacency_pairs: int
     misaligned_orientation: list[tuple[Any, Any, float]]
     mean_orientation_cosine: float | None
+    degenerate_cells: list[Any] = field(default_factory=list)
 
     @property
     def n_discontiguous_groups(self) -> int:
@@ -111,6 +115,11 @@ class TopologyAnalysis:
             )
         else:
             lines.append("  orientation      : (not checked)")
+        if self.degenerate_cells:
+            lines.append(
+                f"  degenerate cells : {len(self.degenerate_cells)} cell(s) collapsed to a"
+                f" point/zero area  (e.g. {self.degenerate_cells[0]!r})"
+            )
         return "\n".join(lines)
 
     def plot(
@@ -367,9 +376,11 @@ class VoronoiCartogram:
         - ``"final_area_cv"``: coefficient of variation of cell areas at the
           last iteration (0 = perfect equal-area distribution)
         - ``"mean_area_error_pct"``: mean absolute area error (%) across all
-          cells, where error = (actual_area / target_area - 1) x 100
+          cells, where error = (actual_area / target_area - 1) x 100.  A
+          degenerate cell (see :attr:`degenerate_cells`) has zero area and so
+          contributes an error of -100%.
         - ``"max_area_error_pct"``: maximum absolute area error (%) across all
-          cells
+          cells.  A degenerate cell counts as -100%.
 
     options : VoronoiOptions
         Options used for this run.
@@ -391,6 +402,43 @@ class VoronoiCartogram:
     _field: Any = field(default=None, repr=False)
     area_errors: np.ndarray | None = field(default=None, repr=False)
     _weighted: bool = field(default=False, repr=False)
+
+    @property
+    def degenerate_cells(self) -> list[Any]:
+        """Index labels of cells that collapsed to a point or (near-)zero area.
+
+        A cell degenerates for one of two reasons:
+
+        * **starved generator** -- the generator lost all of its raster pixels,
+          typically because the grid resolution is too coarse for the smallest
+          target areas.  Raising the backend resolution is the usual remedy.
+        * **extraction failure** -- the generator owns pixels, but converting
+          them to a polygon failed (e.g. the clip against a boundary carrying
+          degenerate rings collapsed the cell).  This emits its own
+          ``RuntimeWarning`` naming the seed; raising the resolution does not
+          help.
+
+        Either way the cell has no area, so it contributes an area error of
+        -100%, is omitted from plots, and is exported by
+        :meth:`to_geodataframe` as a ``Point``.
+
+        A polygon counts as degenerate when its area is below ``1e-9`` of the
+        mean cell area, which catches slivers that are not exactly zero.
+
+        Returns
+        -------
+        list
+            GDF index labels of the degenerate cells (integer positions when no
+            source GeoDataFrame is available).  Empty when all cells are proper
+            polygons.
+        """
+        areas = np.array([c.area for c in self.cells], dtype=float)
+        mean_area = float(areas.mean()) if len(areas) else 0.0
+        eps = 1e-9 * mean_area
+        bad = [i for i, c in enumerate(self.cells) if c.geom_type not in ("Polygon", "MultiPolygon") or c.area <= eps]
+        if self._source_gdf is None:
+            return bad
+        return [self._source_gdf.index[i] for i in bad]
 
     @property
     def boundary_debug(self) -> dict[str, np.ndarray] | None:
@@ -608,6 +656,7 @@ class VoronoiCartogram:
             n_adjacency_pairs=n_adjacency_pairs,
             misaligned_orientation=misaligned_orientation,
             mean_orientation_cosine=mean_orientation_cosine,
+            degenerate_cells=self.degenerate_cells,
         )
 
     def repair_topology(

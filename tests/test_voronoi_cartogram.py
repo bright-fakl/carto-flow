@@ -1,5 +1,7 @@
 """Tests for voronoi_cartogram module."""
 
+from typing import ClassVar
+
 import geopandas as gpd
 import numpy as np
 import pytest
@@ -463,3 +465,309 @@ class TestAnimation:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ---------------------------------------------------------------------------
+# 12. Degenerate cells
+# ---------------------------------------------------------------------------
+
+
+class TestDegenerateCells:
+    """Cells that collapse to a Point or a line must not leak downstream."""
+
+    def test_line_clip_result_becomes_a_point_placeholder(self):
+        """A label region that clips to lines only must not survive as a line.
+
+        A line-only cell used to be kept as the cell geometry and then fed to
+        ``shapely.coverage_simplify``, which raised and silently disabled
+        boundary smoothing for every cell of that run.
+        """
+        import warnings
+
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        points = np.array([[0.5, 2.0], [2.5, 2.0]])
+        field = RasterField(points, box(0, 0, 4, 4), resolution=4)
+        # Boundary with a notch exactly over the pixel column labelled 1, so
+        # that column's clip result is a MultiLineString (the notch walls).
+        notched = box(0, 0, 4, 4).difference(box(1, 0, 2, 4))
+        label_2d = np.zeros((4, 4), dtype=np.int32)
+        label_2d[:, 1] = 1
+        coords = np.array([0.5, 1.5, 2.5, 3.5])
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cells = field._label_2d_to_cell_polys(
+                label_2d,
+                nx=4,
+                ny=4,
+                dx=1.0,
+                dy=1.0,
+                x_coords=coords,
+                y_coords=coords,
+                boundary=notched,
+            )
+
+        assert [c.geom_type for c in cells] == ["MultiPolygon", "Point"]
+        assert not any("coverage_simplify" in str(w.message) for w in caught)
+
+    def test_power_offset_floor_keeps_every_cell_non_empty(self):
+        """A far-below-neighbour power offset must be raised, not left empty."""
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        points = np.array([[1.0, 2.0], [3.0, 2.0]])
+        field = RasterField(points, box(0, 0, 4, 4), resolution=8, area_eq_weight=0.1)
+        # Seed 0 sits 2 units from seed 1, so an offset gap larger than d^2 = 4
+        # makes seed 0's power cell empty.
+        field._power_offsets[:] = [-10.0, 0.0]
+        raised = field._nonempty_offsets()
+        assert raised[0] >= raised[1] - 4.0
+        assert raised[1] == 0.0
+        # Own position now wins: |p0 - p0|^2 - lam0 <= |p0 - p1|^2 - lam1
+        assert -raised[0] <= 4.0 - raised[1]
+
+    def test_degenerate_cells_are_reported(self):
+        """The API surfaces degenerate cells instead of silently dropping them."""
+        import warnings
+
+        from shapely.geometry import Point
+
+        from carto_flow.voronoi_cartogram.result import VoronoiCartogram
+
+        gdf = make_grid_gdf(2, 2)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = create_voronoi_cartogram(gdf, backend=_FAST_EXACT, options=_FAST_OPTIONS)
+        assert result.degenerate_cells == []
+
+        cells = result.cells.copy()
+        cells[1] = Point(result.positions[1])
+        degenerate = VoronoiCartogram(
+            positions=result.positions,
+            cells=cells,
+            metrics=result.metrics,
+            options=result.options,
+            _source_gdf=gdf,
+        )
+        assert degenerate.degenerate_cells == [gdf.index[1]]
+        analysis = degenerate.analyze_topology()
+        assert analysis.degenerate_cells == [gdf.index[1]]
+        assert "degenerate cells" in repr(analysis)
+
+    def test_create_warns_about_degenerate_cells(self, monkeypatch):
+        """`create_voronoi_cartogram` warns when a cell has collapsed."""
+        import warnings
+
+        from shapely.geometry import Point
+
+        import carto_flow.voronoi_cartogram.api as api
+
+        gdf = make_grid_gdf(2, 2)
+        real = api.RasterBackend.build_field
+
+        def patched(self, *a, **kw):
+            fld = real(self, *a, **kw)
+            get_cells = fld.get_cells
+
+            def degenerate_cells():
+                cells = get_cells()
+                cells[0] = Point(fld.get_points()[0])
+                return cells
+
+            fld.get_cells = degenerate_cells
+            return fld
+
+        monkeypatch.setattr(api.RasterBackend, "build_field", patched)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = create_voronoi_cartogram(gdf, backend=_FAST_RASTER, options=_FAST_OPTIONS)
+        assert result.degenerate_cells == [gdf.index[0]]
+        assert any("collapsed to a point" in str(w.message) for w in caught)
+
+    def test_power_offset_guard_reduces_degenerate_cells_on_us_districts(self):
+        """Regression test for the reproduction case of the investigation.
+
+        US congressional districts simplified at 5000 m, grouped by state, at a
+        coarse raster resolution: several cells used to collapse to a Point.
+        """
+        import warnings
+
+        import carto_flow.data as examples
+        import carto_flow.voronoi_cartogram.fields._raster as raster
+        from carto_flow.geo_utils.simplification import simplify_coverage
+
+        districts = examples.load_us_census(population=True, level="congressional_district")
+        districts = simplify_coverage(districts, tolerance=5000, min_island_size=50000)
+
+        def run():
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return create_voronoi_cartogram(
+                    districts,
+                    backend=RasterBackend(resolution=64),
+                    options=VoronoiOptions(n_iter=30, area_cv_tol=0.1),
+                    group_by="State Name",
+                )
+
+        guarded = run()
+        try:
+            raster.ENSURE_NONEMPTY_POWER_CELLS = False
+            unguarded = run()
+        finally:
+            raster.ENSURE_NONEMPTY_POWER_CELLS = True
+
+        assert len(guarded.degenerate_cells) < len(unguarded.degenerate_cells)
+        # No cell may be a line geometry, at any resolution.
+        assert all(c.geom_type in ("Polygon", "MultiPolygon", "Point") for c in guarded.cells)
+        # The guard perturbs the final extraction slightly, so allow a small
+        # amount of slack on this coarse (non-converged) R=64 run; it must
+        # not make area accuracy meaningfully worse. The guard's real
+        # benefit shows at coarser resolutions (e.g. 69.5 -> 62.7 at R=32),
+        # so 1% slack here still catches a genuine regression.
+        assert guarded.metrics["mean_area_error_pct"] <= unguarded.metrics["mean_area_error_pct"] * 1.01
+
+
+class TestSliverHoleBoundary:
+    """A boundary carrying degenerate rings must not eat whole cells.
+
+    Unioning a polygonal coverage leaves near-collinear "spike" rings with an
+    area at the noise floor (1e-11 .. 1e-6 m^2 for metre coordinates).  GEOS
+    overlay collapses an ordinary cell that contains such a ring to a zero-area
+    LineString, which used to surface as a Point cell (US congressional
+    districts, resolution 64: Michigan CD-12, Florida CD-19) or as a zero-area
+    Polygon (Missouri CD-7).
+    """
+
+    # A real spike ring taken from the union of the simplified US districts.
+    SPIKE: ClassVar[list[tuple[float, float]]] = [
+        (717583.32787564, 142029.80746155),
+        (716681.98648644, 151562.87415980),
+        (717132.65718104, 146796.34081068),
+    ]
+
+    def _grid(self):
+        """A 4x4 label grid with a staircase-shaped cell 1 around the spike."""
+        dx = dy = 17000.0
+        x_coords = np.array([700000.0 + dx * (i + 0.5) for i in range(4)])
+        y_coords = np.array([120000.0 + dy * (j + 0.5) for j in range(4)])
+        label_2d = np.zeros((4, 4), dtype=np.int32)
+        label_2d[1:3, 1:3] = 1
+        label_2d[3, 2] = 1
+        points = np.array([[x_coords[0], y_coords[0]], [x_coords[2], y_coords[2]]])
+        return label_2d, points, x_coords, y_coords, dx, dy
+
+    def test_spike_ring_does_not_collapse_a_cell(self):
+        from shapely.geometry import Polygon
+
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        label_2d, points, x_coords, y_coords, dx, dy = self._grid()
+        outer = box(700000.0, 120000.0, 700000.0 + 4 * dx, 120000.0 + 4 * dy)
+        boundary = Polygon(outer.exterior, [Polygon(self.SPIKE).exterior])
+        assert boundary.is_valid
+
+        field = RasterField(points, boundary, resolution=4)
+        cells = field._label_2d_to_cell_polys(
+            label_2d,
+            nx=4,
+            ny=4,
+            dx=dx,
+            dy=dy,
+            x_coords=x_coords,
+            y_coords=y_coords,
+            boundary=boundary,
+        )
+        # Staircase smoothing (coverage_simplify) moves area between the two
+        # cells but, with a correctly-scaled (length, not area) tolerance,
+        # stays roughly close to each cell's raw pixel count; total coverage
+        # is exact. CELL_SMOOTHING_TOLERANCE_PX=2.0 (picked for visually
+        # smooth borders on real, much finer grids -- see the PR #27 sweep)
+        # is a large tolerance relative to this coarse 4x4 synthetic grid, so
+        # the per-cell bound is wider than it would need to be at the old
+        # 0.7 px value (measured ratios: cell 0 ~1.29x, cell 1 ~0.37x).
+        for i in (0, 1):
+            n_px = int((label_2d == i).sum())
+            assert cells[i].geom_type in ("Polygon", "MultiPolygon"), cells[i].geom_type
+            assert cells[i].area == pytest.approx(n_px * dx * dy, rel=0.7)
+        assert sum(c.area for c in cells) == pytest.approx(boundary.area, rel=1e-9)
+
+    def test_field_strips_sliver_rings_from_the_boundary(self):
+        from shapely.geometry import Polygon
+
+        from carto_flow.voronoi_cartogram.fields._base import drop_sliver_holes
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        outer = box(700000.0, 120000.0, 768000.0, 188000.0)
+        real_hole = box(740000.0, 140000.0, 745000.0, 145000.0)
+        boundary = Polygon(outer.exterior, [Polygon(self.SPIKE).exterior, real_hole.exterior])
+
+        cleaned = drop_sliver_holes(boundary)
+        assert len(cleaned.interiors) == 1
+        assert cleaned.area == pytest.approx(boundary.area, rel=1e-12)
+
+        field = RasterField(np.array([[710000.0, 130000.0]]), boundary, resolution=4)
+        assert len(field.boundary.interiors) == 1
+        assert len(field._current_boundary.interiors) == 1
+
+    def test_failed_clip_falls_back_to_the_pixel_union(self, monkeypatch):
+        """A collapsing clip must warn and keep the cell's area, not return a Point."""
+        import warnings
+
+        import shapely as sh
+
+        from carto_flow.voronoi_cartogram.fields._raster import RasterField
+
+        label_2d, points, x_coords, y_coords, dx, dy = self._grid()
+        boundary = box(700000.0, 120000.0, 700000.0 + 4 * dx, 120000.0 + 4 * dy)
+        field = RasterField(points, boundary, resolution=4)
+
+        real_intersection = sh.intersection
+
+        def collapsing_intersection(a, b, *args, **kwargs):
+            result = real_intersection(a, b, *args, **kwargs)
+            # Collapse only the staircase cell (the smaller of the two).
+            if getattr(result, "geom_type", "") == "Polygon" and result.area < 6 * dx * dy:
+                return sh.LineString([(700000.0, 120000.0), (710000.0, 130000.0)])
+            return result
+
+        monkeypatch.setattr(sh, "intersection", collapsing_intersection)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            cells = field._label_2d_to_cell_polys(
+                label_2d,
+                nx=4,
+                ny=4,
+                dx=dx,
+                dy=dy,
+                x_coords=x_coords,
+                y_coords=y_coords,
+                boundary=boundary,
+            )
+
+        assert cells[1].geom_type in ("Polygon", "MultiPolygon")
+        # Widened for the same reason as test_spike_ring_does_not_collapse_a_cell
+        # above (measured ratio ~0.30x at CELL_SMOOTHING_TOLERANCE_PX=2.0 on
+        # this coarse 4x4 grid).
+        assert cells[1].area == pytest.approx(5 * dx * dy, rel=0.75)
+        messages = [str(w.message) for w in caught]
+        assert any("extraction failed for seed 1" in m for m in messages), messages
+
+    def test_near_zero_area_polygon_counts_as_degenerate(self):
+        """A polygon with a sliver area is as degenerate as a Point."""
+        from shapely.geometry import Polygon
+
+        from carto_flow.voronoi_cartogram.result import VoronoiCartogram
+
+        gdf = make_grid_gdf(2, 2)
+        cells = np.array(
+            [box(0, 0, 1, 1), box(1, 0, 2, 1), box(0, 1, 1, 2), Polygon([(0, 0), (1, 0), (1e-12, 1e-12)])],
+            dtype=object,
+        )
+        result = VoronoiCartogram(
+            positions=np.zeros((4, 2)),
+            cells=cells,
+            metrics={},
+            options=VoronoiOptions(),
+            _source_gdf=gdf,
+        )
+        assert result.degenerate_cells == [gdf.index[3]]

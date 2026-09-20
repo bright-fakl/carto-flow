@@ -586,7 +586,7 @@ def morph_geometries(
         # Compute error metrics using the structured MorphErrors object
         if _pt is not None:
             _t0 = _time.perf_counter()
-        error_metrics = compute_error_metrics(current_areas, target_areas)
+        error_metrics = compute_error_metrics(current_areas, target_areas, eps=grid.dx * grid.dy)
         if _pt is not None:
             _pt.errors_s += _time.perf_counter() - _t0
 

@@ -485,6 +485,41 @@ class TestTopologyMetrics:
         assert result.metrics.converged is True
 
 
+class TestZeroTileCount:
+    """A zero ``tile_count`` region must not break the pre-morph step.
+
+    The flow pre-morph (``morph=True``) sizes each region by its
+    ``tile_count``.  A region with count 0 used to send the flow morph's
+    convergence metric to infinity for every region and emit divide-by-zero
+    warnings; mosaic's own metrics (which do not depend on the flow morph's
+    convergence flag) already handled it correctly, so this just pins that
+    behaviour against a regression in the shared error metric.
+    """
+
+    def test_zero_count_region_gets_no_tiles_and_no_warnings(self):
+        import warnings
+
+        from carto_flow.flow_cartogram import MorphOptions
+
+        counts = [*COUNTS_3X3[:4], 0, *COUNTS_3X3[5:]]
+        gdf = grid_gdf(3, 3, counts)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            result = compute(
+                gdf,
+                morph=True,
+                morph_options=MorphOptions(n_iter=5, recompute_every=1, grid_size=32, show_progress=False),
+            )
+
+        metrics = result.metrics.algorithm
+        tile_counts = tile_counts_per_geometry(result)
+        assert tile_counts[4] == 0
+        np.testing.assert_array_equal(tile_counts, counts)
+        assert metrics.regions_correct == metrics.regions_total == len(gdf)
+        assert result.metrics.converged is True
+
+
 # ---------------------------------------------------------------------------
 # 3. Adjacency preservation
 # ---------------------------------------------------------------------------

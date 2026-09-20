@@ -59,7 +59,7 @@ class MorphErrors:
         return f"MorphErrors(mean_log={self.mean_log_error:.4f}, max_log={self.max_log_error:.4f}, mean_pct={self.mean_error_pct:.1f}%, max_pct={self.max_error_pct:.1f}%)"
 
 
-def compute_error_metrics(current_areas: np.ndarray, target_areas: np.ndarray) -> MorphErrors:
+def compute_error_metrics(current_areas: np.ndarray, target_areas: np.ndarray, eps: float = 0.0) -> MorphErrors:
     """Compute error metrics based on log2 ratio of current to target areas.
 
     Parameters
@@ -68,13 +68,18 @@ def compute_error_metrics(current_areas: np.ndarray, target_areas: np.ndarray) -
         Current areas of geometries
     target_areas : np.ndarray
         Target areas
+    eps : float, optional
+        Floor applied to both current and target areas before taking the
+        log2 ratio. Areas at or below this value are treated as equal to it,
+        so a zero (or near-zero) area no longer produces an infinite error.
+        Defaults to 0.0, which leaves the ratio unclamped.
 
     Returns
     -------
     MorphErrors
         Structured error metrics object containing all error fields.
     """
-    log_errors = np.log2(current_areas / target_areas)
+    log_errors = np.log2(np.maximum(current_areas, eps) / np.maximum(target_areas, eps))
     max_log_error = float(np.max(np.abs(log_errors)))
     mean_log_error = float(np.mean(np.abs(log_errors)))
 

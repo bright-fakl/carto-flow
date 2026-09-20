@@ -379,9 +379,7 @@ class HungarianOptions:
         it increases neither the split-region nor the split-group count.
         0 disables the swap-back; 1 restricts it to directly adjacent tiles.
         A larger reach closes more holes but can cost compactness, so the
-        default is a deliberate balance.  An earlier default of 8 was set
-        before the reach was measured across a range of inputs; do not lower
-        it again without re-running that comparison.
+        default is a deliberate balance.
     """
 
     distance_weight: float = 1.0

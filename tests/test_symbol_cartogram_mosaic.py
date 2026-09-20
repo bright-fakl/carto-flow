@@ -1222,3 +1222,41 @@ class TestMultipartUsStates:
         result = MosaicLayout().compute(data, show_progress=False)
         assert int(np.sum(tile_counts_per_geometry(result))) == int(states_gdf["tiles"].sum())
         np.testing.assert_array_equal(result.regions_gdf["tile_count"].to_numpy(), states_gdf["tiles"].to_numpy())
+
+
+class TestRingSwapbackReach:
+    """The relocation reach is 16 hops, and US states needs more than 8 of them."""
+
+    def test_default_is_sixteen(self):
+        """Pinned deliberately.
+
+        8 was the original default, justified by "on US states the fixable count
+        saturates at 8 hops".  Sub-regions invalidated that measurement: a freed
+        core cell can sit much further from the nearest stranded ring tile.  If
+        this assertion is ever failing because someone lowered the number, read
+        ``ring_swapback_max_hops`` in ``HungarianOptions`` before changing it.
+        """
+        assert HungarianOptions().ring_swapback_max_hops == 16
+        assert MosaicLayoutOptions().hungarian_options is None  # defaults come from HungarianOptions
+
+    @pytest.mark.parametrize("morph", [True, False])
+    def test_us_states_needs_more_than_eight_hops(self, states_gdf, morph):
+        """A reach of 8 leaves defects on US states that 16 closes.
+
+        With Michigan laid out as two sub-regions, the core cell the split frees
+        is ringed by Illinois, Indiana, Michigan and Wisconsin, while the nearest
+        stranded ring tile is in Vermont -- far outside 8 hops.
+        """
+        data = prepare_layout_data(states_gdf, tile_count="tiles")
+        near = MosaicLayout(morph=morph, hungarian_options=HungarianOptions(ring_swapback_max_hops=8)).compute(
+            data, show_progress=False
+        )
+        far = MosaicLayout(morph=morph).compute(data, show_progress=False)
+
+        assert _unassigned_core(far) < _unassigned_core(near)
+        assert _ring_tiles_used(far) < _ring_tiles_used(near)
+        assert len(_enclosed_cells(far)) <= len(_enclosed_cells(near))
+        # The wider search never regresses the topology metrics or the counts.
+        assert far.metrics.algorithm.n_noncontiguous_regions <= near.metrics.algorithm.n_noncontiguous_regions
+        assert far.metrics.algorithm.n_split_groups <= near.metrics.algorithm.n_split_groups
+        np.testing.assert_array_equal(tile_counts_per_geometry(far), states_gdf["tiles"].to_numpy())

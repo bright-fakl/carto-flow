@@ -222,6 +222,19 @@ The permutation is applied only if it strictly reduces the number of split regio
 increases neither, so turning the repair on can never make either metric worse than leaving it
 off. `swap_repair_passes` defaults to 10; set it to 0 to disable.
 
+### How far the swap-back searches
+
+`ring_swapback_max_hops` bounds the BFS from a stranded ring tile to the cell it can be pulled
+into. It defaults to **16**, and should not be lowered back to 8.
+
+8 was the original default, justified by the measurement that on US states the fixable count
+saturated at 8 hops. Sub-regions (below) invalidated that: a freed core cell can now sit much
+further from the nearest stranded ring tile — on US states the cell is ringed by Illinois,
+Indiana, Michigan and Wisconsin while the nearest ring tile is in Vermont. Measured over all
+eight standard configurations, 8 leaves defects that 16 closes, 30 is identical to 16, and the
+wall-clock difference is not measurable. Because every relocation is guarded individually, a
+wider search can only find more legal moves, never worse ones.
+
 ### What is guaranteed, and what is not
 
 - **Guaranteed**: each region receives exactly `tile_count[g]` tiles. The slot expansion makes
@@ -263,6 +276,23 @@ Two consequences worth stating plainly:
   per-part `tile_count` — the only exact route.
 - **Only `tile_count` inputs can split.** With `group_by`, every geometry carries exactly one
   symbol, and a one-tile region is never split, so the grouped path is untouched.
+
+Two things about the result that are **intended behaviour, not defects**:
+
+- **Sub-regions of one geometry may end up adjacent in the lattice.** Michigan's two peninsulas
+  are geographically adjacent, so their blocks usually come out side by side and the state still
+  reads as one block. The point of the split is that the solver is no longer *required* to close
+  the gap — no repair move is spent forcing it — not that the parts are pushed apart. There is
+  no separation term and none is wanted.
+- **A region with one tile in total can never split**, whatever its shape. Rhode Island is 14
+  parts, but at a 150-tile budget it receives a single tile, so the zero-allotment rule folds
+  every part back in. Screening candidates by share-of-area alone will mislead here: what
+  matters is the share of the region's *tile count*.
+
+The threshold has a measured cost: a part between 0.5 and 1.0 tile areas becomes its own block,
+which can pack slightly less compactly. On US states without the morph the worst region's
+discrete Polsby-Popper compactness falls from 0.2519 to 0.2041; with the morph it rises from
+0.3401 to 0.4081.
 
 `MosaicMetrics.n_noncontiguous_regions` counts **sub-regions**, not geometries. A geometry that
 was split counts once per sub-region: a two-peninsula state is two units that must each be one
@@ -316,6 +346,7 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `gap_bridge_mult` | 5.0 | Cost reduction for bridge-candidate tiles (x current max cost). |
 | `disconnected_score_weight` | 100 | Tie-break weight per disconnected tile vs. per gap. |
 | `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
+| `ring_swapback_max_hops` | 16 | How far the extra-ring swap-back may search for a cell to pull a stranded ring tile into; 0 disables it. See the note below — do not lower it to 8. |
 
 The cost weights were renamed from `alpha` / `beta` / `delta` to `distance_weight` /
 `outside_penalty` / `interior_bonus` before the layout became public; there are no aliases.

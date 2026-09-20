@@ -390,7 +390,18 @@ class HungarianOptions:
         the path, so tile counts are preserved and the move is kept only when
         it increases neither the split-region nor the split-group count.
         0 disables the swap-back; 1 restricts it to directly adjacent tiles.
-        Default 8 — on US states the fixable count saturates at 8 hops.
+
+        Default 16.  **Do not lower this back to 8.**  8 was chosen in the PR
+        that added the swap-back, on the measurement that "on US states the
+        fixable count saturates at 8 hops".  That is no longer true: once
+        multi-part geometries are laid out as sub-regions, a freed core cell can
+        sit much further from the nearest stranded ring tile than before -- on US
+        states the new hole is ringed by Illinois, Indiana, Michigan and
+        Wisconsin while the nearest ring tile is in Vermont.  Measured across all
+        eight standard configurations, 8 leaves defects that 16 closes, and 30
+        is identical to 16, so the count saturates at 16, not 8.  Every
+        relocation is still guarded individually, so the wider search can only
+        find more legal moves, never worse ones.
     """
 
     distance_weight: float = 1.0
@@ -403,7 +414,7 @@ class HungarianOptions:
     neighbor_weight: float = 0.3
     neighbor_bfs: bool = False
     swap_repair_passes: int = 10
-    ring_swapback_max_hops: int = 8
+    ring_swapback_max_hops: int = 16
 
     def __post_init__(self) -> None:
         if self.max_connectivity_iters < 0:

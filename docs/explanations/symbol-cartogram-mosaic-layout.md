@@ -222,6 +222,15 @@ The permutation is applied only if it strictly reduces the number of split regio
 increases neither, so turning the repair on can never make either metric worse than leaving it
 off. `swap_repair_passes` defaults to 10; set it to 0 to disable.
 
+### How far the swap-back searches
+
+`ring_swapback_max_hops` bounds the BFS the extra-ring swap-back uses to find an unassigned core
+tile to relocate a stranded ring tile into. A larger search radius lets the swap-back close more
+of these holes, since it can reach further to find somewhere to put a stranded tile, but a longer
+relocation path also disturbs more of the existing assignment along the way, which can cost
+compactness. The default is a deliberate balance between the two, not the largest value that
+still terminates in reasonable time.
+
 ### What is guaranteed, and what is not
 
 - **Guaranteed**: each region receives exactly `tile_count[g]` tiles. The slot expansion makes
@@ -275,6 +284,7 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `gap_bridge_mult` | 5.0 | Cost reduction for bridge-candidate tiles (x current max cost). |
 | `disconnected_score_weight` | 100 | Tie-break weight per disconnected tile vs. per gap. |
 | `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
+| `ring_swapback_max_hops` | 16 | BFS search radius for the extra-ring swap-back; 0 disables it. |
 
 The cost weights were renamed from `alpha` / `beta` / `delta` to `distance_weight` /
 `outside_penalty` / `interior_bonus` before the layout became public; there are no aliases.

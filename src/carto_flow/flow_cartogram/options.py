@@ -195,9 +195,6 @@ class MorphOptions:
     - Many small geometries (e.g. ~430 districts): threading is slower because
       Future-submission overhead exceeds per-geometry work
 
-    See the performance benchmark in docs/explanations/performance.ipynb for
-    hardware-specific guidance.
-
     - False: serial density loop
     - True: all available cores (os.cpu_count())
     - N (int > 1): exactly N worker threads

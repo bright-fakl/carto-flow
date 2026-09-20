@@ -378,7 +378,8 @@ class HungarianOptions:
         the path, so tile counts are preserved and the move is kept only when
         it increases neither the split-region nor the split-group count.
         0 disables the swap-back; 1 restricts it to directly adjacent tiles.
-        Default 8 — on US states the fixable count saturates at 8 hops.
+        A larger reach closes more holes but can cost compactness, so the
+        default is a deliberate balance.
     """
 
     distance_weight: float = 1.0
@@ -391,7 +392,7 @@ class HungarianOptions:
     neighbor_weight: float = 0.3
     neighbor_bfs: bool = False
     swap_repair_passes: int = 10
-    ring_swapback_max_hops: int = 8
+    ring_swapback_max_hops: int = 16
 
     def __post_init__(self) -> None:
         if self.max_connectivity_iters < 0:

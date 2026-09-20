@@ -797,7 +797,13 @@ class TestUsStates:
         n_raw = len(non_contiguous_regions(raw))
         n_repaired = len(non_contiguous_regions(repaired))
         assert n_repaired <= n_raw
-        assert repaired.metrics.algorithm.n_noncontiguous_regions == n_repaired
+        # `n_noncontiguous_regions` counts *sub-regions*, while
+        # `non_contiguous_regions` counts geometries, and Michigan is two
+        # sub-regions: its two peninsulas are two blocks on purpose, so the
+        # geometry-level helper sees one split that the metric does not.
+        split_geometries = repaired.metrics.algorithm.n_split_geometries
+        metric = repaired.metrics.algorithm.n_noncontiguous_regions
+        assert n_repaired - split_geometries <= metric <= n_repaired
 
 
 # ---------------------------------------------------------------------------
@@ -1002,3 +1008,217 @@ class TestEnclosedHoleRelocation:
 
         assert on.metrics.algorithm.n_split_groups <= off.metrics.algorithm.n_split_groups
         assert len(_enclosed_cells(on)) <= len(_enclosed_cells(off))
+
+
+# ---------------------------------------------------------------------------
+# 9. Multi-part regions become sub-regions
+# ---------------------------------------------------------------------------
+
+
+def multipart_gdf(count_multi: int = 16) -> gpd.GeoDataFrame:
+    """Two regions, the right one a MultiPolygon with a genuine 6-unit gap.
+
+    ``g1``'s parts are 4x4 boxes with several tile widths of empty space between
+    them, so no chain of tiles can join them.  Required to be one block -- which
+    is what happened before sub-regions existed -- the solver reaches across the
+    gap and shreds its *neighbour* ``g0`` to do it.
+    """
+    from shapely.geometry import MultiPolygon
+
+    g0 = box(0.0, 0.0, 4.0, 4.0)
+    g1 = MultiPolygon([box(4.0, 0.0, 8.0, 4.0), box(14.0, 0.0, 18.0, 4.0)])
+    return gpd.GeoDataFrame({"tiles": [16, count_multi]}, geometry=[g0, g1])
+
+
+def _blocks_of_geometry(result: MosaicLayoutResult, geom: int) -> int:
+    """How many connected tile blocks geometry *geom* occupies."""
+    adjacency = tile_adjacency(result)
+    tiles = tiles_by_key(result, list(range(len(result.counts)))).get(geom, [])
+    if not tiles:
+        return 0
+    seen, blocks = set(), 0
+    for start in tiles:
+        if start in seen:
+            continue
+        blocks += 1
+        queue, seen = deque([start]), seen | {start}
+        while queue:
+            node = queue.popleft()
+            for neighbor in adjacency[node]:
+                if neighbor in tiles and neighbor not in seen:
+                    seen.add(neighbor)
+                    queue.append(neighbor)
+    return blocks
+
+
+class TestApportionment:
+    """Largest-remainder apportionment of a region's tiles across its parts."""
+
+    def test_sums_exactly(self):
+        from carto_flow.symbol_cartogram.layouts.mosaic._subregions import apportion_largest_remainder
+
+        for total in (1, 2, 3, 5, 7, 11, 154):
+            for weights in ([0.709, 0.283, 0.008], [1.0, 1.0], [0.5, 0.3, 0.2], [9.0, 1.0]):
+                allot = apportion_largest_remainder(total, np.array(weights))
+                assert allot.sum() == total
+                assert (allot >= 0).all()
+
+    def test_follows_area_shares(self):
+        from carto_flow.symbol_cartogram.layouts.mosaic._subregions import apportion_largest_remainder
+
+        # Michigan's 70.9 / 28.3 / residual split over 5 tiles.
+        allot = apportion_largest_remainder(5, np.array([0.709, 0.283, 0.008]))
+        assert list(allot) == [4, 1, 0]
+
+    def test_ties_are_deterministic(self):
+        from carto_flow.symbol_cartogram.layouts.mosaic._subregions import apportion_largest_remainder
+
+        allot = apportion_largest_remainder(3, np.array([1.0, 1.0]))
+        assert allot.sum() == 3
+        assert list(allot) == list(apportion_largest_remainder(3, np.array([1.0, 1.0])))
+
+
+class TestMultipartSubRegions:
+    """A MultiPolygon whose parts are big enough is laid out as separate blocks."""
+
+    def test_parts_become_separate_blocks(self):
+        result = compute(multipart_gdf())
+        metrics = result.metrics.algorithm
+
+        assert metrics.n_split_geometries == 1
+        assert metrics.n_subregions == 3  # g0 + g1's two parts
+        assert _blocks_of_geometry(result, 1) == 2
+        # The neighbour is left alone, which forcing the gap closed did not do.
+        assert _blocks_of_geometry(result, 0) == 1
+        # Each sub-region is itself one block, so nothing is reported as split.
+        assert metrics.n_noncontiguous_regions == 0
+        assert result.metrics.converged
+
+    def test_tile_counts_are_preserved_exactly(self):
+        gdf = multipart_gdf()
+        result = compute(gdf)
+        np.testing.assert_array_equal(tile_counts_per_geometry(result), gdf["tiles"].to_numpy())
+        assert int(np.sum(tile_counts_per_geometry(result))) == int(gdf["tiles"].sum())
+
+    def test_apportionment_splits_equal_parts_evenly(self):
+        """g1's parts have equal area, so its 16 tiles must go 8 and 8."""
+        result = compute(multipart_gdf(count_multi=16))
+        adjacency = tile_adjacency(result)
+        tiles = tiles_by_key(result, list(range(len(result.counts))))[1]
+        sizes = []
+        seen = set()
+        for start in tiles:
+            if start in seen:
+                continue
+            queue, block = deque([start]), {start}
+            seen.add(start)
+            while queue:
+                node = queue.popleft()
+                for neighbor in adjacency[node]:
+                    if neighbor in tiles and neighbor not in seen:
+                        seen.add(neighbor)
+                        block.add(neighbor)
+                        queue.append(neighbor)
+            sizes.append(len(block))
+        assert sorted(sizes) == [8, 8]
+
+    def test_threshold_off_restores_previous_behaviour(self):
+        """A very large threshold keeps every geometry whole, as before this feature.
+
+        This is the defect, measured: required to bridge a gap it cannot bridge,
+        the solver breaks the neighbouring region into three blocks and the
+        layout cannot converge.
+        """
+        whole = compute(multipart_gdf(), multipart_min_tiles=1e9)
+        assert whole.metrics.algorithm.n_split_geometries == 0
+        assert whole.metrics.algorithm.n_subregions == len(whole.counts)
+        assert whole.metrics.algorithm.n_noncontiguous_regions >= 1
+        assert not whole.metrics.converged
+        # Counts are still exact -- the damage is topological, not arithmetic.
+        np.testing.assert_array_equal(tile_counts_per_geometry(whole), [16, 16])
+
+    def test_threshold_rejects_parts_below_one_tile(self):
+        """A part far smaller than a tile is not a sub-region -- an island stays an island."""
+        from shapely.geometry import MultiPolygon
+
+        g0 = box(0.0, 0.0, 4.0, 4.0)
+        g1 = MultiPolygon([box(4.0, 0.0, 8.0, 4.0), box(14.0, 1.9, 14.1, 2.0)])
+        gdf = gpd.GeoDataFrame({"tiles": [16, 16]}, geometry=[g0, g1])
+        result = compute(gdf)
+        assert result.metrics.algorithm.n_split_geometries == 0
+        np.testing.assert_array_equal(tile_counts_per_geometry(result), [16, 16])
+
+    def test_one_tile_region_is_never_split(self):
+        """A sub-region with no tiles is not a sub-region: a 1-tile region stays whole."""
+        result = compute(multipart_gdf(count_multi=1))
+        assert result.metrics.algorithm.n_split_geometries == 0
+        assert int(tile_counts_per_geometry(result)[1]) == 1
+
+    def test_morph_path_also_splits(self):
+        """The pre-morph is the easy case; ``morph=False`` above is the hard one."""
+        result = compute(multipart_gdf(), morph=True)
+        assert result.metrics.algorithm.n_split_geometries == 1
+        np.testing.assert_array_equal(tile_counts_per_geometry(result), [16, 16])
+
+    def test_group_by_inputs_never_split(self):
+        """``group_by`` gives every geometry one symbol, so nothing can split.
+
+        A one-tile region is never a candidate, which is why the grouped path --
+        districts, and districts by state -- is untouched by this feature.
+        """
+        from shapely.geometry import MultiPolygon
+
+        geoms = [
+            box(0.0, 0.0, 4.0, 4.0),
+            MultiPolygon([box(4.0, 0.0, 8.0, 4.0), box(14.0, 0.0, 18.0, 4.0)]),
+            box(0.0, 4.0, 4.0, 8.0),
+        ]
+        gdf = gpd.GeoDataFrame({"grp": ["a", "a", "b"]}, geometry=geoms)
+        data = prepare_layout_data(gdf, group_by="grp")
+        result = MosaicLayout(morph=False).compute(data, show_progress=False)
+        assert result.metrics.algorithm.n_split_geometries == 0
+        assert result.metrics.algorithm.n_subregions == len(geoms)
+
+
+class TestMultipartUsStates:
+    """Michigan and Rhode Island, the two real multi-part cases on the bundled data."""
+
+    @pytest.mark.parametrize("morph", [True, False])
+    def test_michigan_is_two_blocks(self, states_gdf, morph):
+        gdf = states_gdf
+        michigan = list(gdf["State Name"]).index("Michigan")
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        result = MosaicLayout(morph=morph).compute(data, show_progress=False)
+        metrics = result.metrics.algorithm
+
+        assert metrics.n_split_geometries == 1
+        assert metrics.n_subregions == len(gdf) + 1
+        # Every sub-region is one block, so the layout legitimately converges --
+        # rather than converging because the repair forced the peninsulas together.
+        assert metrics.n_noncontiguous_regions == 0
+        assert result.metrics.converged
+        # The two sub-regions may still end up side by side in the lattice, so
+        # the *geometry* can read as one block; what changed is that it is no
+        # longer required to.
+        assert _blocks_of_geometry(result, michigan) >= 1
+        # Exact counts, unchanged.
+        np.testing.assert_array_equal(tile_counts_per_geometry(result), gdf["tiles"].to_numpy())
+
+    def test_rhode_island_stays_whole(self, states_gdf):
+        """RI gets one tile in total, so it cannot be two sub-regions.
+
+        Its second-largest part is ~8% of its area -- well under a tile at this
+        budget -- and the zero-allotment rule would fold it back in regardless.
+        """
+        gdf = states_gdf
+        rhode_island = list(gdf["State Name"]).index("Rhode Island")
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        result = MosaicLayout().compute(data, show_progress=False)
+        assert int(gdf["tiles"].to_numpy()[rhode_island]) == 1
+        assert _blocks_of_geometry(result, rhode_island) == 1
+
+    def test_totals_are_preserved(self, states_gdf):
+        data = prepare_layout_data(states_gdf, tile_count="tiles")
+        result = MosaicLayout().compute(data, show_progress=False)
+        assert int(np.sum(tile_counts_per_geometry(result))) == int(states_gdf["tiles"].sum())
+        np.testing.assert_array_equal(result.regions_gdf["tile_count"].to_numpy(), states_gdf["tiles"].to_numpy())

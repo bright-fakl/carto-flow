@@ -25,8 +25,13 @@ class MosaicMetrics:
     regions_correct, regions_total
         How many geometries received exactly their requested tile count.
     n_noncontiguous_regions : int
-        Number of geometries whose assigned tiles do not form a single
-        connected block in the tile adjacency graph.
+        Number of *sub-regions* whose assigned tiles do not form a single
+        connected block in the tile adjacency graph.  A geometry counts once
+        per sub-region it was split into (see ``n_subregions``): a two-peninsula
+        state is two units that must each be one block, not one unit that must
+        span both peninsulas.  Geometries that were not split -- all of them on
+        an input with no qualifying multi-part region -- count exactly once, as
+        before.
     n_split_groups : int
         With ``group_by``, the number of groups whose tiles form more than one
         block.  0 without a grouping.  Groups are counted after splitting at
@@ -46,6 +51,11 @@ class MosaicMetrics:
         assigned.  Deliberately independent of core status: a cell ringed by
         assigned tiles reads as a hole whatever its overlap fraction, and a
         core-only count misses the ones that fall below ``min_overlap_frac``.
+    n_subregions : int
+        Number of sub-regions the geometries were decomposed into (>= the number
+        of geometries).  Equals ``regions_total`` when nothing was split.
+    n_split_geometries : int
+        How many geometries were split into more than one sub-region.
     """
 
     tiling: str = ""
@@ -58,6 +68,8 @@ class MosaicMetrics:
     repair_passes: int = 0
     n_unassigned_core_tiles: int = 0
     n_enclosed_unassigned_tiles: int = 0
+    n_subregions: int = 0
+    n_split_geometries: int = 0
 
 
 def _enclosed_unassigned(occupied: set[int], adj_list: list[list[int]]) -> set[int]:
@@ -432,6 +444,22 @@ class MosaicLayoutOptions:
         for the tile to be counted as a core tile during calibration. Values
         below 0.5 capture tiles whose centroid falls outside the geometry
         (e.g. narrow peninsulas like Florida). Default 0.1.
+    multipart_min_tiles : float
+        How large a part of a multi-part geometry must be, as a multiple of one
+        tile's area, before it becomes a sub-region laid out as its own block.
+        A tile-size threshold is self-scaling, and a part smaller than a tile
+        could not hold one anyway.  The geometry's tile count is apportioned
+        across its sub-regions by original-geometry area (largest remainder, so
+        the total is exact); a sub-region that would get zero tiles is folded
+        back in.  Default 0.5 -- measured as the largest value that separates
+        Michigan's two peninsulas both with and without the morph.  Set it very
+        large (e.g. ``1e9``) to keep every geometry whole, the behaviour before
+        sub-regions existed.
+
+        Values are per *region*, never per part: nothing in the pipeline holds a
+        sub-regional density, so area is the only per-part quantity there is.
+        With genuine per-part values, split the input upstream and pass a
+        per-part ``tile_count`` -- the only exact route.
 
     """
 
@@ -443,6 +471,7 @@ class MosaicLayoutOptions:
     spacing: float = 0.0
     extra_tile_rings: int = 1
     min_overlap_frac: float = 0.1
+    multipart_min_tiles: float = 0.5
 
     def validate(self) -> None:
         """Validate options."""
@@ -454,6 +483,8 @@ class MosaicLayoutOptions:
             raise ValueError(f"extra_tile_rings must be >= 0, got {self.extra_tile_rings}")
         if not 0.0 < self.min_overlap_frac <= 1.0:
             raise ValueError(f"min_overlap_frac must be in (0, 1], got {self.min_overlap_frac}")
+        if self.multipart_min_tiles <= 0:
+            raise ValueError(f"multipart_min_tiles must be positive, got {self.multipart_min_tiles}")
 
 
 class MosaicLayout(Layout):
@@ -509,6 +540,7 @@ class MosaicLayout(Layout):
         from ...tiling import resolve_tiling
         from ._assignment import hungarian_morphed_assignment
         from ._calibration import calibrate_tiling
+        from ._subregions import split_multipart_regions
 
         opts = self._options
         source_gdf = data.source_gdf
@@ -568,6 +600,27 @@ class MosaicLayout(Layout):
         tile_size = setup.tile_size
         T = len(tiling_result.polygons)
 
+        # Step 3a: split multi-part geometries into tileable sub-regions.  Runs here
+        # because the threshold is a tile size, which calibration has just fixed.
+        # From now on the solver's unit is the sub-region: `assignment` holds
+        # sub-region indices and is mapped back through `part_to_geom` for output,
+        # so G -- and with it counts, sizes, positions, source_indices, group_ids --
+        # is untouched.  With no qualifying multi-part geometry P == G and
+        # `part_to_geom` is the identity, so nothing downstream changes.
+        subregions = split_multipart_regions(
+            geometries,
+            working_geometries,
+            counts,
+            float(tiling_result.polygons[0].area),
+            opts.multipart_min_tiles,
+        )
+        part_geometries = subregions.geometries
+        part_counts = subregions.counts
+        part_to_geom = subregions.part_to_geom
+        P = len(part_geometries)
+        if show_progress and subregions.n_split_geometries:
+            print(f"[mosaic]   sub-regions: {P} from {G} geometries ({subregions.n_split_geometries} split)")
+
         # Step 3b: Partition valid tiles into per-component pools
         tile_to_comp = np.full(T, -1, dtype=np.int32)
         for t in valid_tile_indices:
@@ -613,27 +666,41 @@ class MosaicLayout(Layout):
         group_labels = None
         if data.group_ids_G is not None:
             raw_group_labels = data.group_ids_G.astype(np.int32)
-            # Split groups at geographic component boundaries
+            # Split groups at geographic component boundaries, at sub-region
+            # granularity: one label per sub-region, not per geometry.  Today the
+            # two coincide -- group_by gives every geometry a single symbol, and a
+            # one-tile region is never split -- so this loop is the old one with a
+            # part index in place of the geometry index.
             eff: dict[tuple[int, int], int] = {}
-            effective_group_labels = np.empty(G, dtype=np.int32)
+            effective_group_labels = np.empty(P, dtype=np.int32)
             next_id = int(raw_group_labels.max()) + 1 if len(raw_group_labels) > 0 else 0
-            for i, (gl, cl) in enumerate(zip(raw_group_labels.tolist(), component_labels.tolist(), strict=False)):
-                key = (int(gl), int(cl))
+            for p in range(P):
+                g_p = int(part_to_geom[p])
+                gl, cl = int(raw_group_labels[g_p]), int(component_labels[g_p])
+                key = (gl, cl)
                 if key not in eff:
-                    eff[key] = int(gl) if cl == 0 else next_id
+                    eff[key] = gl if cl == 0 else next_id
                     if cl != 0:
                         next_id += 1
-                effective_group_labels[i] = eff[key]
+                effective_group_labels[p] = eff[key]
             group_labels = effective_group_labels
 
         # Step 4: Per-component Hungarian assignment
         hopts = opts.hungarian_options or HungarianOptions()
         assignment = np.full(T, -1, dtype=np.int32)
         repair_passes = 0
-        for c, geom_indices_c in enumerate(components):
-            geom_indices_arr = np.array(geom_indices_c, dtype=np.intp)
-            geom_c = [working_geometries[i] for i in geom_indices_c]
-            counts_c = counts[geom_indices_arr]
+        # Sub-regions inherit their geometry's geographic component, so the tile
+        # pools built above are unchanged.
+        part_components: list[list[int]] = [[] for _ in range(n_components)]
+        for p in range(P):
+            part_components[int(component_labels[int(part_to_geom[p])])].append(p)
+
+        for c, part_indices_c in enumerate(part_components):
+            if not part_indices_c:
+                continue
+            geom_indices_arr = np.array(part_indices_c, dtype=np.intp)
+            geom_c = [part_geometries[i] for i in part_indices_c]
+            counts_c = part_counts[geom_indices_arr]
             if group_labels is not None:
                 gl_c = group_labels[geom_indices_arr]
                 _, inv = np.unique(gl_c, return_inverse=True)
@@ -674,7 +741,7 @@ class MosaicLayout(Layout):
                 assignment,
                 adj_list,
                 set(valid_tile_indices),
-                G,
+                P,
                 group_labels,
                 max_hops=hopts.ring_swapback_max_hops,
                 show_progress=show_progress,
@@ -687,8 +754,12 @@ class MosaicLayout(Layout):
         # would spend the chain swaps on splits the ring step removes anyway.
         if hopts.swap_repair_passes > 0:
             assignment = _chain_swap_repair(
-                assignment, adj_list, G, group_labels, hopts.swap_repair_passes, show_progress
+                assignment, adj_list, P, group_labels, hopts.swap_repair_passes, show_progress
             )
+
+        # Sub-region granularity ends here: every output table is keyed on the
+        # source geometry, so the assignment is mapped back through part_to_geom.
+        geom_assignment = np.where(assignment >= 0, part_to_geom[np.maximum(assignment, 0)], -1).astype(np.int32)
 
         # Store tile index sets for visualization.
         # core_tile_indices: tiles whose centroid is inside the study union (= valid_tile_indices).
@@ -702,7 +773,7 @@ class MosaicLayout(Layout):
 
         # Step 5: Build output GeoDataFrames
         tiles_gdf, regions_gdf = _build_geodataframes(
-            assignment,
+            geom_assignment,
             output_tile_indices,
             tiling_result,
             tile_size,
@@ -714,7 +785,7 @@ class MosaicLayout(Layout):
         # Step 6: Build transforms (one per assigned tile)
         # assignment[t] is always a geometry index (0..G-1); no item-level indirection needed
         transforms, src_idx = _build_transforms(
-            assignment,
+            geom_assignment,
             output_tile_indices,
             tiling_result,
             sizes_G,
@@ -734,15 +805,18 @@ class MosaicLayout(Layout):
 
         # Compute how many regions received their exact tile count
         tile_count_per_region = np.array(
-            [len([t for t in output_tile_indices if assignment[t] == g]) for g in range(G)],
+            [len([t for t in output_tile_indices if geom_assignment[t] == g]) for g in range(G)],
             dtype=np.intp,
         )
         regions_correct = int(np.sum(tile_count_per_region == counts))
 
         # Region-level topology of the final assignment: a region (and, with
         # group_by, a group) should occupy exactly one connected block.
+        # Counted per sub-region, not per geometry: a split geometry's parts are
+        # separate blocks by construction, so a per-geometry count would report
+        # every multi-part region as broken for ever.
         n_noncontiguous_regions = _count_split_units(
-            assignment, output_tile_indices, adj_list, np.arange(G, dtype=np.int32)
+            assignment, output_tile_indices, adj_list, np.arange(P, dtype=np.int32)
         )
         n_split_groups = (
             _count_split_units(assignment, output_tile_indices, adj_list, group_labels)
@@ -777,6 +851,8 @@ class MosaicLayout(Layout):
                 repair_passes=repair_passes,
                 n_unassigned_core_tiles=n_unassigned_core_tiles,
                 n_enclosed_unassigned_tiles=n_enclosed_unassigned_tiles,
+                n_subregions=P,
+                n_split_geometries=subregions.n_split_geometries,
             ),
         )
 

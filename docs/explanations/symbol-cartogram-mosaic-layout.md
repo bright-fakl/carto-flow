@@ -233,6 +233,46 @@ off. `swap_repair_passes` defaults to 10; set it to 0 to disable.
 
 ---
 
+## Multi-part regions
+
+Component detection above works on the geometry *adjacency graph*, whose nodes are whole
+geometries. A MultiPolygon is one node, so its internal disconnection is invisible there:
+Michigan's two peninsulas were a single unit that the contiguity repair had to force into one
+tile block, and on any input containing a genuinely multi-part region `converged` could never
+legitimately be True.
+
+After calibration — which is where the tile size becomes known — each geometry is decomposed
+into **sub-regions**, one per part whose area is at least `multipart_min_tiles` tile areas
+(default 0.5). A tile-size threshold is self-scaling, and a part smaller than a tile could not
+hold one anyway. Parts below the threshold are not sub-regions; each is attached to the nearest
+qualifying part, so no area is discarded.
+
+The geometry's tile count is then apportioned across its sub-regions **by area, using the
+original geometry** — not the morphed one, so how a region's data divides among its parts does
+not depend on how far the morph pushed it. The split uses largest-remainder (Hamilton)
+apportionment, so the per-region and overall totals are preserved exactly. A sub-region that
+would receive zero tiles is folded back into its nearest neighbour and the apportionment redone:
+a sub-region with no tiles is not a sub-region, and a one-tile region can never be two blocks.
+
+Two consequences worth stating plainly:
+
+- **Area is the only per-part quantity the pipeline has.** There is no sub-regional density
+  anywhere: the flow cartogram's density field sets `pop_density = value / area` and writes that
+  single number into every cell of the polygon, so integrating it over a part is exactly
+  area-proportional. If you hold genuine per-part values, split the input upstream and pass a
+  per-part `tile_count` — the only exact route.
+- **Only `tile_count` inputs can split.** With `group_by`, every geometry carries exactly one
+  symbol, and a one-tile region is never split, so the grouped path is untouched.
+
+`MosaicMetrics.n_noncontiguous_regions` counts **sub-regions**, not geometries. A geometry that
+was split counts once per sub-region: a two-peninsula state is two units that must each be one
+block, rather than one unit required to span both. Geometries that were not split — all of them
+on an input with no qualifying multi-part region — count exactly once, as before.
+`n_subregions` and `n_split_geometries` report the decomposition itself. Set
+`multipart_min_tiles` very large to keep every geometry whole.
+
+---
+
 ## Groups, islands and pre-scaling
 
 `group_by` assigns one tile per input geometry but enforces contiguity at the group level: all
@@ -259,6 +299,7 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `spacing` | `0.0` | Gap between symbols as a fraction of tile size (0-1). |
 | `extra_tile_rings` | `1` | Rings of adjacent tiles added to each component's pool as reserve. |
 | `min_overlap_frac` | `0.1` | Minimum tile/union overlap for a tile to count as core. |
+| `multipart_min_tiles` | `0.5` | Part size, in tile areas, above which a multi-part geometry's part becomes its own sub-region. |
 | `hungarian_options` | `None` | `HungarianOptions` for cost weights; defaults shown below. |
 
 **`HungarianOptions` defaults**:

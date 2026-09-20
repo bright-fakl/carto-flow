@@ -226,32 +226,75 @@ off. `swap_repair_passes` defaults to 10; set it to 0 to disable.
 
 `ring_swapback_max_hops` bounds the BFS the extra-ring swap-back uses to find an unassigned
 core tile to relocate a stranded ring tile into. #31 originally set this to 8, reasoning that "on
-US states the fixable count saturates at 8 hops." A later 8-configuration sweep (standard test
-inputs, aggregated) showed that reasoning does not hold up — the fixable count keeps improving
-well past 8 hops:
+US states the fixable count saturates at 8 hops." That reasoning does not hold up. An
+8-configuration sweep (US states, congressional districts, districts with
+`group_by="State Name"`, and the bundled world dataset, each with `morph=True` and
+`morph=False` — one consistent set, run at hops 8/14/16 with everything else held fixed) shows
+the fixable count keeps improving well past 8 hops, per configuration:
 
-| hops | ring | empty core | enclosed | split groups | converged | pp_min | pp_mean |
-|---|---|---|---|---|---|---|---|
-| 8 (former default) | 32 | 62 | 3 | 1 | 7/8 | 0.1192 | 0.5558 |
-| 10 | 32 | 62 | 3 | 1 | 7/8 | 0.1192 | 0.5558 |
-| 12 | 26 | 56 | 0 | 2 | 7/8 | 0.1138 | 0.5569 |
-| **14 (current default)** | 24 | 54 | 0 | 0 | **8/8** | **0.1249** | **0.5577** |
-| 16 | 13 | 43 | 0 | 0 | 8/8 | 0.1088 | 0.5551 |
-| 30 | 10 | 40 | 0 | 0 | 8/8 | 0.1088 | 0.5531 |
+| case | hops | ring | empty core | enclosed | split regions | split groups | converged | pp_min | pp_mean |
+|---|---|---|---|---|---|---|---|---|---|
+| states/morph=True | 8 | 2 | 2 | 0 | 0 | 0 | True | 0.3401 | 0.6969 |
+| states/morph=True | 14 | 1 | 1 | 0 | 0 | 0 | True | 0.3373 | 0.6952 |
+| states/morph=True | 16 | 1 | 1 | 0 | 0 | 0 | True | 0.3373 | 0.6952 |
+| states/morph=False | 8 | 4 | 3 | 0 | 0 | 0 | True | 0.2519 | 0.6858 |
+| states/morph=False | 14 | 4 | 3 | 0 | 0 | 0 | True | 0.2519 | 0.6858 |
+| states/morph=False | 16 | 4 | 3 | 0 | 0 | 0 | True | 0.2519 | 0.6858 |
+| districts/morph=True | 8 | 6 | 10 | 1 | 0 | 0 | True | 0.1526 | 0.4813 |
+| districts/morph=True | 14 | 5 | 9 | 0 | 0 | 0 | True | 0.1377 | 0.4851 |
+| **districts/morph=True** | **16** | **0** | **4** | **0** | 0 | 0 | True | 0.1165 | 0.4672 |
+| districts/morph=False | 8 | 6 | 16 | 1 | 0 | 0 | True | 0.1192 | 0.4497 |
+| districts/morph=False | 14 | 4 | 14 | 0 | 0 | 0 | True | 0.1249 | 0.4499 |
+| districts/morph=False | 16 | 2 | 12 | 0 | 0 | 0 | True | 0.1088 | 0.4453 |
+| districts_group_by/morph=True | 8 | 8 | 12 | 0 | 0 | 0 | True | 0.1747 | 0.4699 |
+| districts_group_by/morph=True | 14 | 6 | 10 | 0 | 0 | 0 | True | 0.17 | 0.4754 |
+| districts_group_by/morph=True | 16 | 3 | 7 | 0 | 0 | 0 | True | 0.17 | 0.4717 |
+| districts_group_by/morph=False | 8 | 6 | 16 | 1 | 0 | 1 | **False** | 0.1311 | 0.4785 |
+| districts_group_by/morph=False | 14 | 4 | 14 | 0 | 0 | 0 | **True** | 0.1249 | 0.4863 |
+| districts_group_by/morph=False | 16 | 3 | 13 | 0 | 0 | 0 | **True** | 0.1449 | 0.4913 |
+| world/morph=True | 8 | 9 | 32 | 4 | 5 | 0 | False | 0.1483 | 0.756 |
+| world/morph=True | 14 | 7 | 30 | 6 | **6** | 0 | False | 0.1483 | 0.7485 |
+| world/morph=True | 16 | 6 | 29 | 4 | **6** | 0 | False | 0.1483 | 0.751 |
+| world/morph=False | 8 | 23 | 49 | 4 | 4 | 0 | False | 0.1323 | 0.746 |
+| world/morph=False | 14 | 20 | 46 | 1 | 3 | 0 | False | 0.1323 | 0.7431 |
+| world/morph=False | 16 | 20 | 46 | 1 | 3 | 0 | False | 0.1323 | 0.743 |
+
+Summed / aggregated across the 8 configs:
+
+| hops | Σ ring | Σ empty core | Σ enclosed | Σ split regions | Σ split groups | converged | min(pp_min) | mean(pp_mean) |
+|---|---|---|---|---|---|---|---|---|
+| 8 (former default) | 64 | 140 | 11 | 9 | 1 | 5/8 | 0.1192 | 0.5955 |
+| 14 (considered, rejected) | 51 | 127 | 7 | 9 | 0 | 6/8 | 0.1249 | 0.5962 |
+| **16 (current default)** | **39** | **115** | **5** | 9 | 0 | 6/8 | 0.1088 | 0.5938 |
 
 `pp_min` / `pp_mean` are Polsby-Popper compactness computed combinatorially on the tile-adjacency
 graph (area = tile count, perimeter = boundary-edge count), not geometrically on unioned tile
 polygons — geometric Polsby-Popper on unioned tiles is not reproducible, since hairline internal
 edges leave a non-deterministic perimeter that is then squared.
 
-10 is a no-op over 8. 12 regresses split groups (1 -> 2) relative to 8. 14 dominates 8 on every
-metric shown, including both compactness measures, and is the first hop count that reaches 8/8
-converged configurations — it is the only strictly non-regressive choice relative to 8. 16 halves
-the remaining holes again but its compactness is worse than even the old 8-hop baseline (`pp_min`
-0.1088 vs 0.1192), so it was not adopted as the default.
+**14 was measured and rejected.** It closes some of the holes 8 leaves and reaches convergence on
+6/8 configurations (up from 5/8), but 16 closes materially more of the same holes — ring 51 → 39,
+empty core 127 → 115, enclosed 7 → 5 summed across the configs, and every remaining hole on
+`districts/morph=True` specifically (6/10/1 at 8 hops down to 0/4/0 at 16). Holes are the defect
+users notice visually, so the extra reach was chosen deliberately, with the compactness cost
+accepted knowingly: 16's worst per-config `pp_min` (`districts/morph=True`, 0.1165) is worse than
+both 8's (0.1526) and 14's (0.1377) on that same configuration, and
+`districts_group_by/morph=False` similarly trades a worse `pp_min` at 16 (0.1449) than at 14
+(0.1249) for one more closed hole. No hop count is a strict Pareto improvement over the others on
+every metric and every config simultaneously — this is a genuine holes-vs-compactness trade-off,
+resolved in favour of holes.
+
+**A cost of increasing reach at all, not of choosing 16 specifically:** `world/morph=True`'s
+split-region count gets *worse* going from 8 hops to either 14 or 16 (5 → 6), identically at both
+— the extra reach does not fix it, and it is not a reason to prefer 14 over 16 since both pay the
+same cost. Total split regions across the 8 configs (9) and the convergence count (6/8) are also
+identical at 14 and 16 — neither distinguishes them; the case for 16 over 14 rests entirely on the
+larger hole closure above.
 
 Do not lower `ring_swapback_max_hops` back to 8 — that reverts a strictly worse point on every
-metric in the table above.
+hole-closing metric in the table above. Do not lower it to 14 either without re-reading this
+section: 14 was considered and found to close fewer holes for a similar convergence and
+split-region profile.
 
 ### What is guaranteed, and what is not
 
@@ -306,7 +349,7 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `gap_bridge_mult` | 5.0 | Cost reduction for bridge-candidate tiles (x current max cost). |
 | `disconnected_score_weight` | 100 | Tie-break weight per disconnected tile vs. per gap. |
 | `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
-| `ring_swapback_max_hops` | 14 | BFS search radius for the extra-ring swap-back; 0 disables it. |
+| `ring_swapback_max_hops` | 16 | BFS search radius for the extra-ring swap-back; 0 disables it. |
 
 The cost weights were renamed from `alpha` / `beta` / `delta` to `distance_weight` /
 `outside_penalty` / `interior_bonus` before the layout became public; there are no aliases.

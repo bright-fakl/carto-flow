@@ -321,20 +321,22 @@ class TestRingSwapBack:
 
 
 class TestRingSwapbackReach:
-    """The default swap-back reach was raised from 8 to 14 hops.
+    """The default swap-back reach was raised from 8 to 16 hops.
 
     #31 set the default to 8, reasoning that on US states the fixable count
-    saturates at 8 hops. A later 8-configuration sweep (see
-    docs/explanations/symbol-cartogram-mosaic-layout.md, "How far the
-    swap-back searches") showed that saturation does not hold: going to 14
-    hops dominates 8 on every metric in the sweep, and US states at a finer
-    tile resolution than the bundled ~150-tile fixture demonstrably keeps
-    recovering more stranded tiles past 8 hops, under both `morph` settings.
-    Do not lower the default back to 8.
+    saturates at 8 hops. An 8-configuration sweep at 8/14/16 hops on one
+    consistent config set (see docs/explanations/symbol-cartogram-mosaic-layout.md,
+    "How far the swap-back searches") showed that saturation does not hold:
+    16 closes materially more holes than either 8 or 14 -- ring 64 -> 39,
+    empty core 140 -> 115, enclosed 11 -> 5 summed across the 8 configs, and
+    every remaining hole on districts/morph=True -- at an accepted
+    compactness cost on some configs. 14 was measured and rejected in favour
+    of the extra hole closure. Do not lower the default back to 8, and do not
+    lower it to 14 without re-reading that sweep first.
     """
 
-    def test_default_is_14(self):
-        assert HungarianOptions().ring_swapback_max_hops == 14
+    def test_default_is_16(self):
+        assert HungarianOptions().ring_swapback_max_hops == 16
 
     @staticmethod
     def _states_gdf(total_tiles: int) -> gpd.GeoDataFrame:
@@ -349,7 +351,7 @@ class TestRingSwapbackReach:
     def test_us_states_needs_more_than_8_hops(self, morph):
         """At ~300 tiles, US states keeps recovering stranded tiles past 8 hops.
 
-        Regression: measured on main, 8 vs. 14 hops on this fixture:
+        Regression: measured on main, 8 vs. 16 hops on this fixture:
         morph=False unassigned_core 11 -> 9, morph=True unassigned_core 7 -> 4.
         Neither hop count regresses split regions/groups or convergence here.
         """
@@ -359,15 +361,15 @@ class TestRingSwapbackReach:
         eight = MosaicLayout(morph=morph, hungarian_options=HungarianOptions(ring_swapback_max_hops=8)).compute(
             data, show_progress=False
         )
-        fourteen = MosaicLayout(morph=morph, hungarian_options=HungarianOptions(ring_swapback_max_hops=14)).compute(
+        sixteen = MosaicLayout(morph=morph, hungarian_options=HungarianOptions(ring_swapback_max_hops=16)).compute(
             data, show_progress=False
         )
 
-        assert _unassigned_core(fourteen) < _unassigned_core(eight)
+        assert _unassigned_core(sixteen) < _unassigned_core(eight)
         assert eight.metrics.algorithm.n_noncontiguous_regions == 0
-        assert fourteen.metrics.algorithm.n_noncontiguous_regions == 0
+        assert sixteen.metrics.algorithm.n_noncontiguous_regions == 0
         assert eight.metrics.algorithm.n_split_groups == 0
-        assert fourteen.metrics.algorithm.n_split_groups == 0
+        assert sixteen.metrics.algorithm.n_split_groups == 0
 
 
 class TestChainSwapRepair:

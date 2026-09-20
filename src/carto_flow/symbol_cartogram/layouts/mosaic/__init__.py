@@ -378,14 +378,17 @@ class HungarianOptions:
         the path, so tile counts are preserved and the move is kept only when
         it increases neither the split-region nor the split-group count.
         0 disables the swap-back; 1 restricts it to directly adjacent tiles.
-        Default 14.  #31's original default of 8 was chosen because "on US
+        Default 16.  #31's original default of 8 was chosen because "on US
         states the fixable count saturates at 8 hops" — that justification is
-        superseded: an 8-configuration sweep (see
+        superseded: an 8-configuration sweep at 8/14/16 hops on one
+        consistent config set (see
         docs/explanations/symbol-cartogram-mosaic-layout.md, "How far the
-        swap-back searches") shows 14 dominates 8 on every metric (ring,
-        empty core, enclosed, split groups, convergence, both compactness
-        measures) and is the only hop count that is strictly non-regressive
-        relative to 8. Do not lower this back to 8.
+        swap-back searches") shows 16 closes materially more holes than
+        either 8 or 14 (ring 64→39, empty core 140→115, enclosed 11→5
+        summed across the 8 configs, and every remaining hole on
+        districts/morph=True), at an accepted compactness cost on some
+        configs. Do not lower this back to 8, and do not lower it to 14
+        without re-reading that sweep first.
     """
 
     distance_weight: float = 1.0
@@ -398,7 +401,7 @@ class HungarianOptions:
     neighbor_weight: float = 0.3
     neighbor_bfs: bool = False
     swap_repair_passes: int = 10
-    ring_swapback_max_hops: int = 14
+    ring_swapback_max_hops: int = 16
 
     def __post_init__(self) -> None:
         if self.max_connectivity_iters < 0:

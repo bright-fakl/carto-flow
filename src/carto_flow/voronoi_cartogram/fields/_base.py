@@ -115,7 +115,10 @@ class BaseField:
             if w.shape != (n,):
                 raise ValueError(f"weights must have length {n}, got {w.shape}")
             if (w <= 0).any():
-                raise ValueError("all weights must be positive")
+                raise ValueError(
+                    "all weights must be positive; zero or negative weights are not "
+                    "supported -- filter those rows out before calling"
+                )
             self._weights = w / w.mean()
         else:
             self._weights = None

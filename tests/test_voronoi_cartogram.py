@@ -243,6 +243,18 @@ class TestEdgeCases:
         result = create_voronoi_cartogram(gdf, weights=weights, backend=_FAST_RASTER, options=_FAST_OPTIONS)
         assert len(result.cells) == 4
 
+    def test_zero_weight_rejected(self):
+        """A zero weight is rejected outright, not silently accepted.
+
+        Zero weights are unsupported (unlike a zero flow-cartogram sizing
+        value, which is a valid "shrink to nothing" input); the error message
+        tells the caller to filter those rows out.
+        """
+        gdf = make_grid_gdf(2, 2)
+        weights = np.array([1.0, 1.0, 1.0, 0.0])
+        with pytest.raises(ValueError, match="positive"):
+            create_voronoi_cartogram(gdf, weights=weights, backend=_FAST_RASTER, options=_FAST_OPTIONS)
+
     def test_weight_column_str(self, gdf):
         result = create_voronoi_cartogram(gdf, weights="population", backend=_FAST_RASTER, options=_FAST_OPTIONS)
         assert len(result.cells) == len(gdf)

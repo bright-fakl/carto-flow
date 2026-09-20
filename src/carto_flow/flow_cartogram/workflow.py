@@ -176,7 +176,8 @@ class CartogramWorkflow:
         original_areas = np.array(self._original_gdf.area)
         target_areas = np.sum(original_areas) * values / np.sum(values)
 
-        errors = compute_error_metrics(original_areas, target_areas)
+        grid = options.get_grid(options._calculate_bounds_from_geometries(geometries))
+        errors = compute_error_metrics(original_areas, target_areas, eps=grid.dx * grid.dy)
         # Apply area_scale for density calculation (e.g., m² to km²)
         density = values / (original_areas * options.area_scale)
         landmarks_geoms = (

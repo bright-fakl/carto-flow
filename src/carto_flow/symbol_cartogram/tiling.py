@@ -378,6 +378,7 @@ class Tiling(ABC):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
+        compute_adjacency: bool = True,
     ) -> TilingResult:
         """Generate tiles covering the bounding box.
 
@@ -395,6 +396,12 @@ class Tiling(ABC):
             Fractional margin around bounding box.
         adjacency_type : TileAdjacencyType
             Whether adjacency requires shared edges or just shared vertices.
+        compute_adjacency : bool
+            Whether to compute the adjacency matrices at all. When False,
+            ``adjacency`` and ``vertex_adjacency`` on the returned
+            ``TilingResult`` are all-``False`` placeholders of the right
+            shape. Use when only the tile polygons are needed, to skip the
+            most expensive part of tile generation.
 
         Returns
         -------
@@ -621,7 +628,9 @@ def _compute_adjacency_from_lattice(
     """Compute adjacency matrix from lattice offsets.
 
     For each tile center, check which other centers match the expected
-    neighbor offsets (within tolerance).
+    neighbor offsets (within tolerance). Vectorised with a KD-tree: each
+    offset direction is resolved with one batched nearest-neighbour query
+    instead of a per-tile Python loop.
 
     Parameters
     ----------
@@ -637,12 +646,44 @@ def _compute_adjacency_from_lattice(
     (m, m) boolean adjacency matrix.
 
     """
+    from scipy.spatial import cKDTree
+
+    m = len(centers)
+    adj = np.zeros((m, m), dtype=bool)
+    if m == 0 or not neighbor_offsets:
+        return adj
+
+    tree = cKDTree(centers)
+    tol_sq = tol * tol
+    for dx, dy in neighbor_offsets:
+        # For each tile, find tiles at offset (dx, dy).
+        shifted = centers + np.array([dx, dy])
+        # Nearest neighbour is sufficient: lattice spacing guarantees at most
+        # one center can fall within `tol` of any shifted point. Filter with
+        # a strict `<` on the squared distance to match the reference
+        # (non-vectorised) implementation exactly, including at the boundary.
+        dists, idx = tree.query(shifted, k=1)
+        matches = np.where((dists**2 < tol_sq) & (idx != np.arange(m)))[0]
+        j = idx[matches]
+        adj[matches, j] = True
+        adj[j, matches] = True
+    return adj
+
+
+def _compute_adjacency_from_lattice_naive(
+    centers: NDArray[np.floating],
+    neighbor_offsets: list[tuple[float, float]],
+    tol: float,
+) -> NDArray[np.bool_]:
+    """Reference (unvectorised) implementation, kept for equivalence tests only.
+
+    See :func:`_compute_adjacency_from_lattice` for the vectorised version
+    used in production. Not called anywhere outside the test suite.
+    """
     m = len(centers)
     adj = np.zeros((m, m), dtype=bool)
     for dx, dy in neighbor_offsets:
-        # For each tile, find tiles at offset (dx, dy)
         shifted = centers + np.array([dx, dy])
-        # Compute distances from shifted positions to all centers
         for i in range(m):
             dists = np.sum((centers - shifted[i]) ** 2, axis=1)
             matches = np.where(dists < tol**2)[0]
@@ -770,6 +811,7 @@ class SquareTiling(Tiling):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
+        compute_adjacency: bool = True,
     ) -> TilingResult:
         bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
@@ -797,13 +839,18 @@ class SquareTiling(Tiling):
             transforms.append(TileTransform(center=(cx, cy)))
 
         # Compute adjacency from lattice offsets
-        edge_offsets = [(s, 0), (-s, 0), (0, s), (0, -s)]
-        diag_offsets = [(s, s), (s, -s), (-s, s), (-s, -s)]
-        if adjacency_type == TileAdjacencyType.EDGE:
-            adj = _compute_adjacency_from_lattice(centers, edge_offsets, tol=s * 0.1)
+        if compute_adjacency:
+            edge_offsets = [(s, 0), (-s, 0), (0, s), (0, -s)]
+            diag_offsets = [(s, s), (s, -s), (-s, s), (-s, -s)]
+            if adjacency_type == TileAdjacencyType.EDGE:
+                adj = _compute_adjacency_from_lattice(centers, edge_offsets, tol=s * 0.1)
+            else:
+                adj = _compute_adjacency_from_lattice(centers, edge_offsets + diag_offsets, tol=s * 0.1)
+            vert_adj = _compute_adjacency_from_lattice(centers, diag_offsets, tol=s * 0.1)
         else:
-            adj = _compute_adjacency_from_lattice(centers, edge_offsets + diag_offsets, tol=s * 0.1)
-        vert_adj = _compute_adjacency_from_lattice(centers, diag_offsets, tol=s * 0.1)
+            _n = len(polygons)
+            adj = np.zeros((_n, _n), dtype=bool)
+            vert_adj = adj
 
         inscribed_r = s / 2  # half-side
         canonical = box(-s / 2, -s / 2, s / 2, s / 2)
@@ -880,6 +927,7 @@ class HexagonTiling(Tiling):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
+        compute_adjacency: bool = True,
     ) -> TilingResult:
         bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
@@ -925,23 +973,28 @@ class HexagonTiling(Tiling):
 
         # Compute adjacency from lattice offsets
         # Pointy-top hex: 6 neighbors at specific offsets
-        edge_offsets = [
-            (dx, 0),
-            (-dx, 0),  # horizontal neighbors
-            (dx / 2, dy),
-            (-dx / 2, dy),  # upper neighbors
-            (dx / 2, -dy),
-            (-dx / 2, -dy),  # lower neighbors
-        ]
-        # For hex grids, edge and vertex neighbors are the same (6 neighbors)
-        adj = _compute_adjacency_from_lattice(centers, edge_offsets, tol=size * 0.1)
+        m = len(polygons)
+        adj: NDArray[np.bool_]
+        vert_adj: NDArray[np.bool_]
+        if compute_adjacency:
+            edge_offsets = [
+                (dx, 0),
+                (-dx, 0),  # horizontal neighbors
+                (dx / 2, dy),
+                (-dx / 2, dy),  # upper neighbors
+                (dx / 2, -dy),
+                (-dx / 2, -dy),  # lower neighbors
+            ]
+            # For hex grids, edge and vertex neighbors are the same (6 neighbors)
+            adj = _compute_adjacency_from_lattice(centers, edge_offsets, tol=size * 0.1)
+            # Hex grids have no vertex-only neighbors — all 6 are edge neighbors
+            vert_adj = np.zeros((m, m), dtype=bool)
+        else:
+            adj = np.zeros((m, m), dtype=bool)
+            vert_adj = adj
 
         inscribed_r = size * np.sqrt(3) / 2  # center to edge
         canonical = _create_hexagon(0, 0, size)
-
-        # Hex grids have no vertex-only neighbors — all 6 are edge neighbors
-        m = len(polygons)
-        vert_adj = np.zeros((m, m), dtype=bool)
 
         return TilingResult(
             polygons=polygons,
@@ -1064,6 +1117,7 @@ class TriangleTiling(Tiling):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
+        compute_adjacency: bool = True,
     ) -> TilingResult:
         bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
@@ -1160,8 +1214,13 @@ class TriangleTiling(Tiling):
         np.array(centers_list, dtype=float) if centers_list else np.empty((0, 2))
 
         # Compute adjacency
-        edge_adj, vert_adj = _compute_adjacency_matrices(polygons, tol=s * 0.01)
-        adj = edge_adj | vert_adj if adjacency_type == TileAdjacencyType.VERTEX else edge_adj
+        if compute_adjacency:
+            edge_adj, vert_adj = _compute_adjacency_matrices(polygons, tol=s * 0.01)
+            adj = edge_adj | vert_adj if adjacency_type == TileAdjacencyType.VERTEX else edge_adj
+        else:
+            _n = len(polygons)
+            adj = np.zeros((_n, _n), dtype=bool)
+            vert_adj = adj
 
         # Inscribed radius of the scaled tile
         inscribed_r = float(tile_a.exterior.distance(Point(tile_a.centroid)))
@@ -1312,6 +1371,7 @@ class QuadrilateralTiling(Tiling):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: TileAdjacencyType = TileAdjacencyType.EDGE,
+        compute_adjacency: bool = True,
     ) -> TilingResult:
         bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
 
@@ -1418,8 +1478,13 @@ class QuadrilateralTiling(Tiling):
 
         # Compute adjacency geometrically (quad tilings have complex
         # adjacency patterns that are hard to precompute analytically)
-        edge_adj, vert_adj = _compute_adjacency_matrices(polygons, tol=s * 0.01)
-        adj = edge_adj | vert_adj if adjacency_type == TileAdjacencyType.VERTEX else edge_adj
+        if compute_adjacency:
+            edge_adj, vert_adj = _compute_adjacency_matrices(polygons, tol=s * 0.01)
+            adj = edge_adj | vert_adj if adjacency_type == TileAdjacencyType.VERTEX else edge_adj
+        else:
+            _n = len(polygons)
+            adj = np.zeros((_n, _n), dtype=bool)
+            vert_adj = adj
 
         inscribed_r = float(tile_base.exterior.distance(Point(tile_base.centroid)))
 

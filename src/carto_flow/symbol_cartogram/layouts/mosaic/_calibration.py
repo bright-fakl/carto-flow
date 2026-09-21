@@ -98,8 +98,9 @@ def calibrate_tiling(
     if study_area <= 0:
         raise ValueError("study_union has zero area; cannot calibrate tile size.")
 
-    # Reference tiling at unit scale for area/size conversion.
-    ref = tiling.generate(n_tiles=1)
+    # Reference tiling at unit scale for area/size conversion. Only
+    # tile_size and canonical_tile.area are used, so skip adjacency.
+    ref = tiling.generate(n_tiles=1, compute_adjacency=False)
     ref_size = ref.tile_size
     unit_area = ref.canonical_tile.area
     if unit_area <= 0:
@@ -113,9 +114,9 @@ def calibrate_tiling(
     def _estimated_bbox_tiles(size: float) -> int:
         return int(bbox_area / _tile_area_at(size))
 
-    def _build(size: float, tile_bounds=None, study_union_override=None):
+    def _build(size: float, tile_bounds=None, study_union_override=None, compute_adjacency: bool = True):
         union = study_union_override if study_union_override is not None else study_union
-        result = tiling.generate(tile_bounds or bounds, tile_size=size)
+        result = tiling.generate(tile_bounds or bounds, tile_size=size, compute_adjacency=compute_adjacency)
         polys = np.asarray(result.polygons)
         # Restrict to tiles whose bounding box intersects the study union.
         tree = shapely.STRtree(polys)
@@ -129,6 +130,10 @@ def calibrate_tiling(
         fracs = np.where(tile_areas > 0, inter_areas / tile_areas, 0.0)
         core = sorted(int(candidates[i]) for i in np.where(fracs >= min_overlap_frac)[0])
         return result, len(polys), core
+
+    # Tracks whether `result` already carries real lattice adjacency (vs. the
+    # all-False placeholder from a compute_adjacency=False trial build).
+    adjacency_fresh = True
 
     if tile_size is not None:
         # Explicit tile size: skip calibration
@@ -147,9 +152,13 @@ def calibrate_tiling(
             calibration_union = study_union.simplify(tile_size / 4, preserve_topology=True)
 
             def _build_fast(size: float):
-                return _build(size, study_union_override=calibration_union)
+                # Lattice adjacency is only needed for the accepted tile
+                # size (built again below); trial builds only need polygons
+                # to count core tiles, so skip the adjacency computation.
+                return _build(size, study_union_override=calibration_union, compute_adjacency=False)
 
             result, T, core = _build_fast(tile_size)
+            adjacency_fresh = False
 
             # Sqrt gradient descent: n_core ∝ 1/tile_size², so
             # tile_size_new = tile_size x sqrt(n_core/target).
@@ -165,13 +174,19 @@ def calibrate_tiling(
                     break
                 tile_size = new_size
                 result, T, core = _build_fast(tile_size)
+                adjacency_fresh = False
 
     # Final build with expanded bounds so ring-expansion in the caller always
-    # finds a complete set of neighbours around every core tile.
+    # finds a complete set of neighbours around every core tile. Also covers
+    # the case where the accepted tile size only ever went through a
+    # compute_adjacency=False trial build above (buffer_rings == 0): real
+    # adjacency must be computed for the returned TilingSetup exactly once.
     if buffer_rings > 0:
         buf = tile_size * (buffer_rings + 0.5)
         expanded = (bounds[0] - buf, bounds[1] - buf, bounds[2] + buf, bounds[3] + buf)
         result, T, core = _build(tile_size, expanded)
+    elif not adjacency_fresh:
+        result, T, core = _build(tile_size)
 
     adj_list: list[list[int]] = [list(np.where(result.adjacency[t])[0]) for t in range(T)]
     core_set = set(core)

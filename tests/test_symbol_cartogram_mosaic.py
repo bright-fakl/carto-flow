@@ -1089,3 +1089,110 @@ class TestEnclosedHoleRelocation:
 
         assert on.metrics.algorithm.n_split_groups <= off.metrics.algorithm.n_split_groups
         assert len(_enclosed_cells(on)) <= len(_enclosed_cells(off))
+
+
+class TestVectorizedLatticeAdjacency:
+    """Equivalence between the vectorised and reference lattice-adjacency code.
+
+    ``_compute_adjacency_from_lattice`` was vectorised with a KD-tree for
+    performance; ``_compute_adjacency_from_lattice_naive`` is the original
+    per-tile Python loop, kept only so these tests can diff against it.
+    """
+
+    @pytest.mark.parametrize("n_tiles", [1, 5, 20, 50, 200, 601])
+    @pytest.mark.parametrize("tiling_cls_name", ["SquareTiling", "HexagonTiling"])
+    def test_matches_naive_reference(self, n_tiles, tiling_cls_name):
+        from carto_flow.symbol_cartogram import tiling as tiling_mod
+
+        tiling_cls = getattr(tiling_mod, tiling_cls_name)
+        t = tiling_cls()
+        result = t.generate(n_tiles=n_tiles, compute_adjacency=False)
+        centers = np.array([p.centroid.coords[0] for p in result.polygons])
+        s = result.tile_size
+
+        if tiling_cls_name == "SquareTiling":
+            offsets = [(s, 0), (-s, 0), (0, s), (0, -s)]
+        else:
+            hex_width = s * np.sqrt(3)
+            hex_height = s * 2
+            dx = hex_width
+            dy = hex_height * 0.75
+            offsets = [
+                (dx, 0),
+                (-dx, 0),
+                (dx / 2, dy),
+                (-dx / 2, dy),
+                (dx / 2, -dy),
+                (-dx / 2, -dy),
+            ]
+        tol = s * 0.1
+
+        vectorized = tiling_mod._compute_adjacency_from_lattice(centers, offsets, tol)
+        naive = tiling_mod._compute_adjacency_from_lattice_naive(centers, offsets, tol)
+        np.testing.assert_array_equal(vectorized, naive)
+
+    def test_empty_and_single_tile(self):
+        from carto_flow.symbol_cartogram import tiling as tiling_mod
+
+        empty = tiling_mod._compute_adjacency_from_lattice(np.empty((0, 2)), [(1.0, 0.0)], 0.1)
+        assert empty.shape == (0, 0)
+
+        single = tiling_mod._compute_adjacency_from_lattice(np.array([[0.0, 0.0]]), [(1.0, 0.0)], 0.1)
+        assert single.shape == (1, 1)
+        assert not single.any()
+
+    def test_generate_compute_adjacency_false_gives_placeholder(self):
+        """compute_adjacency=False returns an all-False matrix of the right shape."""
+        from carto_flow.symbol_cartogram.tiling import HexagonTiling, SquareTiling
+
+        for tiling in (SquareTiling(), HexagonTiling()):
+            with_adj = tiling.generate(n_tiles=30)
+            without_adj = tiling.generate(n_tiles=30, compute_adjacency=False)
+            assert without_adj.adjacency.shape == with_adj.adjacency.shape
+            assert not without_adj.adjacency.any()
+            # Polygons/centers are identical regardless of compute_adjacency.
+            for pa, pb in zip(with_adj.polygons, without_adj.polygons, strict=True):
+                assert pa.equals_exact(pb, tolerance=0)
+
+
+class TestCalibrationAdjacencySkip:
+    """calibrate_tiling must return the same tile size whether or not lattice
+    adjacency is skipped during the internal search trials (it is now
+    skipped for performance; only the accepted tile size gets adjacency)."""
+
+    def test_calibration_tile_size_and_adjacency_stable(self):
+        from shapely.ops import unary_union
+
+        from carto_flow.symbol_cartogram.layouts.mosaic._calibration import calibrate_tiling
+        from carto_flow.symbol_cartogram.tiling import HexagonTiling
+
+        gdf = grid_gdf(4, 3, COUNTS_4X3)
+        union = unary_union(list(gdf.geometry))
+        bounds = union.bounds
+
+        setup = calibrate_tiling(HexagonTiling(), bounds, union, target_count=sum(COUNTS_4X3))
+
+        # Real (non-placeholder) adjacency for the accepted tile size.
+        assert setup.tiling_result.adjacency.any()
+        assert len(setup.valid_tile_indices) > 0
+        # adj_list must be consistent with the adjacency matrix it was built from.
+        adj = setup.tiling_result.adjacency
+        for t, neighbours in enumerate(setup.adj_list):
+            assert neighbours == list(np.where(adj[t])[0])
+
+    def test_calibration_reaches_target_count(self):
+        from shapely.ops import unary_union
+
+        from carto_flow.symbol_cartogram.layouts.mosaic._calibration import calibrate_tiling
+        from carto_flow.symbol_cartogram.tiling import HexagonTiling
+
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        union = unary_union(list(gdf.geometry))
+        bounds = union.bounds
+        target = sum(COUNTS_3X3)
+
+        setup = calibrate_tiling(HexagonTiling(), bounds, union, target_count=target)
+        # Calibration stops within 1 tile of target; extra_tile_rings covers
+        # any residual deficit at the call site, so just check it converged
+        # close to the target rather than exactly matching it here.
+        assert abs(len(setup.core_set) - target) <= 1

@@ -257,6 +257,11 @@ def prepare_layout_data(
         Uniformly scale each geographically connected component so its area
         matches its share of the data (``tile_count`` if given, else ``size``)
         before any layout step. No effect for single-component inputs.
+        This rescales geometry positions and areas, which affects layouts
+        that read component geometry (e.g. mosaic). It does not affect
+        symbol sizing under ``size_normalization="max"`` (the default) or
+        the ``mean_area`` reported on the returned ``LayoutData``, both of
+        which are computed from the original, unscaled geometries.
         Default: False.
 
     Returns

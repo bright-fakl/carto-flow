@@ -100,9 +100,13 @@ When `group_by` or `tile_count` is used, the layout assigns a group id to each c
 
 This is useful when creating state-level cartograms where congressional districts (tiles) should cluster without being attracted to districts of neighboring states.
 
+Setting `cross_group_pull_scale=0` removes cross-group *pull*, but it does not isolate groups from one another. The density field that drives advection is built from all pairs together and covers the full domain, so groups still interact through the field — via push forces and shared field geometry — even with cross-group pull fully attenuated.
+
 ## Layout Selection Guide
 
 `FlowDensityLayout` is a good default when you want proportional circles with good geographic preservation and no manual force-weight tuning. It tends to be more predictable than force-based layouts because the velocity field smoothly interpolates between push and pull.
+
+`convergence_tolerance` is checked against the *mean* relative NN spacing error across all pairs, not a per-pair bound, so individual pairs — including some residual overlap — can remain above the tolerance when the layout reports convergence.
 
 ## Parameter Reference
 

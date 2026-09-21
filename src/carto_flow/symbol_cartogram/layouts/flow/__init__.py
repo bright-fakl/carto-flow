@@ -113,6 +113,10 @@ class FlowDensityLayoutOptions:
         Timestep = factor * min(dx, dy) / max_velocity. Default: 0.3
     convergence_tolerance : float
         Stop when mean relative NN spacing error < tolerance. Default: 0.05
+        This is a mean over all nearest-neighbour pairs, not a per-pair
+        bound, so individual pairs can still have spacing error above the
+        tolerance (including residual overlap) when the layout reports
+        convergence.
     grid_size : int
         Grid resolution (square). Larger values improve accuracy at the
         cost of runtime. Default: 256
@@ -140,6 +144,12 @@ class FlowDensityLayoutOptions:
         different groups separate but do not attract); 1.0 = same as
         within-group (no distinction). Only has effect when the layout is run
         with ``group_by`` or ``tile_count``. Default: 1.0
+
+        Setting this to 0.0 removes cross-group *pull*, but does not isolate
+        groups from one another: the density field that drives advection is
+        built from all pairs together and covers the full domain, so groups
+        still interact through it (via push forces and the shared field
+        geometry) even with no cross-group pull.
 
     """
 

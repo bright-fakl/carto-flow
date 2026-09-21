@@ -683,6 +683,20 @@ class TestPreScale:
 
         assert island_area_scaled > island_area_plain
 
+    def test_pre_scale_does_not_change_mean_area_or_max_normalized_sizes(self):
+        """``mean_area`` and ``size_normalization="max"`` sizing are computed
+        from the geometries before ``pre_scale`` rescales them, so toggling
+        ``pre_scale`` leaves both unchanged for a non-mosaic layout call."""
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        island = gpd.GeoDataFrame({"tiles": [5]}, geometry=[box(6, 1, 7, 2)])
+        gdf = gpd.GeoDataFrame(gpd.pd.concat([gdf, island], ignore_index=True), geometry="geometry")
+
+        plain = prepare_layout_data(gdf, tile_count="tiles")
+        scaled = prepare_layout_data(gdf, tile_count="tiles", pre_scale=True)
+
+        assert scaled.mean_area == pytest.approx(plain.mean_area)
+        np.testing.assert_allclose(scaled.sizes, plain.sizes)
+
 
 # ---------------------------------------------------------------------------
 # 7. Options and API plumbing

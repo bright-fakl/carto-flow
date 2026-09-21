@@ -22,7 +22,7 @@ result = vor.create_voronoi_cartogram(
     weights="Population (Millions)",
     boundary="circle",
     backend=vor.RasterBackend(resolution=256),
-    options=vor.VoronoiOptions(n_iter=100, area_cv_tol=0.05),
+    options=vor.VoronoiOptions(n_iter=300, area_cv_tol=0.05),
 )
 
 # %%

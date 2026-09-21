@@ -18,7 +18,7 @@ import carto_flow.voronoi_cartogram as vor
 
 us_states = examples.load_us_census(population=True)
 
-opts = vor.VoronoiOptions(n_iter=100, area_cv_tol=0.05)
+opts = vor.VoronoiOptions(n_iter=300, area_cv_tol=0.05)
 
 result_fixed = vor.create_voronoi_cartogram(
     us_states,

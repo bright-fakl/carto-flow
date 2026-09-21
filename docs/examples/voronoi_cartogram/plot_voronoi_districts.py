@@ -24,7 +24,7 @@ us_districts = simplify_coverage(us_districts, tolerance=1000, min_island_size=5
 result = vor.create_voronoi_cartogram(
     us_districts,
     backend=vor.RasterBackend(resolution=512, boundary=vor.ElasticBoundary(0.02)),
-    options=vor.VoronoiOptions(n_iter=100, area_cv_tol=0.1, tol=2500),
+    options=vor.VoronoiOptions(n_iter=300, area_cv_tol=0.1, tol=2500),
     group_by="State Name",
 )
 

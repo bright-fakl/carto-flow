@@ -519,6 +519,42 @@ class TestZeroTileCount:
         assert metrics.regions_correct == metrics.regions_total == len(gdf)
         assert result.metrics.converged is True
 
+    @pytest.mark.parametrize("pre_scale", [False, True])
+    def test_zero_count_region_gets_no_tiles_morph_false(self, pre_scale):
+        """The same zero-count fixture must also work with ``morph=False``.
+
+        ``morph=True`` was the only path previously tested (PR #35); with
+        ``morph=False`` the un-morphed geometry is used as-is.
+        """
+        counts = [*COUNTS_3X3[:4], 0, *COUNTS_3X3[5:]]
+        gdf = grid_gdf(3, 3, counts)
+
+        result = compute(gdf, morph=False, pre_scale=pre_scale)
+
+        tile_counts = tile_counts_per_geometry(result)
+        assert tile_counts[4] == 0
+        np.testing.assert_array_equal(tile_counts, counts)
+
+    @pytest.mark.parametrize("morph", [False, True])
+    @pytest.mark.parametrize("pre_scale", [False, True])
+    def test_isolated_zero_count_component_does_not_crash(self, morph, pre_scale):
+        """A zero-``tile_count`` geometry with no neighbours used to crash.
+
+        Its geographic component then had a tile pool but zero tile slots
+        to fill, so the per-component Hungarian solve built a zero-row cost
+        matrix and ``cost.max()`` raised ``ValueError: zero-size array to
+        reduction operation maximum which has no identity``. Reproducible
+        with ``morph=False`` independently of ``pre_scale``.
+        """
+        geoms = [box(0, 0, 1, 1), box(1, 0, 2, 1), box(0, 1, 1, 2), box(1, 1, 2, 2), box(10, 10, 11, 11)]
+        counts = [4, 5, 3, 6, 0]
+        gdf = gpd.GeoDataFrame({"tiles": counts}, geometry=geoms)
+
+        result = compute(gdf, morph=morph, pre_scale=pre_scale)
+
+        tile_counts = tile_counts_per_geometry(result)
+        np.testing.assert_array_equal(tile_counts, counts)
+
 
 # ---------------------------------------------------------------------------
 # 3. Adjacency preservation

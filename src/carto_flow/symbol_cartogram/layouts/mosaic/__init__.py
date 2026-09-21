@@ -642,7 +642,10 @@ class MosaicLayout(Layout):
             else:
                 group_labels_c = None
             pool_c = comp_tile_pools[c]
-            if not pool_c:
+            if not pool_c or int(counts_c.sum()) == 0:
+                # No tiles to assign for this component (empty pool, or every
+                # geometry in it has a zero tile count): skip the Hungarian
+                # solve, which would otherwise build a zero-row cost matrix.
                 continue
             stats_c: dict = {}
             assignment_c = hungarian_morphed_assignment(

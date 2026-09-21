@@ -2,7 +2,7 @@
 
 import numpy as np
 import pytest
-from shapely.geometry import Polygon, box
+from shapely.geometry import Point, Polygon, box
 
 from carto_flow.geo_utils.prescale import (
     components_from_adjacency,
@@ -149,3 +149,12 @@ def test_net_negative_dataset_behaves_like_its_absolute_value():
 
     total_area = sum(g.area for g in scaled)
     assert total_area == pytest.approx(2.0, rel=1e-9)  # 14/7 = 2
+
+
+def test_point_geometry_rejected_with_actionable_error():
+    """Point inputs are not supported; the shapely mixed-type error is replaced."""
+    from carto_flow.geo_utils.geometry import unpack_geometries
+
+    geometries = [box(0, 0, 1, 1), Point(2, 2)]
+    with pytest.raises(ValueError, match="Point geometries are not supported"):
+        unpack_geometries(geometries)

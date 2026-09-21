@@ -785,7 +785,18 @@ def unpack_geometries(geometries: list[BaseGeometry], precompute_ring_info: bool
         and optionally precomputed ring info for area calculations.
     """
     geom_array = np.asarray(geometries, dtype=object)
-    geometry_type, flat_coords, offsets = shapely.to_ragged_array(geom_array)
+    try:
+        geometry_type, flat_coords, offsets = shapely.to_ragged_array(geom_array)
+    except ValueError as exc:
+        geom_types = {geom.geom_type for geom in geometries}
+        if "Point" in geom_types:
+            raise ValueError(
+                "Point geometries are not supported as cartogram input; this "
+                "operation requires polygon geometries. Convert point "
+                "features to small polygons (e.g. by buffering) before "
+                "passing them in."
+            ) from exc
+        raise
 
     all_metadata = []
     for geom in geometries:

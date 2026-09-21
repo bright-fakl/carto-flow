@@ -11,6 +11,7 @@ prescale_connected_components
 from __future__ import annotations
 
 import math
+import warnings
 from collections import defaultdict
 
 import numpy as np
@@ -172,12 +173,21 @@ def prescale_connected_components(
     Notes
     -----
     Each component is scaled uniformly around its area-weighted centroid so
-    shape is preserved and the centroid stays in place.  Components with zero
-    current or target area are left unchanged.
+    shape is preserved and the centroid stays in place. A component whose
+    target area is zero (all its values are zero) is collapsed to a
+    zero-area geometry rather than left at its original size, so the total
+    area invariant holds even when a component carries no data. A component
+    with zero current area but positive target area cannot be fixed by a
+    scale factor and is left unchanged. When *target_density* is zero (the
+    whole dataset sums to zero), there is nothing to redistribute space by,
+    and all geometries are returned unchanged.
     """
     from shapely import affinity
 
     values_array = np.asarray(values, dtype=float)
+
+    if target_density == 0:
+        return list(geometries)
 
     if components is None:
         _, components = compute_connected_components(geometries, distance_tolerance)
@@ -191,12 +201,28 @@ def prescale_connected_components(
         current_area = sum(g.area for g in component_geoms)
         target_area = float(np.sum(component_values)) / target_density
 
-        if current_area <= 0 or target_area <= 0:
+        if current_area <= 0:
+            if target_area > 0:
+                # A degenerate (zero-area) input geometry carrying real data:
+                # no scale factor can grow it, so it is left unchanged. Warn
+                # rather than silently drop the mismatch.
+                warnings.warn(
+                    f"Component with geometries {component_indices} has zero "
+                    "current area but nonzero target area; it cannot be "
+                    "pre-scaled and is left unchanged.",
+                    UserWarning,
+                    stacklevel=2,
+                )
             continue
 
-        scale_factor = math.sqrt(target_area / current_area)
-        if abs(scale_factor - 1.0) < 1e-8:
-            continue
+        if target_area <= 0:
+            # All values in this component are zero: collapse it to exactly
+            # zero area so the total-area invariant holds automatically.
+            scale_factor = 0.0
+        else:
+            scale_factor = math.sqrt(target_area / current_area)
+            if abs(scale_factor - 1.0) < 1e-8:
+                continue
 
         cx = sum(g.centroid.x * g.area for g in component_geoms) / current_area
         cy = sum(g.centroid.y * g.area for g in component_geoms) / current_area

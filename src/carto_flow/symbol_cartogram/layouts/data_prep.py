@@ -258,11 +258,17 @@ def prepare_layout_data(
         matches its share of the data (``tile_count`` if given, else ``size``)
         before any layout step. No effect for single-component inputs.
         This rescales geometry positions and areas, which affects layouts
-        that read component geometry (e.g. mosaic). It does not affect
-        symbol sizing under ``size_normalization="max"`` (the default) or
-        the ``mean_area`` reported on the returned ``LayoutData``, both of
-        which are computed from the original, unscaled geometries.
-        Default: False.
+        that read component geometry (e.g. mosaic). Symbol sizing under
+        ``size_normalization="max"`` (the default) and the ``mean_area``
+        reported on the returned ``LayoutData`` are recomputed from the
+        rescaled geometries, but are unaffected in practice: each
+        component's rescaled area matches its share of the data by
+        construction, so the total area — and therefore the mean — is
+        unchanged. A component whose data values are all zero is collapsed
+        to a zero-area geometry (returned as a ``Polygon`` with
+        ``is_valid == False``) rather than left at its original size.
+        Values are taken by absolute value, so a component's negative and
+        positive values do not cancel out to zero. Default: False.
 
     Returns
     -------
@@ -369,9 +375,9 @@ def prepare_layout_data(
         _, components = components_from_adjacency(adjacency_G)
         if len(components) > 1:
             if tile_count is not None:
-                ps_values = np.asarray(gdf[tile_count].to_numpy(), dtype=float)
+                ps_values = np.abs(np.asarray(gdf[tile_count].to_numpy(), dtype=float))
             elif size is not None:
-                ps_values = np.asarray(gdf[size].to_numpy(), dtype=float)
+                ps_values = np.abs(np.asarray(gdf[size].to_numpy(), dtype=float))
             else:
                 ps_values = np.ones(G, dtype=float)
             total_area = float(geometry_areas.sum())
@@ -383,9 +389,11 @@ def prepare_layout_data(
                 components=components,
             )
             gdf = gdf.copy()
-            gdf.geometry = [shapely.make_valid(g) for g in prescaled]
+            gdf.geometry = [shapely.make_valid(g) if g.area > 0 else g for g in prescaled]
             geometry_areas = np.array([g.area for g in gdf.geometry])
             geometry_positions = np.array([[g.centroid.x, g.centroid.y] for g in gdf.geometry])
+            mean_area = float(np.mean(geometry_areas))
+            unit_cell_radius = np.sqrt(mean_area / np.pi)
 
     # 5. tile_count expansion
     source_indices = None

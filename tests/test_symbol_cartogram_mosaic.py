@@ -720,9 +720,10 @@ class TestPreScale:
         assert island_area_scaled > island_area_plain
 
     def test_pre_scale_does_not_change_mean_area_or_max_normalized_sizes(self):
-        """``mean_area`` and ``size_normalization="max"`` sizing are computed
-        from the geometries before ``pre_scale`` rescales them, so toggling
-        ``pre_scale`` leaves both unchanged for a non-mosaic layout call."""
+        """``mean_area`` and ``size_normalization="max"`` sizing are recomputed
+        from the rescaled geometries, but are unaffected in practice: each
+        component's rescaled area matches its share of the data by
+        construction, so the total area (and mean) is unchanged."""
         gdf = grid_gdf(3, 3, COUNTS_3X3)
         island = gpd.GeoDataFrame({"tiles": [5]}, geometry=[box(6, 1, 7, 2)])
         gdf = gpd.GeoDataFrame(gpd.pd.concat([gdf, island], ignore_index=True), geometry="geometry")
@@ -732,6 +733,120 @@ class TestPreScale:
 
         assert scaled.mean_area == pytest.approx(plain.mean_area)
         np.testing.assert_allclose(scaled.sizes, plain.sizes)
+
+    def test_pre_scale_uses_abs_value_mixed_sign_component_not_collapsed(self):
+        """A component whose raw values are [5, -5] must not be treated as zero data.
+
+        ``tile_count`` requires non-negative values, so this is exercised via
+        ``size``, which is the column that reaches ``prescale_connected_components``
+        with a raw sign in production (``compute_symbol_sizes`` already uses
+        ``abs()`` for the symbol-size computation itself).
+        """
+        geoms = [box(0, 0, 1, 1), box(1, 0, 2, 1)]
+        gdf = gpd.GeoDataFrame({"pop": [5.0, -5.0]}, geometry=geoms)
+
+        data = prepare_layout_data(gdf, size="pop", pre_scale=True)
+
+        total_area_after = float(np.array([g.area for g in data.source_gdf.geometry]).sum())
+        total_area_before = float(np.array([g.area for g in gdf.geometry]).sum())
+        # abs(5) + abs(-5) = 10, matching the original total area (2 unit
+        # squares): not collapsed to zero as a naive signed sum would give.
+        assert total_area_after == pytest.approx(total_area_before, rel=1e-6)
+        assert total_area_after > 0
+
+    def test_all_zero_dataset_does_not_raise_and_is_unchanged(self):
+        """target_density == 0 (whole dataset sums to zero) must not raise ZeroDivisionError."""
+        geoms = [box(0, 0, 1, 1), box(1, 0, 2, 1), box(4, 4, 5, 5)]
+        gdf = gpd.GeoDataFrame({"pop": [0.0, 0.0, 0.0]}, geometry=geoms)
+
+        data = prepare_layout_data(gdf, size="pop", pre_scale=True)
+
+        areas_after = np.array([g.area for g in data.source_gdf.geometry])
+        areas_before = np.array([g.area for g in gdf.geometry])
+        np.testing.assert_array_equal(areas_after, areas_before)
+
+    def test_zero_data_component_collapses_to_zero_area_polygon(self):
+        """A component with zero data collapses to an exact zero-area Polygon."""
+        geoms = [box(0, 0, 1, 1), box(1, 0, 2, 1), box(10, 10, 11, 11)]
+        gdf = gpd.GeoDataFrame({"pop": [0.0, 0.0, 10.0]}, geometry=geoms)
+
+        data = prepare_layout_data(gdf, size="pop", pre_scale=True)
+
+        collapsed = data.source_gdf.geometry.iloc[0]
+        assert collapsed.geom_type == "Polygon"
+        assert collapsed.area == 0.0
+        assert collapsed.is_valid is False
+
+    def test_total_area_preserved_with_pre_scale_including_collapse(self):
+        geoms = [box(0, 0, 1, 1), box(1, 0, 2, 1), box(10, 10, 11, 11)]
+        gdf = gpd.GeoDataFrame({"pop": [0.0, 0.0, 10.0]}, geometry=geoms)
+
+        total_before = float(np.array([g.area for g in gdf.geometry]).sum())
+        data = prepare_layout_data(gdf, size="pop", pre_scale=True)
+        total_after = float(np.array([g.area for g in data.source_gdf.geometry]).sum())
+
+        assert total_after == pytest.approx(total_before, rel=1e-6)
+
+    def test_symbol_sizes_invariant_under_pre_scale(self):
+        """Sizes are value-driven, not geometry-area driven, so pre_scale must not move them.
+
+        Not asserted as literal bit-identical: pre-scaling recomputes
+        ``mean_area`` from geometries that were themselves rescaled by an
+        affine transform, and re-summing floats through that transform lands
+        within 1-2 ULP of the un-scaled sum rather than exactly on it, even
+        though the two are mathematically equal by construction. The
+        tolerance below (rtol 1e-9) is far tighter than any real behavioural
+        difference and only absorbs that last-bit rounding.
+        """
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        island = gpd.GeoDataFrame({"tiles": [5]}, geometry=[box(6, 1, 7, 2)])
+        gdf = gpd.GeoDataFrame(gpd.pd.concat([gdf, island], ignore_index=True), geometry="geometry")
+        gdf["pop"] = [4.0, 5.0, 3.0, 6.0, 4.0, 5.0, 3.0, 4.0, 6.0, 5.0]
+
+        plain = prepare_layout_data(gdf, size="pop", pre_scale=False)
+        scaled = prepare_layout_data(gdf, size="pop", pre_scale=True)
+
+        np.testing.assert_allclose(plain.sizes, scaled.sizes, rtol=1e-9, atol=1e-12)
+        assert plain.mean_area == pytest.approx(scaled.mean_area, rel=1e-9)
+
+
+class TestCollapsedComponentAcrossLayouts:
+    """A zero-data component collapses to a zero-area Polygon that every
+    layout (non-mosaic and mosaic, both ``morph`` settings) must handle."""
+
+    def _data_with_collapsed_island(self):
+        # 3-cell mainland with data, plus an isolated zero-value island that
+        # collapses to zero area under pre_scale (its own component).
+        geoms = [box(0, 0, 1, 1), box(1, 0, 2, 1), box(0, 1, 1, 2), box(10, 10, 11, 11)]
+        gdf = gpd.GeoDataFrame({"pop": [4.0, 5.0, 3.0, 0.0]}, geometry=geoms)
+        return prepare_layout_data(gdf, size="pop", pre_scale=True)
+
+    def test_collapsed_geometry_is_zero_area_invalid_polygon(self):
+        data = self._data_with_collapsed_island()
+        collapsed = data.source_gdf.geometry.iloc[3]
+        assert collapsed.geom_type == "Polygon"
+        assert collapsed.area == 0.0
+        assert collapsed.is_valid is False
+
+    @pytest.mark.parametrize("layout_name", ["centroid", "flow_density", "grid", "packing", "physics", "topology"])
+    def test_non_mosaic_layout_handles_collapsed_component(self, layout_name):
+        from carto_flow.symbol_cartogram.layouts.base import get_layout
+
+        data = self._data_with_collapsed_island()
+        layout = get_layout(layout_name)
+        result = layout.compute(data, show_progress=False)
+        assert len(result.positions) == 4
+        assert np.all(np.isfinite(result.positions))
+
+    @pytest.mark.parametrize("morph", [False, True])
+    def test_mosaic_handles_collapsed_component(self, morph):
+        data = self._data_with_collapsed_island()
+        result = MosaicLayout(morph=morph).compute(data, show_progress=False)
+        # The collapsed (zero-area) geometry (index 3) gets no tiles; the
+        # other 3 geometries (1 tile each, no tile_count column) do.
+        counts_per_geom = tile_counts_per_geometry(result)
+        assert counts_per_geom[3] == 0
+        np.testing.assert_array_equal(counts_per_geom[:3], [1, 1, 1])
 
 
 # ---------------------------------------------------------------------------

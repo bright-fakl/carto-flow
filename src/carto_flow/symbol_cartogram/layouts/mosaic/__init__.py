@@ -339,7 +339,13 @@ class HungarianOptions:
     interior_bonus : float
         Connectivity bonus — subtracted from cost for tiles that are
         well-surrounded by other valid tiles (interior tiles), pushing
-        unselected surplus toward the periphery.
+        unselected surplus toward the periphery.  Raising it keeps a
+        region's tiles in a tighter block, which helps most when a region
+        owns several tiles or when ``group_by`` requires a group to stay
+        together; at one tile per region with ``morph=False`` a lower value
+        places symbols closer to their neighbours and truer to the original
+        directions between them.  Values much above the default start to
+        break groups apart on finely divided inputs.
     max_connectivity_iters : int
         Maximum number of iterative re-solve passes for connectivity
         repair (intra-region disconnections + inter-region gap bridging).
@@ -384,7 +390,7 @@ class HungarianOptions:
 
     distance_weight: float = 1.0
     outside_penalty: float = 1.0
-    interior_bonus: float = 0.5
+    interior_bonus: float = 2.0
     max_connectivity_iters: int = 15
     disconnected_penalty_mult: float = 10.0
     gap_bridge_mult: float = 5.0

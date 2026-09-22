@@ -352,9 +352,6 @@ class HungarianOptions:
     disconnected_penalty_mult : float
         Per-iteration cost raise for intra-region disconnected tiles:
         ``cost_iter.max() x disconnected_penalty_mult``.
-    gap_bridge_mult : float
-        Per-iteration cost reduction for inter-region gap bridge candidates:
-        ``cost_iter.max() x gap_bridge_mult``.
     disconnected_score_weight : int
         How many gap-pairs a single disconnected tile counts as in the
         *tie-breaking* score.  The repair loop first compares the number of
@@ -393,7 +390,6 @@ class HungarianOptions:
     interior_bonus: float = 2.0
     max_connectivity_iters: int = 15
     disconnected_penalty_mult: float = 10.0
-    gap_bridge_mult: float = 5.0
     disconnected_score_weight: int = 100
     neighbor_weight: float = 0.3
     neighbor_bfs: bool = False

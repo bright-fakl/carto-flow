@@ -15,6 +15,10 @@ __all__ = [
     "hungarian_morphed_assignment",
 ]
 
+# Per-iteration cost reduction applied to inter-region gap bridge candidates in
+# the connectivity-repair loop, as a multiple of the static cost maximum.
+_GAP_BRIDGE_MULT = 5.0
+
 
 # ---------------------------------------------------------------------------
 # Cost matrix and connectivity helpers
@@ -461,7 +465,7 @@ def hungarian_morphed_assignment(
             break
 
         disc_penalty = cost_static_max * options.disconnected_penalty_mult
-        bridge_bonus = cost_static_max * options.gap_bridge_mult
+        bridge_bonus = cost_static_max * _GAP_BRIDGE_MULT
 
         # Raise cost for disconnected tiles
         for t, g in disconnected:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any, ClassVar
 
@@ -181,9 +182,35 @@ class Layout(ABC):
             If the data carries a ``group_by`` grouping and the layout does
             not support it.
 
+        Warns
+        -----
+        UserWarning
+            If the layout supports ``group_by`` but the option that acts on
+            the grouping is still at its inert default.
+
         """
-        check_group_by_support(self, data.group_ids_G is not None)
+        has_group_by = data.group_ids_G is not None
+        check_group_by_support(self, has_group_by)
+        if has_group_by:
+            message = self._inert_group_by_warning()
+            if message is not None:
+                warnings.warn(message, UserWarning, stacklevel=2)
         return self._compute(data, show_progress=show_progress, save_history=save_history)
+
+    def _inert_group_by_warning(self) -> str | None:
+        """Describe why this layout's grouping force is currently inert.
+
+        Layouts that act on ``group_by`` through an option which defaults to
+        a no-op override this to explain which option to set. The default
+        returns None (nothing to say).
+
+        Returns
+        -------
+        str or None
+            Warning message, or None when the grouping will take effect.
+
+        """
+        return None
 
     @abstractmethod
     def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:

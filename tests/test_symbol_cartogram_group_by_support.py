@@ -6,6 +6,8 @@ of returning a cartogram in which the grouping was silently dropped.
 
 from __future__ import annotations
 
+import warnings
+
 import geopandas as gpd
 import numpy as np
 import pytest
@@ -25,6 +27,10 @@ from carto_flow.symbol_cartogram.layouts import (
     prepare_layout_data,
 )
 from carto_flow.symbol_cartogram.layouts.base import _LAYOUT_REGISTRY
+from carto_flow.symbol_cartogram.presets import (
+    dorling_grouped_cartogram,
+    geographic_grouped_cartogram,
+)
 
 SUPPORTING = ["centroid", "flow_density", "mosaic", "packing", "topology"]
 NOT_SUPPORTING = ["grid", "physics"]
@@ -119,3 +125,69 @@ class TestCheckDoesNotFire:
         )
         assert result.group_ids is not None
         assert len(result.transforms) == 6
+
+
+class TestInertGroupingWarning:
+    """Layouts that support ``group_by`` warn when their group force is off."""
+
+    def test_packing_warns_at_default_group_weight(self):
+        with pytest.warns(UserWarning, match="group_weight"):
+            create_layout(
+                grouped_gdf(),
+                "value",
+                group_by="grp",
+                layout=CirclePackingLayout(max_iterations=5),
+                show_progress=False,
+            )
+
+    def test_flow_warns_at_default_cross_group_pull_scale(self):
+        with pytest.warns(UserWarning, match="cross_group_pull_scale"):
+            create_layout(
+                grouped_gdf(),
+                "value",
+                group_by="grp",
+                layout=FlowDensityLayout(max_iterations=5, grid_size=64),
+                show_progress=False,
+            )
+
+    def test_packing_silent_once_group_weight_is_set(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            create_layout(
+                grouped_gdf(),
+                "value",
+                group_by="grp",
+                layout=CirclePackingLayout(max_iterations=5, group_weight=0.5),
+                show_progress=False,
+            )
+
+    def test_flow_silent_once_cross_group_pull_scale_is_set(self):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            create_layout(
+                grouped_gdf(),
+                "value",
+                group_by="grp",
+                layout=FlowDensityLayout(max_iterations=5, grid_size=64, cross_group_pull_scale=0.0),
+                show_progress=False,
+            )
+
+    @pytest.mark.parametrize(
+        "layout",
+        [CirclePackingLayout(max_iterations=5), FlowDensityLayout(max_iterations=5, grid_size=64)],
+    )
+    def test_no_warning_without_group_by(self, layout):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            create_layout(grouped_gdf(), "value", layout=layout, show_progress=False)
+
+    @pytest.mark.parametrize("preset", [dorling_grouped_cartogram, geographic_grouped_cartogram])
+    def test_grouped_presets_do_not_warn(self, preset):
+        """The shipped grouped presets enable the group force, so they stay silent."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            preset(grouped_gdf(), "value", group_by="grp", show_progress=False)
+
+    def test_layouts_without_an_inert_option_say_nothing(self):
+        for name in ("centroid", "mosaic"):
+            assert get_layout(name)._inert_group_by_warning() is None

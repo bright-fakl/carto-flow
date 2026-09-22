@@ -333,6 +333,11 @@ class TestRingSwapbackReach:
     compactness cost on some configs. 14 was measured and rejected in favour
     of the extra hole closure. Do not lower the default back to 8, and do not
     lower it to 14 without re-reading that sweep first.
+
+    The margin over 8 hops has since narrowed under a higher default
+    ``interior_bonus``, which recovers some stranded tiles on its own. At
+    ``morph=True`` the two reaches now tie on this fixture; at ``morph=False``
+    8 hops still strands a region in two blocks where 16 does not.
     """
 
     def test_default_is_16(self):
@@ -349,11 +354,18 @@ class TestRingSwapbackReach:
 
     @pytest.mark.parametrize("morph", [False, True])
     def test_us_states_needs_more_than_8_hops(self, morph):
-        """At ~300 tiles, US states keeps recovering stranded tiles past 8 hops.
+        """At ~300 tiles, 16 hops is never worse than 8 and sometimes better.
 
-        Regression: measured on main, 8 vs. 16 hops on this fixture:
-        morph=False unassigned_core 11 -> 9, morph=True unassigned_core 7 -> 4.
-        Neither hop count regresses split regions/groups or convergence here.
+        16 hops must leave every region contiguous and every group whole, and
+        must leave no more stranded core tiles than 8 hops does.  Under
+        ``morph=False`` it is strictly better on stranded core tiles, and 8
+        hops is the only one of the two that strands a region in more than one
+        block.
+
+        Under ``morph=True`` the two hop counts now reach the same stranded
+        count on this fixture: the connectivity bonus already recovers what the
+        longer reach used to.  The guarantee kept here is that 16 never loses
+        to 8 — not that it always wins.
         """
         gdf = self._states_gdf(total_tiles=300)
         data = prepare_layout_data(gdf, tile_count="tiles")
@@ -365,11 +377,18 @@ class TestRingSwapbackReach:
             data, show_progress=False
         )
 
-        assert _unassigned_core(sixteen) < _unassigned_core(eight)
-        assert eight.metrics.algorithm.n_noncontiguous_regions == 0
+        # the shipped reach keeps the full topology guarantee
         assert sixteen.metrics.algorithm.n_noncontiguous_regions == 0
-        assert eight.metrics.algorithm.n_split_groups == 0
         assert sixteen.metrics.algorithm.n_split_groups == 0
+
+        # and is never worse than the shorter reach
+        assert _unassigned_core(sixteen) <= _unassigned_core(eight)
+        assert sixteen.metrics.algorithm.n_noncontiguous_regions <= eight.metrics.algorithm.n_noncontiguous_regions
+        assert sixteen.metrics.algorithm.n_split_groups <= eight.metrics.algorithm.n_split_groups
+
+        if not morph:
+            assert _unassigned_core(sixteen) < _unassigned_core(eight)
+            assert eight.metrics.algorithm.n_noncontiguous_regions > 0
 
 
 class TestChainSwapRepair:
@@ -430,9 +449,14 @@ class TestTopologyMetrics:
 
         ``converged`` must then be False even though every region has exactly
         its requested tile count — exact counts alone do not imply convergence.
+
+        ``interior_bonus`` is pinned below the default here because at the
+        default the fixture no longer splits at all: a high connectivity bonus
+        holds each region's tiles together without help from the repair.  The
+        lower value is what still produces the split this test needs.
         """
         gdf = grid_gdf(3, 3, COUNTS_3X3)
-        result = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=0))
+        result = compute(gdf, hungarian_options=HungarianOptions(swap_repair_passes=0, interior_bonus=0.5))
 
         metrics = result.metrics.algorithm
         assert metrics.n_noncontiguous_regions == len(non_contiguous_regions(result))
@@ -884,6 +908,16 @@ class TestOptions:
         options = HungarianOptions(distance_weight=2.0, outside_penalty=0.5, interior_bonus=0.1)
 
         assert (options.distance_weight, options.outside_penalty, options.interior_bonus) == (2.0, 0.5, 0.1)
+
+    def test_interior_bonus_default(self):
+        """A high connectivity bonus is the default.
+
+        It keeps each region's tiles in a tighter block, which is what
+        multi-tile and ``group_by`` layouts need.  Lowering it back toward 0.5
+        trades that away; raising it much further starts to break groups apart
+        on finely divided inputs.
+        """
+        assert HungarianOptions().interior_bonus == 2.0
 
     def test_kwargs_are_applied_to_options(self):
         layout = MosaicLayout(tiling="square", morph=False, tile_size=0.5, spacing=0.1)

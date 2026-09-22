@@ -404,3 +404,70 @@ class TestVisualization:
         )
         with pytest.raises(TypeError, match="grid or mosaic"):
             plot_tiling(result)
+
+
+class TestSizeNormalizationDefault:
+    """Which ``size_normalization`` the pipeline applies when none is given."""
+
+    def test_prepare_layout_data_defaults_to_total(self):
+        """Total symbol area matches total geometry area by default."""
+        from carto_flow.symbol_cartogram.layouts import prepare_layout_data
+
+        gdf = make_grid_gdf()
+        data = prepare_layout_data(gdf, "population")
+
+        total_symbol_area = float(np.pi * np.sum(data.sizes**2))
+        assert total_symbol_area == pytest.approx(float(gdf.geometry.area.sum()))
+
+    def test_radius_layouts_default_to_total(self):
+        """Layouts that place symbols by radius inherit the ``"total"`` default."""
+        from carto_flow.symbol_cartogram import create_layout
+
+        gdf = make_grid_gdf()
+        for layout in ("physics", "topology", "centroid"):
+            data_sizes = create_layout(gdf, "population", layout=layout, show_progress=False).sizes
+            total_symbol_area = float(np.pi * np.sum(data_sizes**2))
+            assert total_symbol_area == pytest.approx(float(gdf.geometry.area.sum())), layout
+
+    def test_grid_layout_defaults_to_max(self):
+        """The grid layout keeps ``"max"``: the largest symbol is one unit cell.
+
+        Its tile lattice is calibrated from the largest symbol, so ``"total"``
+        would rescale lattice and symbols together and move the whole grid off
+        the scale of the input geometries.
+        """
+        from carto_flow.symbol_cartogram import create_layout
+
+        gdf = make_grid_gdf()
+        result = create_layout(gdf, "population", layout="grid", show_progress=False)
+
+        mean_area = float(gdf.geometry.area.mean())
+        largest_symbol_area = float(np.pi * np.max(result.sizes) ** 2)
+        assert largest_symbol_area == pytest.approx(mean_area)
+
+    def test_explicit_value_overrides_the_layout_default(self):
+        """A caller-supplied value wins over the layout's own default."""
+        from carto_flow.symbol_cartogram import create_layout
+
+        gdf = make_grid_gdf()
+        result = create_layout(gdf, "population", layout="grid", size_normalization="total", show_progress=False)
+
+        total_symbol_area = float(np.pi * np.sum(result.sizes**2))
+        assert total_symbol_area == pytest.approx(float(gdf.geometry.area.sum()))
+
+    def test_mosaic_layout_is_unaffected(self):
+        """Mosaic symbol scale comes from the tile lattice, not the normalisation."""
+        from carto_flow.symbol_cartogram import create_symbol_cartogram
+
+        gdf = make_grid_gdf()
+        as_max = create_symbol_cartogram(
+            gdf, "population", layout="mosaic", size_normalization="max", show_progress=False
+        )
+        as_total = create_symbol_cartogram(
+            gdf, "population", layout="mosaic", size_normalization="total", show_progress=False
+        )
+
+        np.testing.assert_allclose(
+            as_max.symbols.geometry.area.to_numpy(),
+            as_total.symbols.geometry.area.to_numpy(),
+        )

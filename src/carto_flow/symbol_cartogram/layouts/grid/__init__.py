@@ -193,6 +193,10 @@ class GridBasedLayout(Layout):
         # Compute tile_size from largest native size BEFORE spacing scale-down
         # This keeps tile size purely geographic (based on unit cell area)
         max_native = float(np.max(native_sizes)) if len(native_sizes) > 0 else 1.0
+        if max_native <= 0:
+            # Every symbol is zero-sized (all sizing values are zero). The
+            # lattice still needs a cell size, so fall back to the unit cell.
+            max_native = float(np.sqrt(data.mean_area / np.pi)) * canonical.area_factor
         tile_size = tiling.tile_size_for_symbol_size(max_native, spacing=0)
 
         # Apply spacing by scaling down symbols (not by increasing tile size)

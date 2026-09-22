@@ -26,6 +26,19 @@ def _distance_in_radii(distance: NDArray[np.floating], radii: NDArray[np.floatin
     )
 
 
+def _area_weighted_centroid(positions: NDArray[np.floating], radii: NDArray[np.floating]) -> NDArray[np.float64]:
+    """Centroid of *positions* weighted by symbol area.
+
+    Falls back to the unweighted mean when every symbol is zero-sized and
+    the weights carry no information.
+    """
+    weights = radii**2
+    total = float(weights.sum())
+    if total <= 0:
+        return np.asarray(positions, dtype=float).mean(axis=0)
+    return (positions * weights[:, None]).sum(axis=0) / total
+
+
 class ExponentialMovingStats:
     """EMA tracker for mean and std of vector-valued observations.
 
@@ -331,8 +344,7 @@ class TopologyPreservingSimulator:
             self.u0 = np.empty((len(self.adj_pairs), 2))
 
         # Precompute original centroid for stable global compaction
-        weights = self.radii**2
-        self.original_centroid = (self.original_positions * weights[:, None]).sum(axis=0) / weights.sum()
+        self.original_centroid = _area_weighted_centroid(self.original_positions, self.radii)
 
         # Precompute upper triangular indices for vectorized overlap projection and contact reaction
         i_idx, j_idx = np.triu_indices(self.n, k=1)
@@ -352,8 +364,7 @@ class TopologyPreservingSimulator:
 
     def _weighted_centroid(self) -> NDArray[np.floating]:
         """Compute area-weighted centroid."""
-        weights = self.radii**2
-        return (self.positions * weights[:, None]).sum(axis=0) / weights.sum()
+        return _area_weighted_centroid(self.positions, self.radii)
 
     def _count_overlaps(self) -> int:
         """Count number of overlapping circle pairs."""
@@ -657,7 +668,7 @@ class TopologyPreservingSimulator:
                 n_ij = dx[idx] / d[idx, None]  # (p, 2)
 
                 # Strength
-                strength = np.minimum(gap[idx] / target[idx], 1.0)  # (p,)
+                strength = np.minimum(_distance_in_radii(gap[idx], target[idx]), 1.0)  # (p,)
 
                 # Neighbor force, weighted by adjacency
                 Fn = self.neighbor_weight * self.adj_weights[idx, None] * strength[:, None] * n_ij  # (p, 2)
@@ -857,7 +868,11 @@ class TopologyPreservingSimulator:
         # Integrate with fixed step clamping
         norms = np.linalg.norm(F, axis=1)
         scale = np.minimum(1.0, self.max_step / (norms + 1e-8))
-        effective_radius = self.avg_radius * (self.radii / self.avg_radius) ** self.size_sensitivity
+        if self.avg_radius > 0:
+            effective_radius = self.avg_radius * (self.radii / self.avg_radius) ** self.size_sensitivity
+        else:
+            # Every symbol is zero-sized: there is no step scale and nothing to pack.
+            effective_radius = np.zeros(self.n)
         step = F * scale[:, None] * effective_radius[:, None]
 
         # Smooth step via EMA
@@ -1054,7 +1069,9 @@ class TopologyPreservingSimulator:
         """
         stage1_info = self.run_overlap_resolution()
 
-        if max_iterations == 0:
+        # A zero average radius means every symbol is zero-sized: there is
+        # nothing to pack, so skip straight to the no-op result.
+        if max_iterations == 0 or self.avg_radius <= 0:
             final_positions = self.positions * self.scale + self.center
             info = {
                 "iterations": stage1_info["iterations"],

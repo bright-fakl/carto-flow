@@ -149,9 +149,16 @@ def resolve_circle_overlaps(
     all_radii_sum = radii_norm[i_idx] + radii_norm[j_idx]
 
     def weighted_centroid() -> NDArray[np.floating]:
-        """Compute area-weighted centroid."""
+        """Compute area-weighted centroid.
+
+        Falls back to the unweighted mean when every symbol is zero-sized
+        and the weights carry no information.
+        """
         weights = radii_norm**2
-        return (positions_norm * weights[:, None]).sum(axis=0) / weights.sum()
+        total = float(weights.sum())
+        if total <= 0:
+            return positions_norm.mean(axis=0)
+        return (positions_norm * weights[:, None]).sum(axis=0) / total
 
     def global_expansion_factor() -> float:
         """Compute the exact global expansion factor to resolve all overlaps."""

@@ -59,6 +59,19 @@ class LayoutData:
 
 The `size_max_value` parameter fixes the reference maximum, enabling consistent size scaling across multiple cartograms of different datasets.
 
+A zero data value is valid and gives a symbol of zero size. Every layout keeps
+that symbol as a row of the result, aligned with the input GeoDataFrame, and
+renders it as a zero-area geometry. A zero-size symbol has no extent, so it
+cannot overlap a neighbour and cannot be pushed apart from one; quantities that
+a layout measures in units of symbol size (a separation relative to the target
+separation, a displacement relative to the symbol radius) are undefined for it
+and are left out of the averages the layout reports.
+
+When *every* value is zero there is no size scale at all. The force-based
+layouts have nothing to place and leave every symbol at its geometry centroid;
+the lattice layouts still assign tiles, using the mean geometry area as the
+cell size in place of the largest symbol.
+
 ### Adjacency Matrix
 
 `compute_adjacency(gdf, mode, distance_tolerance)` builds a symmetric or asymmetric matrix from polygon boundary relationships. A distance tolerance (default: 0.1% of the mean region diameter) handles small gaps common in real-world boundary data.

@@ -16,6 +16,7 @@ from shapely.ops import voronoi_diagram
 
 from carto_flow.symbol_cartogram.layouts import get_layout, prepare_layout_data
 from carto_flow.symbol_cartogram.layouts.packing._simulator import _distance_in_radii
+from carto_flow.symbol_cartogram.tiling import resolve_tiling
 
 # Layouts that place symbols from a sizing variable. Mosaic is exercised with
 # and without its pre-morph step.
@@ -113,3 +114,71 @@ class TestDistanceInRadii:
         """A zero-radius symbol is infinitely many radii from anywhere."""
         ratio = _distance_in_radii(np.array([1.0, 0.0]), np.array([0.0, 0.0]))
         assert np.isinf(ratio).all()
+
+
+def all_zero_grid_gdf() -> gpd.GeoDataFrame:
+    """A 3x3 grid of unit squares whose sizing values are all zero."""
+    geoms = [box(c, r, c + 1, r + 1) for r in range(3) for c in range(3)]
+    return gpd.GeoDataFrame({"population": np.zeros(len(geoms))}, geometry=geoms)
+
+
+def all_zero_voronoi_gdf() -> gpd.GeoDataFrame:
+    """Irregular Voronoi cells whose sizing values are all zero."""
+    gdf = voronoi_gdf(zeros=())
+    gdf["population"] = 0.0
+    return gdf
+
+
+ALL_ZERO_INPUTS = {"grid": all_zero_grid_gdf, "voronoi": all_zero_voronoi_gdf}
+
+
+@pytest.mark.parametrize("input_name", sorted(ALL_ZERO_INPUTS))
+@pytest.mark.parametrize(("layout_name", "options"), LAYOUT_CASES)
+class TestAllZeroSizingColumn:
+    """Every sizing value being zero is still valid input."""
+
+    def test_no_exception_and_no_runtime_warning(self, input_name, layout_name, options):
+        gdf = ALL_ZERO_INPUTS[input_name]()
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            np.seterr(all="warn")
+            run_layout(gdf, layout_name, options)
+        runtime = [w for w in caught if issubclass(w.category, RuntimeWarning)]
+        assert not runtime, [str(w.message) for w in runtime]
+
+    def test_row_count_and_finite_positions(self, input_name, layout_name, options):
+        gdf = ALL_ZERO_INPUTS[input_name]()
+        data, result, positions = run_layout(gdf, layout_name, options)
+        assert len(result.transforms) == len(gdf)
+        assert np.isfinite(positions).all()
+        assert (data.sizes == 0).all()
+
+
+@pytest.mark.parametrize("input_name", sorted(ALL_ZERO_INPUTS))
+def test_grid_layout_terminates_with_all_zero_sizes(input_name):
+    """The grid lattice must have a positive cell size.
+
+    A zero cell size gives a lattice step of zero, so tile generation walks
+    the bounds forever.
+    """
+    gdf = ALL_ZERO_INPUTS[input_name]()
+    _, result, _ = run_layout(gdf, "grid", {})
+    assert result.metrics.algorithm.tile_size > 0
+    assert 0 < result.metrics.algorithm.n_tiles < 10_000
+
+
+@pytest.mark.parametrize("tiling_name", ["square", "hexagon", "triangle"])
+def test_tiling_rejects_non_positive_tile_size(tiling_name):
+    """Tile generation refuses a size it could never step across the bounds with."""
+    tiling = resolve_tiling(tiling_name)
+    with pytest.raises(ValueError, match="tile_size must be positive"):
+        tiling.generate(bounds=(0.0, 0.0, 10.0, 10.0), tile_size=0.0)
+
+
+@pytest.mark.parametrize("input_name", sorted(ALL_ZERO_INPUTS))
+def test_force_layouts_leave_zero_size_symbols_at_their_centroids(input_name):
+    """With nothing to pack, the force-based layouts are a no-op."""
+    gdf = ALL_ZERO_INPUTS[input_name]()
+    for layout_name in ("centroid", "flow_density", "packing", "physics"):
+        data, _, positions = run_layout(gdf, layout_name, {})
+        assert positions == pytest.approx(data.positions, abs=1e-9), layout_name

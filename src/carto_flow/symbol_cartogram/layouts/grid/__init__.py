@@ -153,7 +153,7 @@ class GridBasedLayout(Layout):
         self._options = _apply_kwargs_to_options(options, kwargs)
         self._options.validate()
 
-    def compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
+    def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Run grid assignment and return result.
 
         Parameters

@@ -479,13 +479,16 @@ class MosaicLayout(Layout):
 
     """
 
+    #: ``group_by`` defines the blocks kept contiguous by tile assignment and repair.
+    supports_group_by = True
+
     def __init__(self, options: MosaicLayoutOptions | None = None, /, **kwargs) -> None:
         if options is None:
             options = MosaicLayoutOptions()
         self._options = _apply_kwargs_to_options(options, kwargs)
         self._options.validate()
 
-    def compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
+    def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Run mosaic assignment and return result.
 
         Parameters

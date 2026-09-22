@@ -268,6 +268,9 @@ class CirclePackingLayout(Layout):
 
     """
 
+    #: ``group_by`` drives the Stage 2 group attraction force (``group_weight``).
+    supports_group_by = True
+
     # ------------------------------------------------------------------
     # Named presets
     # ------------------------------------------------------------------
@@ -393,7 +396,7 @@ class CirclePackingLayout(Layout):
         self._options = _apply_kwargs_to_options(options, kwargs)
         self._options.validate()
 
-    def compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
+    def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Run circle packing simulation and return result.
 
         Parameters

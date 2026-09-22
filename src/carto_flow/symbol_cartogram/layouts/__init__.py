@@ -1,6 +1,13 @@
 """Layout subpackage: all layout classes and registry."""
 
-from .base import Layout, _apply_kwargs_to_options, get_layout, register_layout
+from .base import (
+    Layout,
+    _apply_kwargs_to_options,
+    check_group_by_support,
+    get_layout,
+    group_by_layouts,
+    register_layout,
+)
 from .centroid import CentroidLayout, CentroidLayoutOptions, CentroidMetrics
 from .data_prep import LayoutData, compute_symbol_sizes, prepare_layout_data
 from .flow import FlowDensityHistory, FlowDensityLayout, FlowDensityLayoutOptions, FlowDensityMetrics
@@ -47,8 +54,10 @@ __all__ = [
     "SimulationHistory",
     "Transform",
     "_apply_kwargs_to_options",
+    "check_group_by_support",
     "compute_symbol_sizes",
     "get_layout",
+    "group_by_layouts",
     "prepare_layout_data",
     "register_layout",
 ]

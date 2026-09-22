@@ -499,6 +499,33 @@ class TestTopologyMetrics:
         assert 1 <= metrics.repair_passes <= 8
         assert result.metrics.iterations == metrics.repair_passes
 
+    def test_repair_loop_assignment_is_pinned(self):
+        """The exact tiles each region owns on the 4x3 fixture.
+
+        Pins the output of the connectivity-repair loop, whose gap-bridge
+        cost reduction and disconnected-tile tie-break weight are fixed
+        constants rather than options.
+        """
+        expected = [
+            [25, 26, 37, 38],
+            [27, 28, 39],
+            [29, 30, 40, 41, 42],
+            [31, 43, 54, 55],
+            [36, 48, 49, 60, 61, 72],
+            [50, 51, 62],
+            [52, 63, 64, 75],
+            [53, 65, 66, 77, 78],
+            [59, 71, 83],
+            [73, 74, 84, 85],
+            [86, 87, 98],
+            [76, 88, 89, 99, 100],
+        ]
+        result = compute(grid_gdf(4, 3, COUNTS_4X3))
+
+        grouped = tiles_by_key(result, list(range(len(COUNTS_4X3))))
+        tiles_of_region = [sorted(int(result.assignments[s]) for s in grouped[g]) for g in range(len(COUNTS_4X3))]
+        assert tiles_of_region == expected
+
     def test_converged_true_when_contiguous(self):
         """The 4x3 fixture is fully contiguous with exact counts."""
         gdf = grid_gdf(4, 3, COUNTS_4X3)

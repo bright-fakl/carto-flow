@@ -180,8 +180,7 @@ $$
 $$
 
 where $n_{\text{split}}$ is the number of **regions** (with `group_by`: groups) whose tiles do
-not form a single connected block, and $w_{\text{disc}} = $ `disconnected_score_weight`
-(default 100). The first term decides; the second only separates iterations that split the same
+not form a single connected block, and $w_{\text{disc}} = 100$. The first term decides; the second only separates iterations that split the same
 number of regions, prioritising intra-region contiguity over inter-region adjacency.
 
 Ranking by split regions rather than by disconnected tiles matters: an iteration can cut the
@@ -281,7 +280,6 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `neighbor_bfs` | `False` | Measure neighbour proximity in tile-graph hops instead of distance. |
 | `max_connectivity_iters` | 15 | Maximum connectivity repair iterations. |
 | `disconnected_penalty_mult` | 10.0 | Cost raise for disconnected tiles (x current max cost). |
-| `disconnected_score_weight` | 100 | Tie-break weight per disconnected tile vs. per gap. |
 | `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
 | `ring_swapback_max_hops` | 16 | BFS search radius for the extra-ring swap-back; 0 disables it. |
 

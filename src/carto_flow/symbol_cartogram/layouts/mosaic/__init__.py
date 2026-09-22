@@ -352,13 +352,6 @@ class HungarianOptions:
     disconnected_penalty_mult : float
         Per-iteration cost raise for intra-region disconnected tiles:
         ``cost_iter.max() x disconnected_penalty_mult``.
-    disconnected_score_weight : int
-        How many gap-pairs a single disconnected tile counts as in the
-        *tie-breaking* score.  The repair loop first compares the number of
-        split regions (or groups); this score only separates assignments that
-        split the same number of them.  Only the ratio to the gap weight
-        (fixed at 1) matters; higher values prioritise intra-region
-        connectivity over inter-region adjacency.
     neighbor_weight : float
         Weight on the neighbor cost term. After each solve, penalizes placing
         geometry g's tiles far from the pool centroids of g's geographic
@@ -390,7 +383,6 @@ class HungarianOptions:
     interior_bonus: float = 2.0
     max_connectivity_iters: int = 15
     disconnected_penalty_mult: float = 10.0
-    disconnected_score_weight: int = 100
     neighbor_weight: float = 0.3
     neighbor_bfs: bool = False
     swap_repair_passes: int = 10

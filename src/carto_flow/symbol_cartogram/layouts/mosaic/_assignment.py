@@ -19,6 +19,11 @@ __all__ = [
 # the connectivity-repair loop, as a multiple of the static cost maximum.
 _GAP_BRIDGE_MULT = 5.0
 
+# How many inter-region gap pairs a single disconnected tile counts as in the
+# tie-breaking score of the connectivity-repair loop.  Only the ratio to the
+# gap weight (fixed at 1) matters.
+_DISCONNECTED_SCORE_WEIGHT = 100
+
 
 # ---------------------------------------------------------------------------
 # Cost matrix and connectivity helpers
@@ -439,7 +444,7 @@ def hungarian_morphed_assignment(
             split_units = len({int(group_labels[g]) for _, g in disconnected})
         else:
             split_units = len({g for _, g in disconnected})
-        tile_gap_score = len(disconnected) * options.disconnected_score_weight + len(inter_state_gaps)
+        tile_gap_score = len(disconnected) * _DISCONNECTED_SCORE_WEIGHT + len(inter_state_gaps)
         score = (split_units, tile_gap_score)
 
         if show_progress:

@@ -11,6 +11,21 @@ from tqdm import tqdm
 _MAX_EXPANSION_FACTOR = 2.0
 
 
+def _distance_in_radii(distance: NDArray[np.floating], radii: NDArray[np.floating]) -> NDArray[np.float64]:
+    """Express a distance as a multiple of each symbol's radius.
+
+    A symbol whose sizing value is zero has no radius, so any positive
+    distance from it is infinitely many radii away; the ratio is ``inf``
+    for those symbols.
+    """
+    return np.divide(
+        distance,
+        radii,
+        out=np.full(np.shape(distance), np.inf, dtype=float),
+        where=radii > 0,
+    )
+
+
 class ExponentialMovingStats:
     """EMA tracker for mean and std of vector-valued observations.
 
@@ -668,7 +683,7 @@ class TopologyPreservingSimulator:
                 # Compute force magnitude based on mode
                 if self.force_mode == "direction":
                     # Default: constant magnitude with drop-off near centroid
-                    w_compact = np.clip(dn_valid / self.radii[valid], 0, 1)  # (k,)
+                    w_compact = np.clip(_distance_in_radii(dn_valid, self.radii[valid]), 0, 1)  # (k,)
                     force_mag = self.compactness * w_compact  # (k,)
 
                 elif self.force_mode == "linear":
@@ -677,10 +692,10 @@ class TopologyPreservingSimulator:
 
                 elif self.force_mode == "normalized":
                     # Normalized: force proportional to distance / radius
-                    force_mag = self.compactness * (dn_valid / self.radii[valid])  # (k,)
+                    force_mag = self.compactness * _distance_in_radii(dn_valid, self.radii[valid])  # (k,)
                 else:
                     # Fallback to direction mode
-                    w_compact = np.clip(dn_valid / self.radii[valid], 0, 1)
+                    w_compact = np.clip(_distance_in_radii(dn_valid, self.radii[valid]), 0, 1)
                     force_mag = self.compactness * w_compact
 
                 # Apply to valid indices
@@ -703,7 +718,7 @@ class TopologyPreservingSimulator:
                 # Compute force magnitude based on mode
                 if self.force_mode == "direction":
                     # Default: constant magnitude with drop-off near origin
-                    w_origin = np.clip(dist[valid] / self.radii[valid], 0, 1)  # (k,)
+                    w_origin = np.clip(_distance_in_radii(dist[valid], self.radii[valid]), 0, 1)  # (k,)
                     force_mag = self.origin_weight * w_origin  # (k,)
 
                 elif self.force_mode == "linear":
@@ -712,10 +727,10 @@ class TopologyPreservingSimulator:
 
                 elif self.force_mode == "normalized":
                     # Normalized: force proportional to distance / radius
-                    force_mag = self.origin_weight * (dist[valid] / self.radii[valid])  # (k,)
+                    force_mag = self.origin_weight * _distance_in_radii(dist[valid], self.radii[valid])  # (k,)
                 else:
                     # Fallback to direction mode
-                    w_origin = np.clip(dist[valid] / self.radii[valid], 0, 1)
+                    w_origin = np.clip(_distance_in_radii(dist[valid], self.radii[valid]), 0, 1)
                     force_mag = self.origin_weight * w_origin
 
                 # Apply force
@@ -734,14 +749,14 @@ class TopologyPreservingSimulator:
                     direction = displacement[valid] / dist[valid, None]
                     r_mask = self.radii[mask]
                     if self.force_mode == "direction":
-                        w = np.clip(dist[valid] / r_mask[valid], 0, 1)
+                        w = np.clip(_distance_in_radii(dist[valid], r_mask[valid]), 0, 1)
                         force_mag = self.group_weight * w
                     elif self.force_mode == "linear":
                         force_mag = self.group_weight * dist[valid]
                     elif self.force_mode == "normalized":
-                        force_mag = self.group_weight * (dist[valid] / r_mask[valid])
+                        force_mag = self.group_weight * _distance_in_radii(dist[valid], r_mask[valid])
                     else:
-                        w = np.clip(dist[valid] / r_mask[valid], 0, 1)
+                        w = np.clip(_distance_in_radii(dist[valid], r_mask[valid]), 0, 1)
                         force_mag = self.group_weight * w
                     idx = np.where(mask)[0][valid]
                     F[idx] += force_mag[:, None] * direction
@@ -867,8 +882,16 @@ class TopologyPreservingSimulator:
             )
         self._disp_stats.update(displacement)
 
-        drift = float(np.mean(self._disp_stats.mean_magnitude / self.radii))
-        jitter = float(np.mean(self._disp_stats.std_magnitude / self.radii))
+        # Displacement is measured relative to symbol size. Symbols with a zero
+        # sizing value have no radius to measure against and are left out of
+        # the averages; when every symbol is zero-sized there is nothing to
+        # pack and both statistics are zero.
+        sized = self.radii > 0
+        if np.any(sized):
+            drift = float(np.mean(self._disp_stats.mean_magnitude[sized] / self.radii[sized]))
+            jitter = float(np.mean(self._disp_stats.std_magnitude[sized] / self.radii[sized]))
+        else:
+            drift = jitter = 0.0
 
         return drift, jitter
 

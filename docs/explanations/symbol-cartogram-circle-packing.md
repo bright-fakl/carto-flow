@@ -321,14 +321,18 @@ The simulator converges when the system reaches a steady state, detected by trac
 **Drift and jitter metrics:**
 
 $$
-\text{drift} = \frac{1}{n} \sum_{i=1}^{n} \frac{\|\boldsymbol{\mu}_i\|}{r_i}
+\text{drift} = \frac{1}{|S|} \sum_{i \in S} \frac{\|\boldsymbol{\mu}_i\|}{r_i}
 $$
 
 $$
-\text{jitter} = \frac{1}{n} \sum_{i=1}^{n} \frac{\sigma_i}{r_i}
+\text{jitter} = \frac{1}{|S|} \sum_{i \in S} \frac{\sigma_i}{r_i}
 $$
 
-where $\boldsymbol{\mu}_i$ and $\sigma_i$ are the EMA mean and standard deviation of the displacement vector for circle $i$.
+where $\boldsymbol{\mu}_i$ and $\sigma_i$ are the EMA mean and standard deviation of the displacement vector for circle $i$, and $S = \{i : r_i > 0\}$.
+
+Both metrics measure displacement in units of circle radius, so a circle of zero radius — produced by a zero sizing value — has no scale to measure against and is left out of the averages. When every circle has zero radius there is nothing to pack and both metrics are zero.
+
+A zero-radius circle still takes part in the force computation. It cannot overlap and cannot be pushed apart from a neighbour, but the centroid, origin, and group attraction forces still act on it. In `direction` mode their magnitudes $\min(1, d_i / r_i)$ are at their maximum for such a circle, since any positive distance is infinitely many radii.
 
 **Convergence condition:**
 

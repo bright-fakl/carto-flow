@@ -154,7 +154,7 @@ class Layout(ABC):
         Whether the layout lets the ``group_by`` grouping affect placement.
         Class-level flag; layouts that only pass the group labels through to
         the result for styling leave it False, and ``group_by`` then raises.
-    default_size_normalization : str
+    default_size_normalization : {"max", "total"}
         Which ``size_normalization`` the pipeline applies when the caller
         does not pass one. Class-level flag; layouts that set their own
         symbol scale from a tile lattice override it.

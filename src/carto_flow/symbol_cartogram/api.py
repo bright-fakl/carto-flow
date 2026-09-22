@@ -80,7 +80,7 @@ def create_symbol_cartogram(
         Reference max value for consistent scaling across cartograms.
     size_clip : bool
         Whether to clip values exceeding size_max_value.
-    size_normalization : str, optional
+    size_normalization : {"max", "total"}, optional
         How to normalise symbol sizes relative to original geometry areas:
 
         - ``"total"``: all sizes are scaled so that the total symbol area
@@ -237,7 +237,7 @@ def create_layout(
         Reference max value for consistent scaling across cartograms.
     size_clip : bool
         Whether to clip values exceeding size_max_value.
-    size_normalization : str, optional
+    size_normalization : {"max", "total"}, optional
         How to normalise symbol sizes relative to original geometry areas:
 
         - ``"total"``: all sizes are scaled so that the total symbol area

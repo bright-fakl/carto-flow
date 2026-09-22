@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -155,7 +155,7 @@ class GridBasedLayout(Layout):
 
     """
 
-    default_size_normalization = "max"
+    default_size_normalization: ClassVar[Literal["max", "total"]] = "max"
 
     def __init__(self, options: GridBasedLayoutOptions | None = None, /, **kwargs) -> None:
         if options is None:

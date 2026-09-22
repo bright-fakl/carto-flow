@@ -222,7 +222,7 @@ def prepare_layout_data(
         or "area_weighted" (neighbor area fraction).
     distance_tolerance : float, optional
         Buffer for adjacency detection.
-    size_normalization : str
+    size_normalization : {"max", "total"}
         How to normalise symbol sizes after tile expansion, relative to
         original geometry areas:
 
@@ -294,6 +294,14 @@ def prepare_layout_data(
 
     if not 0 <= collapse_group <= 1:
         raise ValueError("collapse_group must be between 0 and 1")
+
+    if size_normalization not in ("max", "total"):
+        raise ValueError(
+            f"Unknown size_normalization {size_normalization!r}: symbol sizes have no "
+            f'anchor to normalise against. Valid options: "total" (total symbol area equals '
+            f'the total geometry area) or "max" (largest symbol has the mean geometry area). '
+            f"Pass one of those, or omit the argument to take the layout's own default."
+        )
 
     if len(gdf) == 0:
         raise ValueError("GeoDataFrame is empty")

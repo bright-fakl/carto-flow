@@ -471,3 +471,59 @@ class TestSizeNormalizationDefault:
             as_max.symbols.geometry.area.to_numpy(),
             as_total.symbols.geometry.area.to_numpy(),
         )
+
+
+class TestSizeNormalizationValidation:
+    """An unrecognised ``size_normalization`` is rejected, not silently ignored."""
+
+    @pytest.mark.parametrize("bad", ["Total", "totals", "mean", "", None, 1])
+    def test_invalid_value_raises(self, bad):
+        """Anything outside the two options raises rather than falling back."""
+        from carto_flow.symbol_cartogram.layouts import prepare_layout_data
+
+        gdf = make_grid_gdf()
+        with pytest.raises(ValueError, match="Unknown size_normalization"):
+            prepare_layout_data(gdf, "population", size_normalization=bad)
+
+    def test_message_names_the_value_and_the_valid_options(self):
+        """The message is actionable: what was passed, and what is accepted."""
+        from carto_flow.symbol_cartogram.layouts import prepare_layout_data
+
+        gdf = make_grid_gdf()
+        with pytest.raises(ValueError) as excinfo:
+            prepare_layout_data(gdf, "population", size_normalization="Total")
+
+        message = str(excinfo.value)
+        assert "'Total'" in message
+        assert '"total"' in message
+        assert '"max"' in message
+
+    @pytest.mark.parametrize("valid", ["max", "total"])
+    def test_valid_values_still_accepted(self, valid):
+        """Both documented options keep working."""
+        from carto_flow.symbol_cartogram.layouts import prepare_layout_data
+
+        gdf = make_grid_gdf()
+        data = prepare_layout_data(gdf, "population", size_normalization=valid)
+
+        assert len(data.sizes) == len(gdf)
+
+    def test_entry_points_reject_the_value_too(self):
+        """The guard sits where every entry point funnels through."""
+        from carto_flow.symbol_cartogram import create_layout, create_symbol_cartogram
+
+        gdf = make_grid_gdf()
+        for call in (create_layout, create_symbol_cartogram):
+            with pytest.raises(ValueError, match="Unknown size_normalization"):
+                call(gdf, "population", size_normalization="mean", show_progress=False)
+
+    def test_layout_defaults_still_resolve(self):
+        """Omitting the argument still reaches the layout's own default."""
+        from carto_flow.symbol_cartogram import create_layout
+
+        gdf = make_grid_gdf()
+        packed = create_layout(gdf, "population", layout="topology", show_progress=False)
+        gridded = create_layout(gdf, "population", layout="grid", show_progress=False)
+
+        assert float(np.pi * np.sum(packed.sizes**2)) == pytest.approx(float(gdf.geometry.area.sum()))
+        assert float(np.pi * np.max(gridded.sizes) ** 2) == pytest.approx(float(gdf.geometry.area.mean()))

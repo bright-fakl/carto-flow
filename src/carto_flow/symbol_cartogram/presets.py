@@ -71,7 +71,7 @@ def centroid_cartogram(
     expansion : float
         Stage 1 expansion fraction (0-1). 1 = full exact expansion (default);
         0 = Gauss-Seidel only (more topology-preserving). Default: 1.0
-    size_normalization : str
+    size_normalization : {"max", "total"}
         ``"total"`` (total symbol area equals total geometry area) or
         ``"max"`` (largest symbol has the mean geometry area, so coverage is
         ``mean(value) / max(value)``). Default: ``"total"``
@@ -119,7 +119,7 @@ def dorling_cartogram(
         Topology preservation strength (0-1). Default: 0.0
     neighbor_weight : float
         Neighbor tangency force strength. Default: 0.0
-    size_normalization : str
+    size_normalization : {"max", "total"}
         ``"total"`` (total symbol area equals total geometry area) or
         ``"max"`` (largest symbol has the mean geometry area, so coverage is
         ``mean(value) / max(value)``). Default: ``"total"``
@@ -171,7 +171,7 @@ def geographic_cartogram(
         Topology preservation strength (0-1). Default: 0.5
     neighbor_weight : float
         Neighbor tangency force strength. Default: 0.5
-    size_normalization : str
+    size_normalization : {"max", "total"}
         ``"total"`` (total symbol area equals total geometry area) or
         ``"max"`` (largest symbol has the mean geometry area, so coverage is
         ``mean(value) / max(value)``). Default: ``"total"``
@@ -234,7 +234,7 @@ def dorling_grouped_cartogram(
         Fraction to collapse group members toward their group centroid before
         Stage 1 (0-1). 1.0 = fully coincident (recommended to prevent
         intermingling). Default: 1.0
-    size_normalization : str
+    size_normalization : {"max", "total"}
         ``"total"`` (total symbol area equals total geometry area) or
         ``"max"`` (largest symbol has the mean geometry area, so coverage is
         ``mean(value) / max(value)``). Default: ``"total"``
@@ -303,7 +303,7 @@ def geographic_grouped_cartogram(
         Fraction to collapse group members toward their group centroid before
         Stage 1 (0-1). 1.0 = fully coincident (recommended to prevent
         intermingling). Default: 1.0
-    size_normalization : str
+    size_normalization : {"max", "total"}
         ``"total"`` (total symbol area equals total geometry area) or
         ``"max"`` (largest symbol has the mean geometry area, so coverage is
         ``mean(value) / max(value)``). Default: ``"total"``

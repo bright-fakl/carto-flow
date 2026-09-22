@@ -85,6 +85,10 @@ and is used to seed the initial tile assignment.
 so that group-level styling overrides and `to_geodataframe(level="group")` can
 aggregate symbols by group. It also sets `group_ids_G`, the same labels at
 geometry level, for layouts that group geometries rather than symbols (mosaic).
+Only layouts whose placement honours the grouping accept it: each layout class
+declares this with the `supports_group_by` class attribute, and `create_layout`
+raises `ValueError` for the others rather than silently placing symbols as if
+no grouping had been given.
 `tile_count` cannot be combined with `group_by`, so it leaves `group_ids_G` as
 `None` and `group_ids` simply records which geometry each tile came from.
 `None` means *each geometry is its own group* rather than *no grouping*: the

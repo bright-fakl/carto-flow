@@ -69,7 +69,8 @@ def create_symbol_cartogram(
     group_by : str, optional
         Column for grouping symbols. When provided, group_index is stored
         on the result for group-level styling and export. Cannot be combined
-        with tile_count.
+        with tile_count. Raises ValueError for layouts whose placement
+        ignores the grouping (see ``Layout.supports_group_by``).
     layout : Layout or str
         Layout instance or string shorthand ("physics", "topology", "grid").
         Pass a Layout instance for full control over algorithm options.
@@ -220,6 +221,8 @@ def create_layout(
         Column with integer tile counts. Cannot be combined with group_by.
     group_by : str, optional
         Column for grouping symbols. Cannot be combined with tile_count.
+        Raises ValueError for layouts whose placement ignores the grouping
+        (see ``Layout.supports_group_by``).
     layout : Layout or str
         Layout instance or string shorthand ("physics", "topology", "grid").
     size_scale : str
@@ -277,11 +280,14 @@ def create_layout(
     >>> cartogram = result.style(symbol="hexagon", scale=0.9)
 
     """
-    from .layouts import get_layout, prepare_layout_data
+    from .layouts import check_group_by_support, get_layout, prepare_layout_data
 
     # Resolve layout
     if isinstance(layout, str):
         layout = get_layout(layout)
+
+    # Fail before any preprocessing when the layout would ignore group_by
+    check_group_by_support(layout, group_by is not None)
 
     # Preprocess
     data = prepare_layout_data(

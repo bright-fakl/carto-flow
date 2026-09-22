@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -95,14 +96,124 @@ def get_layout(name: str) -> Layout:
 # ---------------------------------------------------------------------------
 
 
+def group_by_layouts() -> list[str]:
+    """Return the registered layout names whose placement honours ``group_by``.
+
+    Returns
+    -------
+    list[str]
+        Registered names, one per supporting layout class (aliases dropped).
+
+    """
+    names: list[str] = []
+    seen: set[type] = set()
+    for name, cls in sorted(_LAYOUT_REGISTRY.items()):
+        if getattr(cls, "supports_group_by", False) and cls not in seen:
+            seen.add(cls)
+            names.append(name)
+    return names
+
+
+def check_group_by_support(layout: Layout, has_group_by: bool) -> None:
+    """Raise if ``group_by`` was requested for a layout that ignores it.
+
+    Parameters
+    ----------
+    layout : Layout
+        Layout that will run.
+    has_group_by : bool
+        Whether the user supplied a ``group_by`` grouping.
+
+    Raises
+    ------
+    ValueError
+        If ``has_group_by`` is True and the layout does not support it.
+
+    """
+    if not has_group_by or layout.supports_group_by:
+        return
+    supported = ", ".join(group_by_layouts()) or "none"
+    raise ValueError(
+        f"Layout {type(layout).__name__} does not support group_by: it would ignore the "
+        f"grouping and place symbols as if it were absent. Layouts that honour group_by: "
+        f"{supported}. Drop group_by or use one of those layouts."
+    )
+
+
 class Layout(ABC):
     """Abstract base for layout algorithms.
 
     Layouts compute positions and transforms, returning immutable LayoutResult.
+
+    Subclasses implement :meth:`_compute`; the public :meth:`compute` validates
+    the request first.
+
+    Attributes
+    ----------
+    supports_group_by : bool
+        Whether the layout lets the ``group_by`` grouping affect placement.
+        Class-level flag; layouts that only pass the group labels through to
+        the result for styling leave it False, and ``group_by`` then raises.
+
     """
 
-    @abstractmethod
+    supports_group_by: ClassVar[bool] = False
+
     def compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
+        """Validate the request, then run the layout algorithm.
+
+        Parameters
+        ----------
+        data : LayoutData
+            Preprocessed data from prepare_layout_data().
+        show_progress : bool
+            Display progress feedback during placement.
+        save_history : bool
+            Record position snapshots per iteration.
+
+        Returns
+        -------
+        LayoutResult
+            Immutable result with canonical symbol and transforms.
+
+        Raises
+        ------
+        ValueError
+            If the data carries a ``group_by`` grouping and the layout does
+            not support it.
+
+        Warns
+        -----
+        UserWarning
+            If the layout supports ``group_by`` but the option that acts on
+            the grouping is still at its inert default.
+
+        """
+        has_group_by = data.group_ids_G is not None
+        check_group_by_support(self, has_group_by)
+        if has_group_by:
+            message = self._inert_group_by_warning()
+            if message is not None:
+                warnings.warn(message, UserWarning, stacklevel=2)
+        return self._compute(data, show_progress=show_progress, save_history=save_history)
+
+    def _inert_group_by_warning(self) -> str | None:
+        """Describe why this layout's grouping force is currently inert.
+
+        Layouts that act on ``group_by`` through an option which defaults to
+        a no-op override this to explain which option to set. The default
+        returns None (nothing to say).
+
+        Returns
+        -------
+        str or None
+            Warning message, or None when the grouping will take effect.
+
+        """
+        return None
+
+    @abstractmethod
+    def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Run layout algorithm and return immutable result.
 
         Parameters

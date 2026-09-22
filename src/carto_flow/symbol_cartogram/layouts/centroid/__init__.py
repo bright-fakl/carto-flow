@@ -104,13 +104,16 @@ class CentroidLayout(Layout):
 
     """
 
+    #: ``group_by`` drives the intra-group attraction step (``group_attraction``).
+    supports_group_by = True
+
     def __init__(self, options: CentroidLayoutOptions | None = None, /, **kwargs) -> None:
         if options is None:
             options = CentroidLayoutOptions()
         self._options = _apply_kwargs_to_options(options, kwargs)
         self._options.validate()
 
-    def compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
+    def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Place symbols at centroids with optional overlap removal.
 
         Parameters

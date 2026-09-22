@@ -268,6 +268,9 @@ class CirclePackingLayout(Layout):
 
     """
 
+    #: ``group_by`` drives the Stage 2 group attraction force (``group_weight``).
+    supports_group_by = True
+
     # ------------------------------------------------------------------
     # Named presets
     # ------------------------------------------------------------------
@@ -393,7 +396,17 @@ class CirclePackingLayout(Layout):
         self._options = _apply_kwargs_to_options(options, kwargs)
         self._options.validate()
 
-    def compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
+    def _inert_group_by_warning(self) -> str | None:
+        """Warn when group_by was given but the group force is switched off."""
+        if self._options.group_weight > 0:
+            return None
+        return (
+            "group_by was given to CirclePackingLayout but group_weight is 0.0, so the grouping "
+            "does not affect placement. Set group_weight (e.g. CirclePackingLayout(group_weight=0.5), "
+            "optionally with collapse_group in create_layout) to group symbols."
+        )
+
+    def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Run circle packing simulation and return result.
 
         Parameters

@@ -222,13 +222,27 @@ class FlowDensityLayout(Layout):
 
     """
 
+    #: ``group_by`` selects cross-group pairs (``cross_group_pull_scale``).
+    supports_group_by = True
+
     def __init__(self, options: FlowDensityLayoutOptions | None = None, /, **kwargs) -> None:
         if options is None:
             options = FlowDensityLayoutOptions()
         self._options = _apply_kwargs_to_options(options, kwargs)
         self._options.validate()
 
-    def compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
+    def _inert_group_by_warning(self) -> str | None:
+        """Warn when group_by was given but cross-group pull is unattenuated."""
+        if self._options.cross_group_pull_scale != 1.0:
+            return None
+        return (
+            "group_by was given to FlowDensityLayout but cross_group_pull_scale is 1.0, so "
+            "cross-group pairs are pulled together exactly like within-group pairs and the "
+            "grouping does not affect placement. Set cross_group_pull_scale below 1.0 "
+            "(e.g. FlowDensityLayout(cross_group_pull_scale=0.0)) to separate groups."
+        )
+
+    def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Run flow-density advection and return result.
 
         Parameters

@@ -276,7 +276,7 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 |-----------|---------|-------------|
 | `distance_weight` | 1.0 | Centroid distance weight. Fix at 1.0 and tune the others relative to it. |
 | `outside_penalty` | 1.0 | Weight on the outside-fraction penalty. |
-| `interior_bonus` | 0.5 | Connectivity bonus weight (interior-tile preference). |
+| `interior_bonus` | 2.0 | Connectivity bonus weight (interior-tile preference). |
 | `neighbor_weight` | 0.3 | Weight on the neighbour-proximity term; 0 disables it. |
 | `neighbor_bfs` | `False` | Measure neighbour proximity in tile-graph hops instead of distance. |
 | `max_connectivity_iters` | 15 | Maximum connectivity repair iterations. |
@@ -285,6 +285,16 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `disconnected_score_weight` | 100 | Tie-break weight per disconnected tile vs. per gap. |
 | `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
 | `ring_swapback_max_hops` | 16 | BFS search radius for the extra-ring swap-back; 0 disables it. |
+
+The connectivity bonus is weighted heavily by default. Because it rewards tiles whose
+neighbours are also in the pool, raising it makes each region claim a tighter, rounder
+block and pushes the leftover surplus out to the periphery. That is what multi-tile
+regions and `group_by` groups need in order to stay in one piece. Two cases pull the
+other way: with one tile per region and `morph=False` there is no block to hold
+together, and a lower weight then places each symbol nearer its geographic neighbours
+and keeps the directions between them truer; and on finely divided inputs a weight well
+above the default starts to break groups apart, because holding one region's tiles
+together can only be paid for out of its neighbours'.
 
 The cost weights were renamed from `alpha` / `beta` / `delta` to `distance_weight` /
 `outside_penalty` / `interior_bonus` before the layout became public; there are no aliases.

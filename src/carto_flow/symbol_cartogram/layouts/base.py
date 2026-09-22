@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import warnings
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -154,10 +154,15 @@ class Layout(ABC):
         Whether the layout lets the ``group_by`` grouping affect placement.
         Class-level flag; layouts that only pass the group labels through to
         the result for styling leave it False, and ``group_by`` then raises.
+    default_size_normalization : str
+        Which ``size_normalization`` the pipeline applies when the caller
+        does not pass one. Class-level flag; layouts that set their own
+        symbol scale from a tile lattice override it.
 
     """
 
     supports_group_by: ClassVar[bool] = False
+    default_size_normalization: ClassVar[Literal["max", "total"]] = "total"
 
     def compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Validate the request, then run the layout algorithm.

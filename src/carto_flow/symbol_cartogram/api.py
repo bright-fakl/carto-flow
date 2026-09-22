@@ -33,7 +33,7 @@ def create_symbol_cartogram(
     size_scale: Literal["sqrt", "linear", "log"] = "sqrt",
     size_max_value: float | None = None,
     size_clip: bool = True,
-    size_normalization: Literal["max", "total"] = "max",
+    size_normalization: Literal["max", "total"] | None = None,
     tile_size_expansion: Literal["shared", "copied"] = "copied",
     collapse_group: float = 0.0,
     adjacency_mode: AdjacencyMode = AdjacencyMode.BINARY,
@@ -80,14 +80,20 @@ def create_symbol_cartogram(
         Reference max value for consistent scaling across cartograms.
     size_clip : bool
         Whether to clip values exceeding size_max_value.
-    size_normalization : str
+    size_normalization : str, optional
         How to normalise symbol sizes relative to original geometry areas:
 
-        - ``"max"`` *(default)*: the largest symbol has area equal to the mean
-          geometry area.
-        - ``"total"``: all sizes are scaled so that the total symbol area equals
-          the total original geometry area.  Useful when you want circle area-sum
-          to match the geographic area-sum (standard for Dorling cartograms).
+        - ``"total"``: all sizes are scaled so that the total symbol area
+          equals the total original geometry area (standard for Dorling
+          cartograms).
+        - ``"max"``: the largest symbol has area equal to the mean geometry
+          area.  With the default ``sqrt`` scale this makes the covered
+          fraction of the map equal ``mean(value) / max(value)``, so it
+          depends on how skewed the sizing column is.
+
+        When omitted, each layout picks its own default: ``"total"`` for the
+        layouts that place symbols by their radii, ``"max"`` for the grid
+        layout, whose tile lattice is calibrated from the largest symbol.
     collapse_group : float
         Pre-collapse starting positions toward each group's centroid (0-1).
         At 1.0 all items in a group start coincident at the group centroid,
@@ -194,7 +200,7 @@ def create_layout(
     size_scale: Literal["sqrt", "linear", "log"] = "sqrt",
     size_max_value: float | None = None,
     size_clip: bool = True,
-    size_normalization: Literal["max", "total"] = "max",
+    size_normalization: Literal["max", "total"] | None = None,
     tile_size_expansion: Literal["shared", "copied"] = "copied",
     collapse_group: float = 0.0,
     adjacency_mode: AdjacencyMode = AdjacencyMode.BINARY,
@@ -231,13 +237,20 @@ def create_layout(
         Reference max value for consistent scaling across cartograms.
     size_clip : bool
         Whether to clip values exceeding size_max_value.
-    size_normalization : str
+    size_normalization : str, optional
         How to normalise symbol sizes relative to original geometry areas:
 
-        - ``"max"`` *(default)*: the largest symbol has area equal to the mean
-          geometry area.
-        - ``"total"``: all sizes are scaled so that the total symbol area equals
-          the total original geometry area.
+        - ``"total"``: all sizes are scaled so that the total symbol area
+          equals the total original geometry area (standard for Dorling
+          cartograms).
+        - ``"max"``: the largest symbol has area equal to the mean geometry
+          area.  With the default ``sqrt`` scale this makes the covered
+          fraction of the map equal ``mean(value) / max(value)``, so it
+          depends on how skewed the sizing column is.
+
+        When omitted, each layout picks its own default: ``"total"`` for the
+        layouts that place symbols by their radii, ``"max"`` for the grid
+        layout, whose tile lattice is calibrated from the largest symbol.
     collapse_group : float
         Pre-collapse starting positions toward each group's centroid (0-1).
         At 1.0 all items in a group start coincident at the group centroid,
@@ -288,6 +301,9 @@ def create_layout(
 
     # Fail before any preprocessing when the layout would ignore group_by
     check_group_by_support(layout, group_by is not None)
+
+    if size_normalization is None:
+        size_normalization = layout.default_size_normalization
 
     # Preprocess
     data = prepare_layout_data(

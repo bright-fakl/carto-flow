@@ -179,7 +179,7 @@ def prepare_layout_data(
     size_clip: bool = True,
     adjacency_mode: AdjacencyMode | Literal["binary", "weighted", "area_weighted"] = "binary",
     distance_tolerance: float | None = None,
-    size_normalization: Literal["max", "total"] = "max",
+    size_normalization: Literal["max", "total"] = "total",
     tile_size_expansion: Literal["shared", "copied"] = "copied",
     collapse_group: float = 0.0,
     pre_scale: bool = False,
@@ -226,12 +226,16 @@ def prepare_layout_data(
         How to normalise symbol sizes after tile expansion, relative to
         original geometry areas:
 
-        - ``"max"`` *(default)*: the largest N-level symbol has area equal to
-          the mean geometry area (``π x unit_cell_radius²``).
-        - ``"total"``: all N-level sizes are scaled by a single global factor
-          so that ``Σ(π x size²) = Σ(geometry_area)``.  With ``"copied"``
-          expansion, this accounts for tile counts; with ``"shared"`` the
-          result equals what G-level normalisation would give.
+        - ``"total"`` *(default)*: all N-level sizes are scaled by a single
+          global factor so that ``Σ(π x size²) = Σ(geometry_area)``.  With
+          ``"copied"`` expansion, this accounts for tile counts; with
+          ``"shared"`` the result equals what G-level normalisation would
+          give.
+        - ``"max"``: the largest N-level symbol has area equal to the mean
+          geometry area (``π x unit_cell_radius²``).  With the default
+          ``sqrt`` scale the symbols then cover a fraction
+          ``mean(value) / max(value)`` of the total geometry area, so the
+          covered fraction follows the skew of the sizing column.
     tile_size_expansion : str
         How to expand symbol sizes when ``tile_count`` is set:
 
@@ -259,7 +263,7 @@ def prepare_layout_data(
         before any layout step. No effect for single-component inputs.
         This rescales geometry positions and areas, which affects layouts
         that read component geometry (e.g. mosaic). Symbol sizing under
-        ``size_normalization="max"`` (the default) and the ``mean_area``
+        ``size_normalization="max"`` and the ``mean_area``
         reported on the returned ``LayoutData`` are recomputed from the
         rescaled geometries, but are unaffected in practice: each
         component's rescaled area matches its share of the data by

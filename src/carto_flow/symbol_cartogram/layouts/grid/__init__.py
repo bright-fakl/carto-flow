@@ -145,7 +145,17 @@ class GridBasedLayout(Layout):
     >>> layout = GridBasedLayout(tiling="hexagon")
     >>> layout = GridBasedLayout(my_opts, neighbor_weight=0.5)
 
+    Notes
+    -----
+    The tile lattice is calibrated from the largest symbol, so
+    ``size_normalization`` rescales the whole grid — lattice and symbols
+    together — without changing how symbols are arranged. The layout
+    therefore defaults to ``"max"``, which keeps the grid at the scale of
+    the input geometries.
+
     """
+
+    default_size_normalization = "max"
 
     def __init__(self, options: GridBasedLayoutOptions | None = None, /, **kwargs) -> None:
         if options is None:

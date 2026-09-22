@@ -53,7 +53,7 @@ def centroid_cartogram(
     *,
     spacing: float = 0.05,
     expansion: float = 0.0,
-    size_normalization: Literal["max", "total"] = "max",
+    size_normalization: Literal["max", "total"] = "total",
     show_progress: bool = True,
 ) -> SymbolCartogram:
     """Place symbols at geographic centroids with overlap removal only.
@@ -72,7 +72,9 @@ def centroid_cartogram(
         Stage 1 expansion fraction (0-1). 1 = full exact expansion (default);
         0 = Gauss-Seidel only (more topology-preserving). Default: 1.0
     size_normalization : str
-        ``"max"`` or ``"total"``. Default: ``"max"``
+        ``"total"`` (total symbol area equals total geometry area) or
+        ``"max"`` (largest symbol has the mean geometry area, so coverage is
+        ``mean(value) / max(value)``). Default: ``"total"``
     show_progress : bool
         Display progress bar. Default: True
 
@@ -100,8 +102,8 @@ def dorling_cartogram(
     """Classic Dorling cartogram: compact proportional circles.
 
     Circles pack toward the global centroid; no origin attraction.
-    ``size_normalization`` defaults to ``"total"`` so total circle area equals
-    total geographic area (classic Dorling convention).
+    ``size_normalization`` is ``"total"`` so total circle area equals total
+    geographic area (classic Dorling convention).
 
     Parameters
     ----------
@@ -118,7 +120,9 @@ def dorling_cartogram(
     neighbor_weight : float
         Neighbor tangency force strength. Default: 0.0
     size_normalization : str
-        ``"max"`` or ``"total"``. Default: ``"total"``
+        ``"total"`` (total symbol area equals total geometry area) or
+        ``"max"`` (largest symbol has the mean geometry area, so coverage is
+        ``mean(value) / max(value)``). Default: ``"total"``
     show_progress : bool
         Display progress bar. Default: True
 
@@ -145,7 +149,7 @@ def geographic_cartogram(
     origin_weight: float = 0.5,
     topology_weight: float = 0.5,
     neighbor_weight: float = 0.5,
-    size_normalization: Literal["max", "total"] = "max",
+    size_normalization: Literal["max", "total"] = "total",
     show_progress: bool = True,
 ) -> SymbolCartogram:
     """Geography-preserving cartogram.
@@ -168,7 +172,9 @@ def geographic_cartogram(
     neighbor_weight : float
         Neighbor tangency force strength. Default: 0.5
     size_normalization : str
-        ``"max"`` or ``"total"``. Default: ``"max"``
+        ``"total"`` (total symbol area equals total geometry area) or
+        ``"max"`` (largest symbol has the mean geometry area, so coverage is
+        ``mean(value) / max(value)``). Default: ``"total"``
     show_progress : bool
         Display progress bar. Default: True
 
@@ -199,7 +205,7 @@ def dorling_grouped_cartogram(
     topology_weight: float = 0.5,
     neighbor_weight: float = 0.5,
     collapse_group: float = 1.0,
-    size_normalization: Literal["max", "total"] = "max",
+    size_normalization: Literal["max", "total"] = "total",
     show_progress: bool = True,
 ) -> SymbolCartogram:
     """Grouped Dorling cartogram: circles pack toward group centroids.
@@ -229,7 +235,9 @@ def dorling_grouped_cartogram(
         Stage 1 (0-1). 1.0 = fully coincident (recommended to prevent
         intermingling). Default: 1.0
     size_normalization : str
-        ``"max"`` or ``"total"``. Default: ``"max"``
+        ``"total"`` (total symbol area equals total geometry area) or
+        ``"max"`` (largest symbol has the mean geometry area, so coverage is
+        ``mean(value) / max(value)``). Default: ``"total"``
     show_progress : bool
         Display progress bar. Default: True
 
@@ -264,7 +272,7 @@ def geographic_grouped_cartogram(
     topology_weight: float = 0.5,
     neighbor_weight: float = 0.5,
     collapse_group: float = 1.0,
-    size_normalization: Literal["max", "total"] = "max",
+    size_normalization: Literal["max", "total"] = "total",
     show_progress: bool = True,
 ) -> SymbolCartogram:
     """Grouped geography-preserving cartogram.
@@ -296,7 +304,9 @@ def geographic_grouped_cartogram(
         Stage 1 (0-1). 1.0 = fully coincident (recommended to prevent
         intermingling). Default: 1.0
     size_normalization : str
-        ``"max"`` or ``"total"``. Default: ``"max"``
+        ``"total"`` (total symbol area equals total geometry area) or
+        ``"max"`` (largest symbol has the mean geometry area, so coverage is
+        ``mean(value) / max(value)``). Default: ``"total"``
     show_progress : bool
         Display progress bar. Default: True
 

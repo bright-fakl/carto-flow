@@ -211,8 +211,22 @@ SORT_SCRIPT = """
   if (!table) return;
   var body = table.tBodies[0];
   var state = {};
+  // Status sorts by how much attention an item still needs, not alphabetically:
+  // "needs review" before "deferred" before anything finished.
+  var STATUS_RANK = {
+    "needs review": 0,
+    "deferred": 1,
+    "reviewed": 2,
+    "merged": 3,
+    "closed": 4,
+    "superseded": 5
+  };
   function cellValue(row, i) {
     var text = (row.cells[i].innerText || "").trim();
+    if (i === 0) {                                                  // Status
+      var rank = STATUS_RANK[text.toLowerCase()];
+      return rank === undefined ? -1 : rank;                        // unknown first
+    }
     if (i === 1) return parseInt(text.replace("#", ""), 10) || -1;  // PR
     if (i === 5) return parseInt(text, 10) || 0;                    // Figures
     return text.toLowerCase();

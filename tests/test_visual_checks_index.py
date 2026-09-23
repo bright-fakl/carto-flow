@@ -184,3 +184,27 @@ class TestSetStatus:
         mod.set_status(directory, "reviewed")
 
         assert (directory / "summary.md").read_text().endswith("body\n")
+
+
+class TestStatusSortOrder:
+    def test_status_rank_matches_the_python_vocabulary(self, mod):
+        """The client-side rank table and the Python vocabulary must not drift."""
+        import re
+
+        ranks = dict(re.findall(r'"([a-z ]+)": (\d+)', mod.SORT_SCRIPT))
+
+        assert set(ranks) == mod.KNOWN_STATUSES
+        assert ranks["needs review"] == "0", "outstanding items must sort first"
+        assert int(ranks["deferred"]) < min(int(ranks[s]) for s in mod.DONE_STATUSES)
+
+    def test_list_status_puts_outstanding_first(self, mod, tmp_path, capsys):
+        done = _write(tmp_path, "a-done", pr=1, title="done", description="d", date="2026-06-03")
+        parked = _write(tmp_path, "b-parked", title="parked", description="d", date="2026-06-02")
+        todo = _write(tmp_path, "c-todo", title="todo", description="d", date="2026-06-01")
+        dirs = [mod.scan_pr_dir(p) for p in (done, parked, todo)]
+        statuses = {done: "merged", parked: "deferred", todo: "needs review"}
+
+        mod.list_status(dirs, statuses)
+
+        printed = [ln.split()[-1] for ln in capsys.readouterr().out.strip().split("\n")]
+        assert printed == ["c-todo", "b-parked", "a-done"]

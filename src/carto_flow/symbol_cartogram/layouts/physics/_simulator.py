@@ -236,7 +236,7 @@ class CirclePhysicsSimulator:
                     diff = self.positions[j] - self.positions[i]
                     dist = float(np.linalg.norm(diff))
                     target_dist = self.radii[i] + self.radii[j] + self.spacing
-                    if dist > 1e-10:
+                    if dist > 1e-10 and target_dist > 0:
                         gap_ratio = (dist - target_dist) / target_dist
                         max_gap_ratio = max(max_gap_ratio, gap_ratio)
         return max_gap_ratio
@@ -257,8 +257,10 @@ class CirclePhysicsSimulator:
                         direction = diff / dist
                         target_dist = self.radii[i] + self.radii[j] + self.spacing
 
-                        # Attract if farther than touching distance
-                        if dist > target_dist:
+                        # Attract if farther than touching distance. A zero
+                        # touching distance means both symbols are zero-sized
+                        # and there is no gap to measure against.
+                        if dist > target_dist > 0:
                             gap = dist - target_dist
                             local_gap_ratio = gap / target_dist
 

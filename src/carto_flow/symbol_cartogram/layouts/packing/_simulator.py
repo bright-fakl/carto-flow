@@ -11,6 +11,34 @@ from tqdm import tqdm
 _MAX_EXPANSION_FACTOR = 2.0
 
 
+def _distance_in_radii(distance: NDArray[np.floating], radii: NDArray[np.floating]) -> NDArray[np.float64]:
+    """Express a distance as a multiple of each symbol's radius.
+
+    A symbol whose sizing value is zero has no radius, so any positive
+    distance from it is infinitely many radii away; the ratio is ``inf``
+    for those symbols.
+    """
+    return np.divide(
+        distance,
+        radii,
+        out=np.full(np.shape(distance), np.inf, dtype=float),
+        where=radii > 0,
+    )
+
+
+def _area_weighted_centroid(positions: NDArray[np.floating], radii: NDArray[np.floating]) -> NDArray[np.float64]:
+    """Centroid of *positions* weighted by symbol area.
+
+    Falls back to the unweighted mean when every symbol is zero-sized and
+    the weights carry no information.
+    """
+    weights = radii**2
+    total = float(weights.sum())
+    if total <= 0:
+        return np.asarray(positions, dtype=float).mean(axis=0)
+    return (positions * weights[:, None]).sum(axis=0) / total
+
+
 class ExponentialMovingStats:
     """EMA tracker for mean and std of vector-valued observations.
 
@@ -316,8 +344,7 @@ class TopologyPreservingSimulator:
             self.u0 = np.empty((len(self.adj_pairs), 2))
 
         # Precompute original centroid for stable global compaction
-        weights = self.radii**2
-        self.original_centroid = (self.original_positions * weights[:, None]).sum(axis=0) / weights.sum()
+        self.original_centroid = _area_weighted_centroid(self.original_positions, self.radii)
 
         # Precompute upper triangular indices for vectorized overlap projection and contact reaction
         i_idx, j_idx = np.triu_indices(self.n, k=1)
@@ -337,8 +364,7 @@ class TopologyPreservingSimulator:
 
     def _weighted_centroid(self) -> NDArray[np.floating]:
         """Compute area-weighted centroid."""
-        weights = self.radii**2
-        return (self.positions * weights[:, None]).sum(axis=0) / weights.sum()
+        return _area_weighted_centroid(self.positions, self.radii)
 
     def _count_overlaps(self) -> int:
         """Count number of overlapping circle pairs."""
@@ -642,7 +668,7 @@ class TopologyPreservingSimulator:
                 n_ij = dx[idx] / d[idx, None]  # (p, 2)
 
                 # Strength
-                strength = np.minimum(gap[idx] / target[idx], 1.0)  # (p,)
+                strength = np.minimum(_distance_in_radii(gap[idx], target[idx]), 1.0)  # (p,)
 
                 # Neighbor force, weighted by adjacency
                 Fn = self.neighbor_weight * self.adj_weights[idx, None] * strength[:, None] * n_ij  # (p, 2)
@@ -668,7 +694,7 @@ class TopologyPreservingSimulator:
                 # Compute force magnitude based on mode
                 if self.force_mode == "direction":
                     # Default: constant magnitude with drop-off near centroid
-                    w_compact = np.clip(dn_valid / self.radii[valid], 0, 1)  # (k,)
+                    w_compact = np.clip(_distance_in_radii(dn_valid, self.radii[valid]), 0, 1)  # (k,)
                     force_mag = self.compactness * w_compact  # (k,)
 
                 elif self.force_mode == "linear":
@@ -677,10 +703,10 @@ class TopologyPreservingSimulator:
 
                 elif self.force_mode == "normalized":
                     # Normalized: force proportional to distance / radius
-                    force_mag = self.compactness * (dn_valid / self.radii[valid])  # (k,)
+                    force_mag = self.compactness * _distance_in_radii(dn_valid, self.radii[valid])  # (k,)
                 else:
                     # Fallback to direction mode
-                    w_compact = np.clip(dn_valid / self.radii[valid], 0, 1)
+                    w_compact = np.clip(_distance_in_radii(dn_valid, self.radii[valid]), 0, 1)
                     force_mag = self.compactness * w_compact
 
                 # Apply to valid indices
@@ -703,7 +729,7 @@ class TopologyPreservingSimulator:
                 # Compute force magnitude based on mode
                 if self.force_mode == "direction":
                     # Default: constant magnitude with drop-off near origin
-                    w_origin = np.clip(dist[valid] / self.radii[valid], 0, 1)  # (k,)
+                    w_origin = np.clip(_distance_in_radii(dist[valid], self.radii[valid]), 0, 1)  # (k,)
                     force_mag = self.origin_weight * w_origin  # (k,)
 
                 elif self.force_mode == "linear":
@@ -712,10 +738,10 @@ class TopologyPreservingSimulator:
 
                 elif self.force_mode == "normalized":
                     # Normalized: force proportional to distance / radius
-                    force_mag = self.origin_weight * (dist[valid] / self.radii[valid])  # (k,)
+                    force_mag = self.origin_weight * _distance_in_radii(dist[valid], self.radii[valid])  # (k,)
                 else:
                     # Fallback to direction mode
-                    w_origin = np.clip(dist[valid] / self.radii[valid], 0, 1)
+                    w_origin = np.clip(_distance_in_radii(dist[valid], self.radii[valid]), 0, 1)
                     force_mag = self.origin_weight * w_origin
 
                 # Apply force
@@ -734,14 +760,14 @@ class TopologyPreservingSimulator:
                     direction = displacement[valid] / dist[valid, None]
                     r_mask = self.radii[mask]
                     if self.force_mode == "direction":
-                        w = np.clip(dist[valid] / r_mask[valid], 0, 1)
+                        w = np.clip(_distance_in_radii(dist[valid], r_mask[valid]), 0, 1)
                         force_mag = self.group_weight * w
                     elif self.force_mode == "linear":
                         force_mag = self.group_weight * dist[valid]
                     elif self.force_mode == "normalized":
-                        force_mag = self.group_weight * (dist[valid] / r_mask[valid])
+                        force_mag = self.group_weight * _distance_in_radii(dist[valid], r_mask[valid])
                     else:
-                        w = np.clip(dist[valid] / r_mask[valid], 0, 1)
+                        w = np.clip(_distance_in_radii(dist[valid], r_mask[valid]), 0, 1)
                         force_mag = self.group_weight * w
                     idx = np.where(mask)[0][valid]
                     F[idx] += force_mag[:, None] * direction
@@ -842,7 +868,11 @@ class TopologyPreservingSimulator:
         # Integrate with fixed step clamping
         norms = np.linalg.norm(F, axis=1)
         scale = np.minimum(1.0, self.max_step / (norms + 1e-8))
-        effective_radius = self.avg_radius * (self.radii / self.avg_radius) ** self.size_sensitivity
+        if self.avg_radius > 0:
+            effective_radius = self.avg_radius * (self.radii / self.avg_radius) ** self.size_sensitivity
+        else:
+            # Every symbol is zero-sized: there is no step scale and nothing to pack.
+            effective_radius = np.zeros(self.n)
         step = F * scale[:, None] * effective_radius[:, None]
 
         # Smooth step via EMA
@@ -867,8 +897,16 @@ class TopologyPreservingSimulator:
             )
         self._disp_stats.update(displacement)
 
-        drift = float(np.mean(self._disp_stats.mean_magnitude / self.radii))
-        jitter = float(np.mean(self._disp_stats.std_magnitude / self.radii))
+        # Displacement is measured relative to symbol size. Symbols with a zero
+        # sizing value have no radius to measure against and are left out of
+        # the averages; when every symbol is zero-sized there is nothing to
+        # pack and both statistics are zero.
+        sized = self.radii > 0
+        if np.any(sized):
+            drift = float(np.mean(self._disp_stats.mean_magnitude[sized] / self.radii[sized]))
+            jitter = float(np.mean(self._disp_stats.std_magnitude[sized] / self.radii[sized]))
+        else:
+            drift = jitter = 0.0
 
         return drift, jitter
 
@@ -1031,7 +1069,9 @@ class TopologyPreservingSimulator:
         """
         stage1_info = self.run_overlap_resolution()
 
-        if max_iterations == 0:
+        # A zero average radius means every symbol is zero-sized: there is
+        # nothing to pack, so skip straight to the no-op result.
+        if max_iterations == 0 or self.avg_radius <= 0:
             final_positions = self.positions * self.scale + self.center
             info = {
                 "iterations": stage1_info["iterations"],

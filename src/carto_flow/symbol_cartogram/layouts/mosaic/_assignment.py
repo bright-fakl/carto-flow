@@ -24,6 +24,12 @@ _GAP_BRIDGE_MULT = 5.0
 # gap weight (fixed at 1) matters.
 _DISCONNECTED_SCORE_WEIGHT = 100
 
+# Per-iteration cost raise applied to intra-region disconnected tiles in the
+# connectivity-repair loop, as a multiple of the static cost maximum.  Any
+# multiple above 1 puts the tile out of contention outright, so the size of it
+# is not a knob -- see ``HungarianOptions.penalize_disconnected``.
+_DISCONNECTED_PENALTY_MULT = 10.0
+
 
 # ---------------------------------------------------------------------------
 # Cost matrix and connectivity helpers
@@ -469,7 +475,7 @@ def hungarian_morphed_assignment(
                 print(f"[mosaic]   Hungarian stopped — best split={best_score[0]} score={best_score[1]}")
             break
 
-        disc_penalty = cost_static_max * options.disconnected_penalty_mult
+        disc_penalty = cost_static_max * _DISCONNECTED_PENALTY_MULT if options.penalize_disconnected else 0.0
         bridge_bonus = cost_static_max * _GAP_BRIDGE_MULT
 
         # Raise cost for disconnected tiles

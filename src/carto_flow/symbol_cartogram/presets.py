@@ -8,10 +8,10 @@ For full control use ``create_symbol_cartogram`` or ``create_layout`` directly.
 -------------
 The four main cartogram styles differ on two axes:
 
-- **Grouped vs not grouped**: whether symbols belong to labelled groups
+- **Grouped vs not grouped**: whether symbols belong to labeled groups
   (``group_by`` / ``tile_count``).
 - **Pull toward origin vs toward centroid**: whether symbols stay close to
-  geographic positions or pack toward a common centre.
+  geographic positions or pack toward a common center.
 
 +------------------+-----------------------------+-----------------------------+
 |                  | Not grouped                 | Grouped                     |

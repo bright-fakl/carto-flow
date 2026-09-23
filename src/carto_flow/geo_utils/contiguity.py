@@ -455,7 +455,7 @@ def repair_adjacency(
             break
 
         # For each violated district d, compute which slots would satisfy at least
-        # one of its required adjacency pairs — i.e. slots neighbouring the current
+        # one of its required adjacency pairs — i.e. slots neighboring the current
         # slot of each required partner.  The districts currently at those slots are
         # the only candidates that can produce a positive net gain for d, so we
         # restrict the inner loop to this small set (typically ≤30) instead of all n.

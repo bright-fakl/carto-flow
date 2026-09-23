@@ -84,7 +84,7 @@ class BaseField:
     adhesion_strength : float
         Snap strength in ``[0, 1]``.  ``1.0`` = full snap; ``0`` = off.
     weights : array-like of float or None
-        Positive per-point weights.  Normalised internally.
+        Positive per-point weights.  Normalized internally.
     """
 
     def __init__(
@@ -286,7 +286,7 @@ class BaseField:
 
 
 # ---------------------------------------------------------------------------
-# Shared geometry normalisation
+# Shared geometry normalization
 # ---------------------------------------------------------------------------
 
 

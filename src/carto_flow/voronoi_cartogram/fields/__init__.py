@@ -10,7 +10,7 @@ ExactField(BaseField)
     Exact scipy Voronoi + shapely clipping.
 
 RasterField(BaseField)
-    Raster nearest-neighbour Lloyd, optionally with elastic boundary.
+    Raster nearest-neighbor Lloyd, optionally with elastic boundary.
 """
 
 from ._base import BaseField, _extract_exact_cells

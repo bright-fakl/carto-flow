@@ -127,7 +127,7 @@ def generate_dot_density(
           and rows.
         - **'maximum'**: Divide by the maximum row sum; the geometry with the
           largest total gets ``n_dots`` dots in total.
-        - **'row'**: Normalise each row to sum to 1.0 (only valid for multiple
+        - **'row'**: Normalize each row to sum to 1.0 (only valid for multiple
           columns). Every geometry gets exactly ``n_dots`` dots in total.
         - **None**: Use values directly as fractions. Must be in [0, 1] and row
           sums must not exceed 1.0.
@@ -222,7 +222,7 @@ def generate_dot_density(
     elif effective_normalization == "maximum":
         max_row_sum = row_sums.max()
         if max_row_sum == 0:
-            raise ValueError("Maximum row sum is zero. Cannot normalise.")
+            raise ValueError("Maximum row sum is zero. Cannot normalize.")
         fractions = values / max_row_sum
 
     elif effective_normalization == "row":
@@ -243,7 +243,7 @@ def generate_dot_density(
         bad = np.where(exceeds_one)[0]
         raise ValueError(
             f"Row fractions exceed 1.0 at indices {bad.tolist()}. "
-            f"Use normalization='row' to auto-normalise, or ensure values sum to <= 1.0 per row."
+            f"Use normalization='row' to auto-normalize, or ensure values sum to <= 1.0 per row."
         )
 
     # --- Sample dots ---

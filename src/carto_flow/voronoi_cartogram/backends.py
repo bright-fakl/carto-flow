@@ -81,7 +81,7 @@ _RELAXATION_PRESETS: dict[str, Callable[[int], float]] = {
 def _resolve_relaxation(
     relaxation: float | str | RelaxationSchedule | Callable[[int], float],
 ) -> Callable[[int], float]:
-    """Normalise any accepted relaxation spec to a ``(iteration) -> float`` callable."""
+    """Normalize any accepted relaxation spec to a ``(iteration) -> float`` callable."""
     if callable(relaxation):
         return relaxation
     if isinstance(relaxation, str):
@@ -146,7 +146,7 @@ class ElasticBoundary:
         ``"convex_hull"`` have only a handful of corners after internal
         simplification — set this to roughly ``backend.resolution`` for smooth
         deformation.  ``None`` (default) uses whatever vertices remain after
-        simplification, which preserves the original behaviour for complex union
+        simplification, which preserves the original behavior for complex union
         boundaries.
     adhesion_strength : float
         Snap strength for boundary-touching centroids in ``[0, 1]``.
@@ -199,9 +199,9 @@ class ExactBackend:
     adjacency_spring : float
         Strength of the spring force pulling input-adjacent centroids together,
         blended into each Lloyd step.  ``0`` = pure Lloyd.  Values of 0.1-0.3
-        gently prevent neighbouring centroids from drifting apart.
+        gently prevent neighboring centroids from drifting apart.
     boundary : AdhesiveBoundary or None
-        Boundary snap behaviour.  ``None`` = off.  Pass
+        Boundary snap behavior.  ``None`` = off.  Pass
         :class:`AdhesiveBoundary` to snap boundary centroids toward the outer
         boundary after each step.
 
@@ -267,7 +267,7 @@ class ExactBackend:
 
 @dataclass
 class RasterBackend:
-    """Raster nearest-neighbour Lloyd relaxation backend.
+    """Raster nearest-neighbor Lloyd relaxation backend.
 
     Uses a precomputed grid of land pixels for Voronoi labeling — typically
     10-50x faster than the exact scipy backend.
@@ -295,7 +295,7 @@ class RasterBackend:
         disables the intra-group spring; ``adjacency_spring`` then applies to
         all adjacent pairs regardless of group membership.
     boundary : AdhesiveBoundary, ElasticBoundary, or None
-        Boundary behaviour.  ``None`` = rigid hard-clip (default).
+        Boundary behavior.  ``None`` = rigid hard-clip (default).
 
         * :class:`AdhesiveBoundary` — snap boundary centroids toward the outer
           boundary after each step.
@@ -306,7 +306,7 @@ class RasterBackend:
         Pixel-to-centroid distance algorithm.
 
         ``"euclidean"``
-            cKDTree nearest-neighbour (default, fastest).  Compatible with
+            cKDTree nearest-neighbor (default, fastest).  Compatible with
             ``area_equalizer_rate > 0``.
         ``"geodesic"``
             Multi-source BFS; wavefront cannot cross inactive (water) pixels,

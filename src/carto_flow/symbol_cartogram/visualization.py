@@ -852,7 +852,7 @@ def _split_cmap(
     *cmap_param* may be:
 
     * A colormap name string → ``(cmap_param, None)``
-    * A ``dict`` of category → colour overrides → ``(fallback, cmap_param)``
+    * A ``dict`` of category → color overrides → ``(fallback, cmap_param)``
     * ``None`` → ``(fallback, None)``
     """
     if isinstance(cmap_param, dict):
@@ -1082,7 +1082,7 @@ def _add_legend(
     ----------
     role : {"face", "edge"}
         ``"face"`` renders filled patches; ``"edge"`` renders hollow patches
-        (transparent fill, coloured border) so the legend represents edge
+        (transparent fill, colored border) so the legend represents edge
         styling.  Only affects the categorical path.
 
     """
@@ -1256,38 +1256,38 @@ def plot_symbols(
     Parameters
     ----------
     result : SymbolCartogram
-        Cartogram to visualise.
+        Cartogram to visualize.
     ax : plt.Axes, optional
         Axes to draw on.  A new figure is created when not provided.
     figsize : tuple
         Figure size when creating a new figure.
     source_gdf : gpd.GeoDataFrame, optional
         External GeoDataFrame used for column lookups (highest priority).
-        Useful when you want to colour by a column not stored on the
+        Useful when you want to color by a column not stored on the
         cartogram itself, e.g. ``result.plot(source_gdf=my_gdf, facecolor="gdp")``.
     facecolor : color, column name, or array-like, optional
-        Symbol fill colour.  Accepts:
+        Symbol fill color.  Accepts:
 
-        * A matplotlib colour string (``"steelblue"``, ``"#2ca02c"``).
+        * A matplotlib color string (``"steelblue"``, ``"#2ca02c"``).
         * A column name → numeric columns are mapped through *cmap* / *norm*;
-          categorical columns are auto-assigned colours from a qualitative
+          categorical columns are auto-assigned colors from a qualitative
           palette (``"tab10"``), overridable by passing a dict to *cmap*.
         * A 1-D numeric array of length *n* → mapped through *cmap* / *norm*.
         * An ``(n, 3)`` or ``(n, 4)`` float array of RGB / RGBA values.
-        * A list of colour strings or RGBA tuples, one per symbol.
+        * A list of color strings or RGBA tuples, one per symbol.
 
         Defaults to ``"steelblue"`` when *None*.
     cmap : str or dict
         Colormap for data-driven *facecolor*.  Pass a **colormap name** string
         for numeric columns (e.g. ``"viridis"``) or a ``dict`` of
-        ``{category: colour}`` for categorical columns
+        ``{category: color}`` for categorical columns
         (e.g. ``{"Europe": "#2ca02c", "Africa": "#d62728"}``).
-        Unspecified categories receive auto-assigned ``"tab10"`` colours.
+        Unspecified categories receive auto-assigned ``"tab10"`` colors.
         Default ``"viridis"``.
     norm : matplotlib Normalize, optional
-        Custom normalisation for the colourmap.
+        Custom normalization for the colormap.
     vmin, vmax : float, optional
-        Explicit data range for the colourmap normalisation.
+        Explicit data range for the colormap normalization.
     alpha : float, column name, or array-like, optional
         Symbol opacity (0 = transparent, 1 = opaque).
 
@@ -1300,10 +1300,10 @@ def plot_symbols(
         ``(min_alpha, max_alpha)`` used when *alpha* is a column name.
         Default ``(0.2, 1.0)``.
     edgecolor : color, column name, or array-like, optional
-        Symbol edge colour.  Accepts the same forms as *facecolor*.
+        Symbol edge color.  Accepts the same forms as *facecolor*.
         Use ``"none"`` (default) for no visible border.
     edge_cmap : str or dict, optional
-        Colormap for edge colour mapping.  Accepts the same forms as *cmap*
+        Colormap for edge color mapping.  Accepts the same forms as *cmap*
         (string name for numeric, dict for categorical).
         Falls back to *cmap* (string only) when ``None``.
     linewidth : float, column name, or array-like, optional
@@ -1329,12 +1329,12 @@ def plot_symbols(
         .. note::
             Hatching is only visible when *edgecolor* is not ``"none"``.
             A ``UserWarning`` is raised when hatching is requested without a
-            visible edge colour.
+            visible edge color.
     hatch_map : dict, optional
         Per-category hatch overrides used when *hatch* is a column name.
         Example: ``{"urban": "///", "rural": "...", "forest": "ooo"}``.
     legend : bool
-        Whether to display a colourbar (numeric column) or patch legend
+        Whether to display a colorbar (numeric column) or patch legend
         (categorical column) when *facecolor* is data-driven.  Default ``True``.
     legend_kwds : dict, optional
         Extra keyword arguments forwarded to ``Figure.colorbar()`` (numeric)
@@ -1345,7 +1345,7 @@ def plot_symbols(
         data-driven from a **different** column than *facecolor*.
         When both map the same column, only one legend is shown.  Default ``True``.
     edge_legend_kwds : dict, optional
-        Same as *legend_kwds* but for the edge-colour legend.
+        Same as *legend_kwds* but for the edge-color legend.
     hatch_legend : bool
         Whether to display a patch legend showing the hatch-pattern ↔ category
         mapping when *hatch* is a data-driven column name.  Default ``True``.
@@ -1364,7 +1364,7 @@ def plot_symbols(
             }
     linewidth_legend : bool
         Show a discrete line-sample legend when *linewidth* is data-driven.
-        Displays ~5 representative values as grey lines of increasing thickness.
+        Displays ~5 representative values as gray lines of increasing thickness.
         Default ``True``.
     linewidth_legend_kwds : dict, optional
         ``Axes.legend()`` kwargs for the linewidth legend.
@@ -1376,7 +1376,7 @@ def plot_symbols(
         * A list / array of strings, one per symbol.
         * ``None`` → no labels (default).
     label_color : color, column name, or array-like, optional
-        Text colour for the labels.  Accepts the same forms as *facecolor*.
+        Text color for the labels.  Accepts the same forms as *facecolor*.
         Default ``"black"``.
     label_cmap : str or dict, optional
         Colormap for data-driven *label_color*.  Accepts the same forms as
@@ -1414,7 +1414,7 @@ def plot_symbols(
     >>> # Data-driven fill → automatic colorbar
     >>> result.plot(facecolor="gdp_per_capita", cmap="YlOrRd")
 
-    >>> # Data-driven edge colour → second legend auto-added
+    >>> # Data-driven edge color → second legend auto-added
     >>> result.plot(facecolor="steelblue", edgecolor="region")
 
     >>> # Both fill and edge from different columns → two legends
@@ -1424,7 +1424,7 @@ def plot_symbols(
     >>> # Categorical fill with qualitative palette
     >>> result.plot(facecolor="continent")
 
-    >>> # Categorical fill with partial colour overrides
+    >>> # Categorical fill with partial color overrides
     >>> result.plot(facecolor="continent",
     ...             cmap={"Europe": "#2ca02c", "Africa": "#d62728"})
 
@@ -1443,14 +1443,14 @@ def plot_symbols(
     ...             hatch_legend_kwds={"title": "Region",
     ...                                "patch_kw": {"facecolor": "lightyellow"}})
 
-    >>> # Explicit per-symbol array (e.g. random colours)
+    >>> # Explicit per-symbol array (e.g. random colors)
     >>> import numpy as np
     >>> result.plot(facecolor=np.random.rand(len(result.symbols), 4), legend=False)
 
     >>> # Labels from a column
     >>> result.plot(facecolor="pop_est", label="name")
 
-    >>> # Labels with per-symbol colour
+    >>> # Labels with per-symbol color
     >>> result.plot(facecolor="steelblue", label="iso_a3",
     ...             label_color="region", label_fontsize=7)
 
@@ -1477,8 +1477,8 @@ def plot_symbols(
     if hatch is not None and edgecolor in (None, "none"):
         warnings.warn(
             "hatch is set but edgecolor='none' (the default). "
-            "Hatching requires a visible edge colour. "
-            "Set edgecolor to a colour such as 'black'.",
+            "Hatching requires a visible edge color. "
+            "Set edgecolor to a color such as 'black'.",
             UserWarning,
             stacklevel=2,
         )
@@ -1593,7 +1593,7 @@ def plot_symbols(
             group_patches = [patches[i] for i in indices]
             fc = face_rgba[indices]
             lw = lw_arr[indices] if lw_arr is not None else lw_val
-            # Per-group edge colours
+            # Per-group edge colors
             ec = edge_colors[indices] if isinstance(edge_colors, np.ndarray) and edge_colors.ndim == 2 else edge_colors
 
             pc = PatchCollection(
@@ -1689,7 +1689,7 @@ def plot_symbols(
         and alpha_is_arr
         and alpha_col_name is not None
         and not is_mapped  # facecolor is not data-driven
-        and not isinstance(face_colors_base, np.ndarray)  # facecolor is a scalar colour
+        and not isinstance(face_colors_base, np.ndarray)  # facecolor is a scalar color
     ):
         import matplotlib.colors as mc
 
@@ -1730,7 +1730,7 @@ def plot_symbols(
                 raise ValueError(f"label list length {len(label_list)} != number of symbols {n}.")
             label_texts = [str(v) for v in label_list]
 
-        # Resolve label colours to a per-symbol list
+        # Resolve label colors to a per-symbol list
         # Use label_cmap when provided; fall back to cmap only if it's a string
         _label_cmap: str | dict = (
             label_cmap if label_cmap is not None else (cmap if isinstance(cmap, str) else "viridis")
@@ -1752,7 +1752,7 @@ def plot_symbols(
         elif isinstance(lc_colors, list):
             label_colors_list = lc_colors
         else:
-            # Scalar colour → broadcast
+            # Scalar color → broadcast
             label_colors_list = [lc_colors] * n
 
         # Resolve label fontsize

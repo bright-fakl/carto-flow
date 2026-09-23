@@ -19,8 +19,8 @@ class BenchmarkBase:
 
     Common fields (shared by all submodule benchmarks):
 
-    Timing (names end in ``_s`` — serialised as ``t_<name>``):
-        setup_s   — pre-loop initialisation time
+    Timing (names end in ``_s`` — serialized as ``t_<name>``):
+        setup_s   — pre-loop initialization time
         other_s   — unattributed loop time
         total_s   — full wall-clock time
 
@@ -31,7 +31,7 @@ class BenchmarkBase:
         max_error_pct  — maximum area error as a percentage
     """
 
-    # Timing fields (end in _s → serialised as t_<name>)
+    # Timing fields (end in _s → serialized as t_<name>)
     setup_s: float = 0.0
     other_s: float = 0.0
     total_s: float = 0.0
@@ -45,7 +45,7 @@ class BenchmarkBase:
     def to_dict(self, decimals: int = 3) -> dict:
         """Return a flat dict representation.
 
-        Float fields whose names end in ``_s`` are serialised as
+        Float fields whose names end in ``_s`` are serialized as
         ``t_<name>`` and rounded to *decimals* places.  All other fields
         are kept as-is.
         """

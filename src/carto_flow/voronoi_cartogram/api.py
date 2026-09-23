@@ -112,7 +112,7 @@ def create_voronoi_cartogram(
         When using :class:`~carto_flow.voronoi_cartogram.backends.ElasticBoundary`,
         simple shapes (e.g. ``"bbox"``) are automatically densified to roughly
         ``backend.resolution`` vertices before the elastic deformation is
-        initialised, ensuring smooth FFT-driven boundary deformation.
+        initialized, ensuring smooth FFT-driven boundary deformation.
 
     Returns
     -------

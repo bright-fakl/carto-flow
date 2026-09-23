@@ -37,7 +37,7 @@ class FlowDensityFieldSnapshots:
     shape : tuple
         ``(rows, cols)`` of the density grid.
     x_coords, y_coords : NDArray
-        Cell-centre coordinates along each axis.
+        Cell-center coordinates along each axis.
     """
 
     fields: list[dict]
@@ -113,7 +113,7 @@ class FlowDensityLayoutOptions:
         Timestep = factor * min(dx, dy) / max_velocity. Default: 0.3
     convergence_tolerance : float
         Stop when mean relative NN spacing error < tolerance. Default: 0.05
-        This is a mean over all nearest-neighbour pairs, not a per-pair
+        This is a mean over all nearest-neighbor pairs, not a per-pair
         bound, so individual pairs can still have spacing error above the
         tolerance (including residual overlap) when the layout reports
         convergence.

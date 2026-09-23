@@ -111,7 +111,7 @@ $$
 $$
 
 where the sum is over pixels $k$ inside the cell, and weight $w_i$ is the
-target area normalised weight of generator $i$.
+target area normalized weight of generator $i$.
 
 **Over-relaxed update**: $\mathbf{p}_i \leftarrow \mathbf{p}_i + \alpha(\mathbf{c}_i - \mathbf{p}_i)$
 
@@ -197,7 +197,7 @@ target areas at the start.
 
 ---
 
-## Boundary Behaviour
+## Boundary Behavior
 
 By default the outer boundary is **fixed**: generators are constrained inside
 it and the boundary polygon does not change.
@@ -224,7 +224,7 @@ if two generators cross, their cell assignments may swap unexpectedly. Use
 `TopologyRepair` or `repair_topology()` to detect and fix this (see
 [Contiguity Repair](voronoi-cartogram-contiguity.md)).
 
-**Boundary artefacts.** The outer boundary is treated as hard walls. Peripheral
+**Boundary artifacts.** The outer boundary is treated as hard walls. Peripheral
 generators may cluster near the boundary if their target area is large compared
 to available boundary-adjacent space. `ElasticBoundary` mitigates this.
 

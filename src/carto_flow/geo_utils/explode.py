@@ -66,7 +66,7 @@ def explode_geodataframe(
     max_step : float
         Maximum displacement per body per iteration as a fraction of
         ``distance``.  Default 0.2.  Increase (e.g. 0.4) to make pressure
-        propagate faster through neighbour chains at the cost of potential
+        propagate faster through neighbor chains at the cost of potential
         overshoot; decrease for smoother convergence.
     simplify_tolerance : float
         Fraction of ``distance`` used as the Douglas-Peucker simplification

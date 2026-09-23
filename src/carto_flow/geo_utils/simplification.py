@@ -233,7 +233,7 @@ def simplify_coverage(
     tolerance : float
         Simplification tolerance in the CRS coordinate units. Follows the same
         convention as ``shapely.coverage_simplify``: vertices are removed if
-        the triangle they form with their neighbours has an area below
+        the triangle they form with their neighbors has an area below
         ``tolerance``. Use larger values for more aggressive simplification.
     min_island_size : float, optional
         Before simplification, sub-polygons in MultiPolygon geometries with

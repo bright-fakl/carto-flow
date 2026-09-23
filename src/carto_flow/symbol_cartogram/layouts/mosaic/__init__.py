@@ -42,7 +42,7 @@ class MosaicMetrics:
         the core, which show up as protruding tails.  Unlike an enclosed-hole
         count it also catches gaps in concave boundary pockets.
     n_enclosed_unassigned_tiles : int
-        Lattice cells that received no symbol yet have every lattice neighbour
+        Lattice cells that received no symbol yet have every lattice neighbor
         assigned.  Deliberately independent of core status: a cell ringed by
         assigned tiles reads as a hole whatever its overlap fraction, and a
         core-only count misses the ones that fall below ``min_overlap_frac``.
@@ -61,10 +61,10 @@ class MosaicMetrics:
 
 
 def _enclosed_unassigned(occupied: set[int], adj_list: list[list[int]]) -> set[int]:
-    """Unassigned lattice cells whose every lattice neighbour is assigned.
+    """Unassigned lattice cells whose every lattice neighbor is assigned.
 
     Core status is ignored on purpose -- see ``MosaicMetrics``.  A cell with no
-    neighbours at all (an isolated lattice corner) is not a hole.
+    neighbors at all (an isolated lattice corner) is not a hole.
     """
     holes = set()
     for t in range(len(adj_list)):
@@ -343,7 +343,7 @@ class HungarianOptions:
         region's tiles in a tighter block, which helps most when a region
         owns several tiles or when ``group_by`` requires a group to stay
         together; at one tile per region with ``morph=False`` a lower value
-        places symbols closer to their neighbours and truer to the original
+        places symbols closer to their neighbors and truer to the original
         directions between them.  Values much above the default start to
         break groups apart on finely divided inputs.
     max_connectivity_iters : int
@@ -628,7 +628,7 @@ class MosaicLayout(Layout):
         # whose union centroid is nearest, the same rule the partition uses for a
         # tile that touches no component.  The rings are therefore grown from all
         # components at once rather than component by component: a per-component
-        # expansion would reach across a narrow sea into a neighbouring component's
+        # expansion would reach across a narrow sea into a neighboring component's
         # core tiles, both components would place a symbol on the same tile, and
         # whichever component is solved last would silently overwrite the other's.
         if opts.extra_tile_rings > 0:
@@ -859,7 +859,7 @@ class MosaicLayout(Layout):
         )
 
         # Core tiles left empty.  Deliberately *not* folded into `converged`: that
-        # would be a public behaviour change, and on inputs where a region genuinely
+        # would be a public behavior change, and on inputs where a region genuinely
         # extends past the core there may be no legal relocation to close them.
         n_unassigned_core_tiles = int(sum(1 for t in valid_tile_indices if assignment[t] < 0))
 

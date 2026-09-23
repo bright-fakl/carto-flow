@@ -81,7 +81,7 @@ def create_symbol_cartogram(
     size_clip : bool
         Whether to clip values exceeding size_max_value.
     size_normalization : {"max", "total"}, optional
-        How to normalise symbol sizes relative to original geometry areas:
+        How to normalize symbol sizes relative to original geometry areas:
 
         - ``"total"``: all sizes are scaled so that the total symbol area
           equals the total original geometry area (standard for Dorling
@@ -238,7 +238,7 @@ def create_layout(
     size_clip : bool
         Whether to clip values exceeding size_max_value.
     size_normalization : {"max", "total"}, optional
-        How to normalise symbol sizes relative to original geometry areas:
+        How to normalize symbol sizes relative to original geometry areas:
 
         - ``"total"``: all sizes are scaled so that the total symbol area
           equals the total original geometry area (standard for Dorling

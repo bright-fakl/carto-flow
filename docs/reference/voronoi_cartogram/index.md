@@ -76,7 +76,7 @@ result.plot(column="Population (Millions)", legend=True)
 ### Choosing a Backend
 
 ```python
-# Default: raster nearest-neighbour (10–50× faster than exact)
+# Default: raster nearest-neighbor (10–50× faster than exact)
 result = vor.create_voronoi_cartogram(gdf, weights="value")
 
 # Exact scipy Voronoi + shapely clipping (higher accuracy, slower)
@@ -98,7 +98,7 @@ result = vor.create_voronoi_cartogram(
 ### Geodesic Labeling
 
 For datasets with complex coastlines or water gaps (where Euclidean
-nearest-neighbour would incorrectly assign pixels across bays or straits):
+nearest-neighbor would incorrectly assign pixels across bays or straits):
 
 ```python
 result = vor.create_voronoi_cartogram(

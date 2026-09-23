@@ -365,7 +365,7 @@ class DensityBorderExtension(DensityModulator):
         Set to 0 for a hard cutoff at ``extension_width``.
     smooth : float or None, default None
         Optional Gaussian smoothing sigma in world-coordinate units
-        applied to the final density field to remove small artefacts.
+        applied to the final density field to remove small artifacts.
 
     Examples
     --------
@@ -495,9 +495,9 @@ def preview_modulator(
         Axes to draw on.  A new figure is created if ``None``.
     cmap : str or Colormap, default 'RdBu_r'
         Colormap used for all ``show`` modes.  A diverging colormap is
-        recommended: for ``'input'`` and ``'output'`` the centre is anchored
+        recommended: for ``'input'`` and ``'output'`` the center is anchored
         at *target_density* (white = equilibrium, blue = below, red = above);
-        for ``'ratio'`` the centre is anchored at 1 (no change).
+        for ``'ratio'`` the center is anchored at 1 (no change).
     show_colorbar : bool, default True
         When ``False``, the colorbar is omitted.
     colorbar_kwargs : dict, optional
@@ -525,7 +525,7 @@ def preview_modulator(
     >>> mod = DensityBorderExtension(extension_width=50_000, transition_width=30_000)
     >>> result = preview_density_modulator(mod, gdf, column="population")
 
-    >>> # Inspect where the modulator changed the density (ratio centred at 1):
+    >>> # Inspect where the modulator changed the density (ratio centered at 1):
     >>> result = preview_density_modulator(mod, gdf, column="population", show="ratio")
     """
     import matplotlib.colors as mcolors

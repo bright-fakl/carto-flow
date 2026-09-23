@@ -216,7 +216,7 @@ def hungarian_morphed_assignment(
         by state).  Disconnected sub-components (islands) within a group
         are handled automatically — tiles are already split into separate
         effective groups before calling this function.  None → per-geometry
-        connectivity (default, existing behaviour).
+        connectivity (default, existing behavior).
     stats : dict or None
         When given, filled in place with diagnostics of the repair loop:
         ``passes`` (number of linear-assignment solves actually run) and

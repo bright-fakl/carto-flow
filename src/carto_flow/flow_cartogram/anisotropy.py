@@ -48,7 +48,7 @@ Examples
 >>> # Uniform 30° tilt
 >>> DirectionalTensor(theta=np.pi / 6, Dpar=2.0, Dperp=0.5)
 >>>
->>> # Radially outward from a fixed centre
+>>> # Radially outward from a fixed center
 >>> DirectionalTensor.radial(center=(500_000, 200_000), Dpar=2.0)
 >>>
 >>> # Tangential (counter-clockwise vortex)
@@ -466,7 +466,7 @@ class DirectionalTensor(VelocityModulator):
 
     >>> DirectionalTensor(theta=np.pi / 4, Dpar=2.0, Dperp=0.5)
 
-    Flow aligned radially outward from the domain centre:
+    Flow aligned radially outward from the domain center:
 
     >>> DirectionalTensor(
     ...     theta=lambda g: np.arctan2(g.Y - g.Y.mean(), g.X - g.X.mean()),
@@ -840,7 +840,7 @@ class LocalizedTensor(VelocityModulator):
         w = np.exp(-0.5 * quad)
         W = w.sum(axis=-1)  # (ny, nx)
 
-        # Normalise so total seed weight never exceeds 1;
+        # Normalize so total seed weight never exceeds 1;
         # remainder blends toward identity (isotropic background).
         norm = np.maximum(1.0, W)
         w_n = w / norm[..., np.newaxis]  # (ny, nx, n_seeds)
@@ -958,7 +958,7 @@ def preview_modulator(
     """Preview a velocity modulator on a uniform probe field.
 
     Applies the modulator to a spatially uniform input field and plots the
-    result as a quiver diagram.  Arrow colour encodes the local amplification
+    result as a quiver diagram.  Arrow color encodes the local amplification
     factor (output magnitude ÷ input magnitude = 1.0 for identity).  For
     :class:`LocalizedTensor`, an optional background heatmap shows the total
     Gaussian seed weight (how much each location is dominated by seeds vs.
@@ -998,7 +998,7 @@ def preview_modulator(
         Per-geometry values (same length as *gdf*) used to compute a realistic
         density field and velocity field via the FFT Poisson solver — identical
         to what :func:`morph_geometries` computes internally.  When provided,
-        the probe field is the normalised velocity field derived from those
+        the probe field is the normalized velocity field derived from those
         values rather than a uniform field.  Useful for modulators that depend
         on the spatial structure of the field.
     column : str, optional
@@ -1058,10 +1058,10 @@ def preview_modulator(
         - ``'angle_diff'`` — ``angle(v_out) − angle(v_in)`` wrapped to [−π, π];
           how much the modulator rotated the flow direction.  Uses a cyclic
           colormap (``'twilight_shifted'``) so that −π and +π (both a 180° flip)
-          have the same colour.  Only valid with ``heatmap='diff'``.
+          have the same color.  Only valid with ``heatmap='diff'``.
     heatmap_alpha_from_magnitude : bool, default False
         When ``True`` and ``heatmap_type='angle'``, the imshow alpha channel is
-        set to the normalised velocity magnitude so regions with near-zero
+        set to the normalized velocity magnitude so regions with near-zero
         velocity become transparent.  Has no effect for ``heatmap='weight'``.
 
     Returns
@@ -1146,7 +1146,7 @@ def preview_modulator(
     if modulator is not None:
         vx_out, vy_out = modulator(vx_out, vy_out, grid, geom_mask)
 
-    # Post-modulation normalisation (mirrors algorithm.py:392-395)
+    # Post-modulation normalization (mirrors algorithm.py:392-395)
     # if values is not None:
     vmax2 = np.nanmax(np.sqrt(vx_out**2 + vy_out**2))
     if vmax2 > 1e-12:
@@ -1165,7 +1165,7 @@ def preview_modulator(
         gdf.plot(ax=ax, facecolor="none", edgecolor="0.6", linewidth=0.6, zorder=1)
         geom_collections = list(ax.collections[before:])
 
-    # Normalise show_vectors into a set of layer names
+    # Normalize show_vectors into a set of layer names
     def _sv_set(sv):
         if sv is True:
             return {"input", "output"}

@@ -12,7 +12,7 @@ create_voronoi_cartogram
 Backend classes
 ---------------
 RasterBackend
-    Raster nearest-neighbour Lloyd (default; 10-50x faster than exact).
+    Raster nearest-neighbor Lloyd (default; 10-50x faster than exact).
 ExactBackend
     Exact scipy Voronoi + shapely clipping.
 

@@ -113,7 +113,7 @@ class TilingResult:
         equals ``len(canonical_tile.exterior.coords) - 1``, but for
         isohedral tilings with custom edge curves the ``canonical_tile``
         polygon has many more points due to spline interpolation.  Used by
-        :meth:`plot_tile` to select the correct auto-colour.
+        :meth:`plot_tile` to select the correct auto-color.
 
     """
 
@@ -216,18 +216,18 @@ class TilingResult:
         ax : matplotlib.axes.Axes, optional
             Axes to draw on. A new figure is created if *ax* is ``None``.
         color_by : {"uniform", "aspect", "index", "x", "y", "random"}
-            Colouring scheme:
+            Coloring scheme:
 
             * ``"uniform"`` — all tiles use *face_color*.
-            * ``"aspect"`` — colour by tile rotation angle (0–360 → colormap).
-            * ``"index"`` — colour by tile index (0…n−1 → colormap).
-            * ``"x"`` — colour by tile centroid x coordinate (normalised).
-            * ``"y"`` — colour by tile centroid y coordinate (normalised).
-            * ``"random"`` — random colour per tile drawn from *colormap*.
+            * ``"aspect"`` — color by tile rotation angle (0–360 → colormap).
+            * ``"index"`` — color by tile index (0…n−1 → colormap).
+            * ``"x"`` — color by tile centroid x coordinate (normalized).
+            * ``"y"`` — color by tile centroid y coordinate (normalized).
+            * ``"random"`` — random color per tile drawn from *colormap*.
         face_color : str
-            Hex fill colour used in ``"uniform"`` mode.
+            Hex fill color used in ``"uniform"`` mode.
         edge_color : str
-            Stroke colour for tile outlines.
+            Stroke color for tile outlines.
         colormap : str
             Matplotlib colormap name used in ``"aspect"`` and ``"index"`` modes.
         alpha : float
@@ -318,11 +318,11 @@ class TilingResult:
         ax : matplotlib.axes.Axes, optional
             Axes to draw on. A new figure is created if *ax* is ``None``.
         face_color : str, optional
-            Fill colour.  When ``None`` the colour is chosen automatically by
+            Fill color.  When ``None`` the color is chosen automatically by
             vertex count to match the panel UI palette
             (3 → pink, 4 → blue, 5 → yellow, 6 → green).
         edge_color : str
-            Outline colour.
+            Outline color.
         alpha : float
             Fill transparency.
         show_vertices : bool
@@ -453,11 +453,11 @@ class Tiling(ABC):
         ax : matplotlib.axes.Axes, optional
             Axes to draw on. A new figure is created if *ax* is ``None``.
         face_color : str, optional
-            Fill colour.  When ``None`` the colour is chosen automatically by
+            Fill color.  When ``None`` the color is chosen automatically by
             vertex count to match the panel UI palette
             (3 → pink, 4 → blue, 5 → yellow, 6 → green).
         edge_color : str
-            Outline colour.
+            Outline color.
         alpha : float
             Fill transparency.
         show_vertices : bool
@@ -633,7 +633,7 @@ def _compute_adjacency_from_lattice(
 
     For each tile center, check which other centers match the expected
     neighbor offsets (within tolerance). Vectorised with a KD-tree: each
-    offset direction is resolved with one batched nearest-neighbour query
+    offset direction is resolved with one batched nearest-neighbor query
     instead of a per-tile Python loop.
 
     Parameters
@@ -662,7 +662,7 @@ def _compute_adjacency_from_lattice(
     for dx, dy in neighbor_offsets:
         # For each tile, find tiles at offset (dx, dy).
         shifted = centers + np.array([dx, dy])
-        # Nearest neighbour is sufficient: lattice spacing guarantees at most
+        # Nearest neighbor is sufficient: lattice spacing guarantees at most
         # one center can fall within `tol` of any shifted point. Filter with
         # a strict `<` on the squared distance to match the reference
         # (non-vectorised) implementation exactly, including at the boundary.
@@ -1567,7 +1567,7 @@ class IsohedralTiling(Tiling):
             warnings.warn(
                 f"IH{tiling_type}: the supplied edge_curves produce a "
                 f"self-intersecting prototile. Tiles will be repaired "
-                f"automatically via make_valid(), but visual artefacts may "
+                f"automatically via make_valid(), but visual artifacts may "
                 f"occur. Consider using a less extreme curve.",
                 stacklevel=2,
             )
@@ -1966,7 +1966,7 @@ class IsohedralTiling(Tiling):
             "description": (
                 "IH41. Square with jigsaw puzzle-piece edges — each "
                 "edge has a protruding knob that fits into the "
-                "neighbouring tile's socket."
+                "neighboring tile's socket."
             ),
         },
         "arrow_quad": {

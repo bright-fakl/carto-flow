@@ -3,7 +3,7 @@
 Functions
 ---------
 plot_cartogram
-    Plot Voronoi cells, optionally coloured by a data column.
+    Plot Voronoi cells, optionally colored by a data column.
 plot_comparison
     Side-by-side comparison of original geometries vs Voronoi cells.
 plot_convergence
@@ -75,18 +75,18 @@ def plot_cartogram(
     result : VoronoiCartogram
         The cartogram to plot.
     column : str or None
-        Column from the source GeoDataFrame to use for choropleth colouring.
-        ``None`` (default) colours each cell with a distinct categorical
-        colour derived from its index.  Pass ``"area_error_pct"`` to plot the
+        Column from the source GeoDataFrame to use for choropleth coloring.
+        ``None`` (default) colors each cell with a distinct categorical
+        color derived from its index.  Pass ``"area_error_pct"`` to plot the
         signed per-cell area error as a diverging choropleth.
     cmap : str or None
-        Colormap name.  Defaults to ``"tab20"`` for categorical colouring
+        Colormap name.  Defaults to ``"tab20"`` for categorical coloring
         (``column=None``), ``"RdBu_r"`` for ``"area_error_pct"``, and
         ``"viridis"`` for other numeric columns.
     show_edges : bool
         Draw cell borders.  Default ``True``.
     legend : bool
-        Show a legend or colourbar.  Default ``False``.
+        Show a legend or colorbar.  Default ``False``.
     labels : bool, str, list of str, or None
         Annotate each cell with a text label.
 
@@ -98,7 +98,7 @@ def plot_cartogram(
     label_fontsize : int
         Font size for cell labels.  Default ``8``.
     label_color : str
-        Text colour for cell labels.  Default ``"black"``.
+        Text color for cell labels.  Default ``"black"``.
     label_location : str
         Where to place labels within each cell.  Default ``"centroid"`` (the
         geometric centroid).  Other options are ``"representative"`` (a
@@ -226,8 +226,8 @@ def plot_comparison(
     result : VoronoiCartogram
         The cartogram to compare against.
     column : str or None
-        Column to use for choropleth colouring on both panels.  ``None``
-        uses categorical index colouring.
+        Column to use for choropleth coloring on both panels.  ``None``
+        uses categorical index coloring.
     cmap : str or None
         Colormap name.  Defaults to ``"tab20"`` (categorical) or
         ``"viridis"`` (numeric).
@@ -378,9 +378,9 @@ def plot_displacement(
     Parameters
     ----------
     result : VoronoiCartogram
-        The cartogram to visualise.
+        The cartogram to visualize.
     state : {"original", "final"}
-        Which state to visualise.  ``"original"`` draws the source
+        Which state to visualize.  ``"original"`` draws the source
         geometries and their centroids; ``"final"`` (default) draws the
         Voronoi cells and their centroids.  Displacement arrows always run
         original → final regardless of this setting.
@@ -394,10 +394,10 @@ def plot_displacement(
         Also scatter ``result.positions`` (the Lloyd generator points) as a
         secondary marker (only used when ``state="final"``).  Default ``False``.
     show_displacement : bool
-        Draw coloured arrows from original to final cell-centroid positions.
+        Draw colored arrows from original to final cell-centroid positions.
         Default ``True``.
     legend : bool
-        Show the displacement-magnitude colourbar (and any other legends).
+        Show the displacement-magnitude colorbar (and any other legends).
         Default ``True``.
     geometry_style : dict or None
         Styling for geometry polygons, merged over defaults
@@ -408,9 +408,9 @@ def plot_displacement(
 
         - ``str`` matching a column → choropleth; use ``"cmap"`` (default
           ``"Blues"``) to set the colormap.
-        - any other ``str`` → solid fill colour.
+        - any other ``str`` → solid fill color.
         - 1-D numeric array → per-geometry values mapped via ``"cmap"``.
-        - list/array of colour strings → per-geometry colours.
+        - list/array of color strings → per-geometry colors.
     adjacency_style : dict or None
         Styling for adjacency graph edges, merged over defaults
         ``{"color": "#6b8fa8", "linewidth": 0.6, "alpha": 0.5, "zorder": 2}``.
@@ -432,7 +432,7 @@ def plot_displacement(
         Styling for displacement arrows, merged over defaults
         ``{"cmap": "plasma", "lw": 0.9, "mutation_scale": 6, "arrowstyle": "-|>", "min_frac": 0.01}``.
 
-        - ``"cmap"`` — arrow/colourbar colormap.
+        - ``"cmap"`` — arrow/colorbar colormap.
         - ``"min_frac"`` — skip arrows whose magnitude is below this
           fraction of the maximum.
         - remaining keys forwarded into ``arrowprops``.
@@ -469,7 +469,7 @@ def plot_displacement(
 
     # --- resolve style dicts -------------------------------------------------
     def _norm_scatter(user: dict | None) -> dict:
-        """Normalise 'color' → 'c' so scatter never receives both."""
+        """Normalize 'color' → 'c' so scatter never receives both."""
         d = dict(user or {})
         if "color" in d:
             d.setdefault("c", d.pop("color"))
@@ -523,7 +523,7 @@ def plot_displacement(
         return not isinstance(val, str) and np.issubdtype(np.asarray(val).dtype, np.number)
 
     def _resolve_c_for_scatter(kw: dict) -> dict:
-        """Resolve 'c' column/array/colour and return scatter kwargs."""
+        """Resolve 'c' column/array/color and return scatter kwargs."""
         out = dict(kw)
         c_val = out.get("c")
         cmap_val = out.pop("cmap", "viridis")
@@ -538,12 +538,12 @@ def plot_displacement(
             out["c"] = np.asarray(c_val, dtype=float)
             out["cmap"] = cmap_val
         elif c_val is not None and not isinstance(c_val, str):
-            # list/array of colour strings
+            # list/array of color strings
             out["c"] = list(c_val)
-        # else: plain colour string or None — pass through as-is
+        # else: plain color string or None — pass through as-is
         return out
 
-    # --- geometry colour resolution ------------------------------------------
+    # --- geometry color resolution ------------------------------------------
     geo_color_val = geo_kw.pop("color", None)
     geo_cmap_val = geo_kw.pop("cmap", "Blues")
 
@@ -811,15 +811,15 @@ def plot_topology(
     Parameters
     ----------
     analysis : TopologyAnalysis
-        The analysis result to visualise.
+        The analysis result to visualize.
     cartogram : VoronoiCartogram
         The cartogram whose cells provide the spatial context.
     show_base : bool or None
-        Draw all cells as a grey background layer.  ``None`` (default) draws
+        Draw all cells as a gray background layer.  ``None`` (default) draws
         the base only when *ax* is ``None`` (i.e. a new figure is created);
         when an existing *ax* is supplied the base is skipped so that any
         prior plot on that axis is not hidden.  Pass ``True`` or ``False`` to
-        override the automatic behaviour.
+        override the automatic behavior.
     show_contiguity : bool
         Highlight satellite cells (stage 1 issues).  Default ``True``.
     show_adjacency : bool
@@ -885,9 +885,9 @@ def plot_topology_repair(
     Parameters
     ----------
     report : TopologyRepairReport
-        The repair report to visualise.
+        The repair report to visualize.
     show_base : bool or None
-        Draw all cells as a grey background layer in each panel.  ``None``
+        Draw all cells as a gray background layer in each panel.  ``None``
         (default) draws the base only when *axes* is ``None`` (new figure);
         when existing axes are supplied the base is skipped so prior content
         is not hidden.  Pass ``True`` or ``False`` to override.
@@ -1075,14 +1075,14 @@ def plot_compactness(
     For each district *d* in group *g* the inertia is
     ``||cell_centroid[d] - group_centroid[g]||²``, matching the internal
     measure used by ``_repair_compactness``.  By default the value is
-    normalised within each group (divided by the group mean) so that cells
+    normalized within each group (divided by the group mean) so that cells
     in different-sized groups can be compared on the same scale: values above
     1 are outliers relative to their group, values below 1 are compact.
 
     Parameters
     ----------
     cartogram : VoronoiCartogram
-        The cartogram to analyse.
+        The cartogram to analyze.
     group_by : str
         Column in the source GeoDataFrame identifying groups (same argument
         as ``repair_topology``).
@@ -1095,7 +1095,7 @@ def plot_compactness(
     show_edges : bool
         Draw cell borders.  Default ``True``.
     legend : bool
-        Show a colourbar.  Default ``True``.
+        Show a colorbar.  Default ``True``.
     ax : matplotlib Axes or None
         Axes to draw on.  A new figure is created if ``None``.
     figsize : tuple of float
@@ -1151,7 +1151,7 @@ def plot_compactness(
             if mean_val > 0:
                 score[members] = vals / mean_val
             # else leave as zero (all cells at centroid)
-        col_label = "Normalised inertia (relative to group mean)"
+        col_label = "Normalized inertia (relative to group mean)"
     else:
         score = raw
         col_label = "Inertia (m²)"

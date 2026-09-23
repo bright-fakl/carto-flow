@@ -329,7 +329,7 @@ def build_density_field(
     Returns
     -------
     NDArray, shape (NY, NX)
-        Density field, renormalised to preserve mean after smoothing.
+        Density field, renormalized to preserve mean after smoothing.
     """
     pairs = _get_pairs(centroids, use_gabriel)
 
@@ -534,7 +534,7 @@ def run_flow_density(
         if history is not None:
             history.append(pts.copy())
 
-        # Convergence: nearest-neighbour spacing error (one NN per circle)
+        # Convergence: nearest-neighbor spacing error (one NN per circle)
         tree = cKDTree(pts)
         nn_dists, nn_idx = tree.query(pts, k=2)  # k=2: [self (0), nearest other (1)]
         nn_dists = nn_dists[:, 1]

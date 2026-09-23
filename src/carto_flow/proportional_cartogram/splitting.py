@@ -395,7 +395,7 @@ def _split_with_fixed_structure(
     geom : BaseGeometry
         Geometry to split.
     fracs : list[float]
-        Actual (normalised) fractions. Determines split ratios.
+        Actual (normalized) fractions. Determines split ratios.
     structure : int or tuple
         Tree structure from _build_treemap_structure.
     tol : float

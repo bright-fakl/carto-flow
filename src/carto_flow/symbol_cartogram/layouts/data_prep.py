@@ -223,13 +223,13 @@ def prepare_layout_data(
     distance_tolerance : float, optional
         Buffer for adjacency detection.
     size_normalization : {"max", "total"}
-        How to normalise symbol sizes after tile expansion, relative to
+        How to normalize symbol sizes after tile expansion, relative to
         original geometry areas:
 
         - ``"total"`` *(default)*: all N-level sizes are scaled by a single
           global factor so that ``Σ(π x size²) = Σ(geometry_area)``.  With
           ``"copied"`` expansion, this accounts for tile counts; with
-          ``"shared"`` the result equals what G-level normalisation would
+          ``"shared"`` the result equals what G-level normalization would
           give.
         - ``"max"``: the largest N-level symbol has area equal to the mean
           geometry area (``π x unit_cell_radius²``).  With the default
@@ -298,7 +298,7 @@ def prepare_layout_data(
     if size_normalization not in ("max", "total"):
         raise ValueError(
             f"Unknown size_normalization {size_normalization!r}: symbol sizes have no "
-            f'anchor to normalise against. Valid options: "total" (total symbol area equals '
+            f'anchor to normalize against. Valid options: "total" (total symbol area equals '
             f'the total geometry area) or "max" (largest symbol has the mean geometry area). '
             f"Pass one of those, or omit the argument to take the layout's own default."
         )

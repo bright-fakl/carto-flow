@@ -109,20 +109,20 @@ intersections cheap; the final tiling is always built against the original geome
 The tile pool is then split per component and grown outward:
 
 - **Core tiles**: overlap the study union by at least `min_overlap_frac` (about $N$ of them)
-- **Ring tiles**: `extra_tile_rings` rings of tile-adjacent neighbours around the core
+- **Ring tiles**: `extra_tile_rings` rings of tile-adjacent neighbors around the core
   (default 1 ring). These carry a high outside penalty, so they act as reserve - selected only
   when cost pressure exhausts the interior. After the solve, any assigned ring tile that has an
-  unassigned core neighbour of the same region is swapped back inward, which removes holes.
+  unassigned core neighbor of the same region is swapped back inward, which removes holes.
 
 The Hungarian assignment selects $N$ tiles from core + rings; unused tiles remain unassigned.
 `core_tile_indices` and `pool_tile_indices` on the result expose both sets, and
-`plot_tiling(show_pool=True)` colours their borders.
+`plot_tiling(show_pool=True)` colors their borders.
 
 ---
 
 ## Cost Function
 
-The Hungarian assignment minimises a cost $C(g, j)$ for placing geometry $g$ at tile $j$:
+The Hungarian assignment minimizes a cost $C(g, j)$ for placing geometry $g$ at tile $j$:
 
 $$
 C(g, j) = w_d \cdot d_{\text{norm}}(g,j)
@@ -132,18 +132,18 @@ C(g, j) = w_d \cdot d_{\text{norm}}(g,j)
 $$
 
 with $w_d$ = `distance_weight`, $w_o$ = `outside_penalty`, $w_i$ = `interior_bonus` and
-$w_n$ = `neighbor_weight`. Every term is normalised to $[0, 1]$, so the weights are
+$w_n$ = `neighbor_weight`. Every term is normalized to $[0, 1]$, so the weights are
 comparable across datasets.
 
 | Term | Formula | Role |
 |------|---------|------|
 | $d_{\text{norm}}(g,j)$ | $\|\mathbf{p}_g - \mathbf{t}_j\|^2 \,/\, \max_{g',j'}\|\mathbf{p}_{g'} - \mathbf{t}_{j'}\|^2$ | Pull tiles toward their region's centroid |
 | $\text{outside}(j)$ | $1 - \text{area}(j \cap \text{union}) \,/\, \text{area}(j)$ | Penalty for tiles that extend outside the study area |
-| $\text{connectivity}(j)$ | fraction of tile $j$'s neighbours that are also pool tiles | Bonus for interior tiles; pushes surplus tiles to the periphery |
-| $\text{neighbor}(g,j)$ | distance (or BFS hops with `neighbor_bfs=True`) from $j$ to the tile pools of $g$'s geographic neighbours | Keep neighbouring regions next to each other |
+| $\text{connectivity}(j)$ | fraction of tile $j$'s neighbors that are also pool tiles | Bonus for interior tiles; pushes surplus tiles to the periphery |
+| $\text{neighbor}(g,j)$ | distance (or BFS hops with `neighbor_bfs=True`) from $j$ to the tile pools of $g$'s geographic neighbors | Keep neighboring regions next to each other |
 
 Distances are squared, so the distance term grows quadratically with displacement.
-The neighbour term is recomputed from the current assignment after every solve (warm-started
+The neighbor term is recomputed from the current assignment after every solve (warm-started
 from geometry centroids on the first pass) and rescaled to `neighbor_weight`; setting
 `neighbor_weight=0` disables it.
 
@@ -171,7 +171,7 @@ form a contiguous block. The iterative repair loop fixes two types of problems:
 the main tile cluster of $g$ via tile-adjacency edges.
 
 **Inter-region gaps**: pairs of geographically adjacent geometries $(g_1, g_2)$ whose tile
-sets share no tile-adjacency edge — a topological neighbourhood relationship is broken.
+sets share no tile-adjacency edge — a topological neighborhood relationship is broken.
 
 Iterations are ranked lexicographically by
 
@@ -181,7 +181,7 @@ $$
 
 where $n_{\text{split}}$ is the number of **regions** (with `group_by`: groups) whose tiles do
 not form a single connected block, and $w_{\text{disc}} = 100$. The first term decides; the second only separates iterations that split the same
-number of regions, prioritising intra-region contiguity over inter-region adjacency.
+number of regions, prioritizing intra-region contiguity over inter-region adjacency.
 
 Ranking by split regions rather than by disconnected tiles matters: an iteration can cut the
 number of stray tiles while scattering them over more regions. On US states that is exactly what
@@ -195,7 +195,7 @@ If the score is non-zero, the cost matrix is modified before the next re-solve:
 The best-scoring assignment across all iterations is returned, and the loop stops early when an
 iteration fails to improve the score — in particular an iteration that splits more regions than
 the incumbent is never kept. Convergence (score = 0) is declared as soon as all regions are
-contiguous and all geographic neighbours share a tile edge.
+contiguous and all geographic neighbors share a tile edge.
 
 `MosaicMetrics` reports the outcome: `n_noncontiguous_regions`, `n_split_groups` and
 `repair_passes` (solves actually run, not the `max_connectivity_iters` cap).
@@ -252,7 +252,7 @@ open water.
 `pre_scale=True` (a `create_layout` / `create_symbol_cartogram` argument, not a layout option)
 uniformly scales each connected component so its area matches its share of the data before
 anything else runs. It only matters for multi-component inputs, where a small island with a
-large tile count would otherwise have to borrow tiles from its neighbours' space.
+large tile count would otherwise have to borrow tiles from its neighbors' space.
 
 ---
 
@@ -276,22 +276,22 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `distance_weight` | 1.0 | Centroid distance weight. Fix at 1.0 and tune the others relative to it. |
 | `outside_penalty` | 1.0 | Weight on the outside-fraction penalty. |
 | `interior_bonus` | 2.0 | Connectivity bonus weight (interior-tile preference). |
-| `neighbor_weight` | 0.3 | Weight on the neighbour-proximity term; 0 disables it. |
-| `neighbor_bfs` | `False` | Measure neighbour proximity in tile-graph hops instead of distance. |
+| `neighbor_weight` | 0.3 | Weight on the neighbor-proximity term; 0 disables it. |
+| `neighbor_bfs` | `False` | Measure neighbor proximity in tile-graph hops instead of distance. |
 | `max_connectivity_iters` | 5 | Maximum connectivity repair iterations. |
 | `penalize_disconnected` | `True` | Raise the cost of tiles sitting apart from their region's block. |
 | `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
 | `ring_swapback_max_hops` | 16 | BFS search radius for the extra-ring swap-back; 0 disables it. |
 
 The connectivity bonus is weighted heavily by default. Because it rewards tiles whose
-neighbours are also in the pool, raising it makes each region claim a tighter, rounder
+neighbors are also in the pool, raising it makes each region claim a tighter, rounder
 block and pushes the leftover surplus out to the periphery. That is what multi-tile
 regions and `group_by` groups need in order to stay in one piece. Two cases pull the
 other way: with one tile per region and `morph=False` there is no block to hold
-together, and a lower weight then places each symbol nearer its geographic neighbours
+together, and a lower weight then places each symbol nearer its geographic neighbors
 and keeps the directions between them truer; and on finely divided inputs a weight well
 above the default starts to break groups apart, because holding one region's tiles
-together can only be paid for out of its neighbours'.
+together can only be paid for out of its neighbors'.
 
 The cost weights were renamed from `alpha` / `beta` / `delta` to `distance_weight` /
 `outside_penalty` / `interior_bonus` before the layout became public; there are no aliases.

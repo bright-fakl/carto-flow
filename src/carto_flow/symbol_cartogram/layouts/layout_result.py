@@ -28,7 +28,7 @@ class AlgorithmMetrics:
     iterations : int or None
         Number of iterations executed.
     final_overlaps : int or None
-        Number of overlapping nearest-neighbour pairs at termination.
+        Number of overlapping nearest-neighbor pairs at termination.
     algorithm : Any
         Algorithm-specific final scalars (PhysicsMetrics, PackingMetrics,
         FlowDensityMetrics, CentroidMetrics, GridMetrics, etc.).
@@ -456,15 +456,15 @@ class TiledLayoutResult(LayoutResult):
         show_unassigned : bool
             Show empty tiles. Default True.
         show_pool : bool
-            Use edge colour to mark solver-pool membership on every tile
+            Use edge color to mark solver-pool membership on every tile
             (``MosaicLayoutResult`` only). Core tiles get *core_edgecolor*
             and extra-ring tiles get *ring_edgecolor* regardless of whether
             they are assigned; tiles outside the pool keep *tile_edgecolor*.
             Default False.
         core_edgecolor : str
-            Edge colour for core tiles when *show_pool* = True. Default amber.
+            Edge color for core tiles when *show_pool* = True. Default amber.
         ring_edgecolor : str
-            Edge colour for extra-ring tiles when *show_pool* = True.
+            Edge color for extra-ring tiles when *show_pool* = True.
             Default salmon.
         pool_linewidth : float
             Line width for pool-tile borders. Default 1.5.
@@ -478,7 +478,7 @@ class TiledLayoutResult(LayoutResult):
         from ..plot_results import TilingPlotResult
 
         if self.tiling_result is None:
-            raise ValueError("Tiling data not available (result was deserialised without tiling).")
+            raise ValueError("Tiling data not available (result was deserialized without tiling).")
 
         if ax is None:
             _, ax = plt.subplots(1, 1, figsize=(10, 8))

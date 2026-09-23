@@ -137,7 +137,7 @@ from carto_flow.symbol_cartogram import create_symbol_cartogram
 result = create_symbol_cartogram(gdf, tile_count="seats", layout="grid")
 result.plot()
 
-# group_by: group symbols by region (layouts that honour it: centroid,
+# group_by: group symbols by region (layouts that honor it: centroid,
 # flow_density, mosaic, packing)
 result = create_symbol_cartogram(gdf, size="population", group_by="region", layout="packing")
 gdf_regions = result.to_geodataframe(level="group")  # one row per region, union geometry

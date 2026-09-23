@@ -176,7 +176,7 @@ class Symbol(ABC):
 
     @property
     def inscribed_radius(self) -> float:
-        """Radius of the largest inscribed circle centred at the origin.
+        """Radius of the largest inscribed circle centered at the origin.
 
         Equal to the distance from the origin to the nearest polygon edge.
         """

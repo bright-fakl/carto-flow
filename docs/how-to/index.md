@@ -41,10 +41,10 @@ Compare `RasterBackend` (fast, pixel-based) and `ExactBackend` (exact Voronoi ge
 Prevent pixel labels from crossing bays and straits by switching to `distance_mode="geodesic"` — a BFS that propagates only through active (land) pixels.
 
 ### [Inspect and Improve Convergence](voronoi_cartogram/inspect-convergence.ipynb)
-Read `metrics`, plot convergence curves and area errors, visualise displacement, and tune `n_iter`, `area_cv_tol`, `prescale_components`, and the relaxation schedule.
+Read `metrics`, plot convergence curves and area errors, visualize displacement, and tune `n_iter`, `area_cv_tol`, `prescale_components`, and the relaxation schedule.
 
 ### [Analyze and Fix Topology](voronoi_cartogram/topology.ipynb)
 Detect satellite cells in grouped datasets with `plot_topology()`, and repair them post-hoc with `repair_topology()` or automatically via `TopologyRepair` in `VoronoiOptions`.
 
 ### [Customize the Boundary](voronoi_cartogram/boundaries.ipynb)
-Change the outer clipping shape (`"union"`, `"bbox"`, `"circle"`, custom geometry) and choose between fixed, `AdhesiveBoundary`, and `ElasticBoundary` generator behaviour.
+Change the outer clipping shape (`"union"`, `"bbox"`, `"circle"`, custom geometry) and choose between fixed, `AdhesiveBoundary`, and `ElasticBoundary` generator behavior.

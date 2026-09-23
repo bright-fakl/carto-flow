@@ -1,4 +1,4 @@
-"""Raster nearest-neighbour Lloyd relaxation field."""
+"""Raster nearest-neighbor Lloyd relaxation field."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ CELL_SMOOTHING_TOLERANCE_PX = 3.0
 
 
 class RasterField(BaseField):
-    """Raster nearest-neighbour Lloyd relaxation.
+    """Raster nearest-neighbor Lloyd relaxation.
 
     Parameters
     ----------
@@ -264,7 +264,7 @@ class RasterField(BaseField):
         """Deform boundary vertices (and optionally centroids) via FFT velocity.
 
         No-op when ``_boundary_dt() == 0`` and ``_centroid_dt() == 0``,
-        or when ``_elastic_verts`` is not initialised, or before the first
+        or when ``_elastic_verts`` is not initialized, or before the first
         raster labeling step (``_last_labels_2d`` not set).
         """
         bdt = self._boundary_dt()
@@ -773,7 +773,7 @@ class RasterField(BaseField):
         """Raise power offsets until every seed owns at least its own position.
 
         A seed's power cell is ``{x : |x - p_i|^2 - lambda_i <= |x - p_j|^2 - lambda_j}``.
-        When ``lambda_i`` falls far enough below a neighbour's, that set becomes
+        When ``lambda_i`` falls far enough below a neighbor's, that set becomes
         empty: the cell degrades to a Point, and because a pixel-less seed takes
         its own position as the Lloyd target, it is frozen there and can never
         win territory back.  ``lambda_i >= max_j(lambda_j - d_ij^2)`` is the

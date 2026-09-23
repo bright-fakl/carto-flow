@@ -1,6 +1,6 @@
 """Geodesic (topology-respecting) Voronoi labeling via multi-source BFS.
 
-Replaces Euclidean nearest-neighbour assignment when ``geodesic_voronoi=True``.
+Replaces Euclidean nearest-neighbor assignment when ``geodesic_voronoi=True``.
 The BFS wavefront propagates only through active (land) pixels, so it cannot
 cross water bodies or other inactive regions — eliminating cross-bay assignments
 that arise from straight-line distance.
@@ -10,7 +10,7 @@ Time complexity: O(n_active_pixels) — comparable to cKDTree labeling.
 When the active region has multiple disconnected components (e.g. from elastic
 boundary deformation creating isolated pockets), each component is seeded
 dynamically via the unseeded-component fix: the nearest centroid to each
-component's centre-of-mass is used as the seed label.
+component's center-of-mass is used as the seed label.
 """
 
 from __future__ import annotations
@@ -122,7 +122,7 @@ def geodesic_label_active(
         ``n_misplaced`` : int
             Number of misplaced seeds.
         ``comp_2d`` : (ny, nx) int32
-            Full component label grid (useful for visualisation).
+            Full component label grid (useful for visualization).
         ``unseeded_comp_ids`` : (k,) int32
             Component IDs (1-based, scipy convention) that had no seed before
             the fix was applied.  Non-empty means the fix fired this call.
@@ -193,7 +193,7 @@ def geodesic_label_active(
     # ------------------------------------------------------------------
     # Fix: if any active pixels are unreachable (label == -1), they belong
     # to components that received no seed.  Add one seed per unseeded
-    # component (nearest centroid to component's centre of mass) and re-run
+    # component (nearest centroid to component's center of mass) and re-run
     # BFS so that every component has a starting point.
     # ------------------------------------------------------------------
     bad = flat_labels < 0

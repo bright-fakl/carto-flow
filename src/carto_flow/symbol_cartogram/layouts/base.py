@@ -97,7 +97,7 @@ def get_layout(name: str) -> Layout:
 
 
 def group_by_layouts() -> list[str]:
-    """Return the registered layout names whose placement honours ``group_by``.
+    """Return the registered layout names whose placement honors ``group_by``.
 
     Returns
     -------
@@ -135,7 +135,7 @@ def check_group_by_support(layout: Layout, has_group_by: bool) -> None:
     supported = ", ".join(group_by_layouts()) or "none"
     raise ValueError(
         f"Layout {type(layout).__name__} does not support group_by: it would ignore the "
-        f"grouping and place symbols as if it were absent. Layouts that honour group_by: "
+        f"grouping and place symbols as if it were absent. Layouts that honor group_by: "
         f"{supported}. Drop group_by or use one of those layouts."
     )
 

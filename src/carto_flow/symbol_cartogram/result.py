@@ -213,7 +213,7 @@ class SymbolCartogram:
     ) -> SymbolsPlotResult:
         """Plot the symbol cartogram with per-symbol visual styling.
 
-        Every visual property can be set **globally** (scalar / colour string),
+        Every visual property can be set **globally** (scalar / color string),
         **data-driven** (column name → automatic mapping), or
         **per-symbol** (list / NumPy array, one value per symbol).
 
@@ -226,14 +226,14 @@ class SymbolCartogram:
         cmap : str or dict
             Colormap for data-driven *facecolor*.  Pass a **colormap name**
             string for numeric columns (e.g. ``"viridis"``, ``"plasma"``), or
-            a **dict** of ``{category: colour}`` for categorical columns
+            a **dict** of ``{category: color}`` for categorical columns
             (e.g. ``{"Europe": "#2ca02c", "Africa": "#d62728"}``).
-            Unspecified categories receive auto-assigned ``"tab10"`` colours.
+            Unspecified categories receive auto-assigned ``"tab10"`` colors.
             Default ``"viridis"``.
         norm : matplotlib Normalize, optional
-            Custom normalisation for the colour mapping.
+            Custom normalization for the color mapping.
         vmin, vmax : float, optional
-            Explicit data limits for the colourmap normalisation.
+            Explicit data limits for the colormap normalization.
         legend : bool
             Display a colorbar (numeric) or patch legend (categorical) when
             *facecolor* is data-driven.  Default ``True``.
@@ -250,15 +250,15 @@ class SymbolCartogram:
             Useful when the column you want to map is not stored on the
             cartogram's own ``symbols`` table.
         facecolor : color, column name, or array-like, optional
-            Symbol fill colour.  Accepts:
+            Symbol fill color.  Accepts:
 
-            * A matplotlib colour string (``"steelblue"``).
+            * A matplotlib color string (``"steelblue"``).
             * A **column name** → numeric: mapped via *cmap* / *norm*;
               categorical: auto-assigned from the ``"tab10"`` palette
               (pass a dict to *cmap* to override specific categories).
             * A 1-D numeric array → mapped via *cmap* / *norm*.
             * An ``(n, 3)`` or ``(n, 4)`` float array (RGB / RGBA).
-            * A list of colour strings or RGBA tuples.
+            * A list of color strings or RGBA tuples.
 
             Defaults to ``"steelblue"`` when ``None``.
         alpha : float, column name, or array-like, optional
@@ -268,10 +268,10 @@ class SymbolCartogram:
             ``(min, max)`` alpha range for column-driven transparency.
             Default ``(0.2, 1.0)``.
         edgecolor : color, column name, or array-like, optional
-            Symbol edge colour.  Same forms as *facecolor*.
+            Symbol edge color.  Same forms as *facecolor*.
             Default ``"none"`` (no visible border).
         edge_cmap : str or dict, optional
-            Colormap for edge colour column mapping.  Accepts the same forms
+            Colormap for edge color column mapping.  Accepts the same forms
             as *cmap* (string name for numeric, dict for categorical).
             Falls back to *cmap* (string only) when ``None``.
         linewidth : float, column name, or array-like, optional
@@ -295,7 +295,7 @@ class SymbolCartogram:
             Show a separate legend for *edgecolor* when it is data-driven from
             a different column than *facecolor*.  Default ``True``.
         edge_legend_kwds : dict, optional
-            Same as *legend_kwds* but for the edge-colour legend.
+            Same as *legend_kwds* but for the edge-color legend.
         hatch_legend : bool
             Show a patch legend for the hatch ↔ category mapping when *hatch*
             is a column name.  No effect for global patterns or lists.
@@ -305,14 +305,14 @@ class SymbolCartogram:
             nested ``"patch_kw"`` dict controlling legend-patch appearance.
         linewidth_legend : bool
             Show a discrete line-sample legend when *linewidth* is data-driven.
-            Displays ~5 representative values as grey lines of increasing
+            Displays ~5 representative values as gray lines of increasing
             thickness.  Default ``True``.
         linewidth_legend_kwds : dict, optional
             ``Axes.legend()`` kwargs for the linewidth legend.
             Use ``"title"`` to override the legend title.
         alpha_legend : bool
             Show a colorbar for *alpha* when it is data-driven and *facecolor*
-            is a constant colour.  The colorbar displays the constant colour
+            is a constant color.  The colorbar displays the constant color
             ramping from transparent to opaque across the data range.
             Default ``True``.
         alpha_legend_kwds : dict, optional
@@ -323,7 +323,7 @@ class SymbolCartogram:
             representation of each value; a list / array provides explicit
             strings.
         label_color : color, column name, or array-like, optional
-            Text colour for labels.  Accepts the same forms as *facecolor*.
+            Text color for labels.  Accepts the same forms as *facecolor*.
             Default ``"black"``.
         label_cmap : str or dict, optional
             Colormap for data-driven *label_color*.  Accepts the same forms
@@ -365,23 +365,23 @@ class SymbolCartogram:
         >>> # Per-symbol alpha driven by a data column
         >>> result.plot(facecolor="#4C72B0", alpha="pop_est", alpha_range=(0.3, 1.0))
 
-        >>> # Hatching by category (needs visible edge colour)
+        >>> # Hatching by category (needs visible edge color)
         >>> result.plot(facecolor="none", edgecolor="black", linewidth=0.5,
         ...             hatch="region",
         ...             hatch_map={"A": "///", "B": "...", "C": "xxx"})
 
-        >>> # Explicit per-symbol colour array
+        >>> # Explicit per-symbol color array
         >>> import numpy as np
         >>> colors = np.random.rand(len(result.symbols), 4)
         >>> result.plot(facecolor=colors, legend=False)
 
-        >>> # Data-driven edge colour → second legend auto-added
+        >>> # Data-driven edge color → second legend auto-added
         >>> result.plot(facecolor="steelblue", edgecolor="region")
 
         >>> # Labels from a column
         >>> result.plot(facecolor="pop_est", label="name")
 
-        >>> # Labels with column-driven colour and size
+        >>> # Labels with column-driven color and size
         >>> result.plot(facecolor="steelblue",
         ...             label="iso_a3",
         ...             label_color="region",

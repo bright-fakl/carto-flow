@@ -4,7 +4,7 @@
 
 The `RasterBackend` labels each pixel in the grid by assigning it to a
 generator (geometry centroid). By default this uses **Euclidean
-nearest-neighbour**: each pixel goes to the generator with the smallest
+nearest-neighbor**: each pixel goes to the generator with the smallest
 straight-line distance. For many datasets this is sufficient, but it fails
 for geographies where land regions are separated by water.
 
@@ -21,13 +21,13 @@ The implementation is in
 ## Motivation: Why Euclidean Labeling Fails
 
 Consider a coastal dataset where two states share a bay. Euclidean
-nearest-neighbour may assign bay pixels to the geographically closer
+nearest-neighbor may assign bay pixels to the geographically closer
 generator even if reaching that generator requires crossing open water.
 The result is a cell that "bleeds" across the bay boundary — incorrect
 area attribution and misleading topology.
 
 Example: in a US dataset that includes coastal geometries, Florida's
-Atlantic and Gulf pixels might be split by the Euclidean nearest-neighbour
+Atlantic and Gulf pixels might be split by the Euclidean nearest-neighbor
 boundary in ways that cross the Florida peninsula — avoided by geodesic
 labeling.
 
@@ -40,7 +40,7 @@ labeling.
 The `RasterBackend` rasterises the outer boundary union onto a `resolution × resolution`
 grid. Each pixel is classified as:
 
-- **Active** — its centre falls inside the outer boundary (land)
+- **Active** — its center falls inside the outer boundary (land)
 - **Inactive** — outside (water / no data)
 
 Only active pixels participate in labeling.
@@ -60,7 +60,7 @@ The procedure:
 
 A Numba-compiled multi-source BFS (`_bfs` in `geodesic.py`) simultaneously
 expands all seed labels through the active pixel graph (4-connected
-neighbourhood). Each pixel is visited at most once and inherits the label of
+neighborhood). Each pixel is visited at most once and inherits the label of
 the first wave that reaches it.
 
 Because the BFS cannot cross inactive pixels, regions separated by water
@@ -75,7 +75,7 @@ seed. Without intervention those pixels would remain unlabeled.
 The algorithm detects unseeded components after the initial BFS:
 
 1. Label connected components of the active pixel graph (`skimage.measure.label` or equivalent).
-2. For each component that has no seed, compute its centre of mass and add an
+2. For each component that has no seed, compute its center of mass and add an
    extra seed there, inheriting the label of the geographically nearest generator.
 3. Re-run a local BFS to fill the unseeded component.
 

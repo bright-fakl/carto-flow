@@ -141,7 +141,7 @@ class TopologyAnalysis:
         cartogram : VoronoiCartogram
             The cartogram whose cells provide the spatial context.
         show_base : bool or None
-            Draw all cells as a grey background layer.  ``None`` (default)
+            Draw all cells as a gray background layer.  ``None`` (default)
             draws the base only when *ax* is ``None`` (new figure); when an
             existing *ax* is supplied the base is skipped so prior content is
             not hidden.  Pass ``True`` or ``False`` to override.
@@ -303,7 +303,7 @@ class TopologyRepairReport:
         Parameters
         ----------
         show_base : bool or None
-            Draw all cells as a grey background layer in each panel.  ``None``
+            Draw all cells as a gray background layer in each panel.  ``None``
             (default) draws the base only when *axes* is ``None`` (new figure);
             when existing axes are supplied the base is skipped so prior content
             is not hidden.  Pass ``True`` or ``False`` to override.
@@ -458,9 +458,9 @@ class VoronoiCartogram:
             Density field fed to the FFT velocity solver (``area_pressure + 1``
             for active pixels, ``1.0`` for inactive pixels).
         vx : (ny, nx) float
-            X-component of the normalised velocity field from the FFT solver.
+            X-component of the normalized velocity field from the FFT solver.
         vy : (ny, nx) float
-            Y-component of the normalised velocity field from the FFT solver.
+            Y-component of the normalized velocity field from the FFT solver.
         vertex_xy : (V, 2) float
             Current (displaced) boundary vertex positions.
         vertex_disp : (V,) float
@@ -490,7 +490,7 @@ class VoronoiCartogram:
         """Diagnostic dict from the last geodesic-labeling call.
 
         Returns ``None`` when ``debug_geodesic=False`` (the default) or when
-        the field has not been labelled yet.
+        the field has not been labeled yet.
 
         Requires ``RasterBackend(labeling="geodesic", debug_geodesic=True)``.
 
@@ -534,7 +534,7 @@ class VoronoiCartogram:
         orientation: bool | None = None,
         adj_min_shared_length: float | None = None,
     ) -> TopologyAnalysis:
-        """Analyse the topology of the current Voronoi tessellation.
+        """Analyze the topology of the current Voronoi tessellation.
 
         Checks all three topology stages without modifying the cartogram.
 
@@ -709,7 +709,7 @@ class VoronoiCartogram:
         TopologyRepairReport
             Contains the repaired :attr:`~TopologyRepairReport.cartogram`,
             :attr:`~TopologyRepairReport.before` and
-            :attr:`~TopologyRepairReport.after` analyses, the list of
+            :attr:`~TopologyRepairReport.after` analyzes, the list of
             :attr:`~TopologyRepairReport.stages_run`, and the
             :attr:`~TopologyRepairReport.reassigned` district labels.
         """
@@ -874,18 +874,18 @@ class VoronoiCartogram:
         Parameters
         ----------
         column : str or None
-            Column from the source GeoDataFrame to use for choropleth colouring.
-            ``None`` (default) colours each cell with a distinct categorical
-            colour derived from its index.  Pass ``"area_error_pct"`` to plot
+            Column from the source GeoDataFrame to use for choropleth coloring.
+            ``None`` (default) colors each cell with a distinct categorical
+            color derived from its index.  Pass ``"area_error_pct"`` to plot
             the signed per-cell area error as a diverging choropleth.
         cmap : str or None
-            Colormap name.  Defaults to ``"tab20"`` for categorical colouring
+            Colormap name.  Defaults to ``"tab20"`` for categorical coloring
             (``column=None``), ``"RdBu_r"`` for ``"area_error_pct"``, and
             ``"viridis"`` for other numeric columns.
         show_edges : bool
             Draw cell borders.  Default ``True``.
         legend : bool
-            Show a legend or colourbar.  Default ``False``.
+            Show a legend or colorbar.  Default ``False``.
         labels : bool, str, list of str, or None
             Annotate each cell with a text label.  ``True`` = index values;
             ``str`` = column name; ``list[str]`` = explicit strings; ``None``
@@ -893,7 +893,7 @@ class VoronoiCartogram:
         label_fontsize : int
             Font size for cell labels.  Default ``8``.
         label_color : str
-            Text colour for cell labels.  Default ``"black"``.
+            Text color for cell labels.  Default ``"black"``.
         ax : matplotlib Axes or None
             Axes to draw on.  A new figure is created if ``None``.
         **kwargs
@@ -954,7 +954,7 @@ class VoronoiCartogram:
         Parameters
         ----------
         state : {"original", "final"}
-            Which state to visualise.  ``"original"`` draws the source
+            Which state to visualize.  ``"original"`` draws the source
             geometries and their centroids; ``"final"`` (default) draws the
             Voronoi cells and their centroids.  Displacement arrows always run
             original → final regardless of this setting.
@@ -968,10 +968,10 @@ class VoronoiCartogram:
             Also scatter ``self.positions`` (the Lloyd generator points) as a
             secondary marker (only used when ``state="final"``).  Default ``False``.
         show_displacement : bool
-            Draw coloured arrows from original to final cell-centroid positions.
+            Draw colored arrows from original to final cell-centroid positions.
             Default ``True``.
         legend : bool
-            Show the displacement-magnitude colourbar (and any other legends).
+            Show the displacement-magnitude colorbar (and any other legends).
             Default ``True``.
         geometry_style : dict or None
             Styling for geometry polygons, merged over defaults
@@ -982,9 +982,9 @@ class VoronoiCartogram:
 
             - ``str`` matching a column → choropleth; use ``"cmap"`` (default
               ``"Blues"``) to set the colormap.
-            - any other ``str`` → solid fill colour.
+            - any other ``str`` → solid fill color.
             - 1-D numeric array → per-geometry values mapped via ``"cmap"``.
-            - list/array of colour strings → per-geometry colours.
+            - list/array of color strings → per-geometry colors.
         adjacency_style : dict or None
             Styling for adjacency graph edges, merged over defaults
             ``{"color": "#6b8fa8", "linewidth": 0.6, "alpha": 0.5, "zorder": 2}``.
@@ -1006,7 +1006,7 @@ class VoronoiCartogram:
             Styling for displacement arrows, merged over defaults
             ``{"cmap": "plasma", "lw": 0.9, "mutation_scale": 6, "arrowstyle": "-|>", "min_frac": 0.01}``.
 
-            - ``"cmap"`` — arrow/colourbar colormap.
+            - ``"cmap"`` — arrow/colorbar colormap.
             - ``"min_frac"`` — skip arrows whose magnitude is below this
               fraction of the maximum.
             - remaining keys forwarded into ``arrowprops``.

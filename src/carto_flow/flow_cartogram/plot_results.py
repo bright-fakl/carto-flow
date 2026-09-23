@@ -196,10 +196,10 @@ class ModulatorPreviewResult:
     ax : plt.Axes
         The axes containing all artists.
     arrows : Quiver
-        The ``Quiver`` artist for the modulated velocity arrows, coloured by
+        The ``Quiver`` artist for the modulated velocity arrows, colored by
         amplification factor.
     colorbar : Colorbar
-        Colorbar for the arrow amplification colour scale.
+        Colorbar for the arrow amplification color scale.
     geometry_collections : list[Collection]
         Collections added by ``gdf.plot()`` for the background geometry layer.
         Empty when no GeoDataFrame was provided.

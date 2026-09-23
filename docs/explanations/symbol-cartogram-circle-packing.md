@@ -332,7 +332,7 @@ where $\boldsymbol{\mu}_i$ and $\sigma_i$ are the EMA mean and standard deviatio
 
 Both metrics measure displacement in units of circle radius, so a circle of zero radius — produced by a zero sizing value — has no scale to measure against and is left out of the averages. When every circle has zero radius there is nothing to pack and both metrics are zero.
 
-A zero-radius circle still takes part in the force computation. It cannot overlap and cannot be pushed apart from a neighbour, but the centroid, origin, and group attraction forces still act on it. In `direction` mode their magnitudes $\min(1, d_i / r_i)$ are at their maximum for such a circle, since any positive distance is infinitely many radii.
+A zero-radius circle still takes part in the force computation. It cannot overlap and cannot be pushed apart from a neighbor, but the centroid, origin, and group attraction forces still act on it. In `direction` mode their magnitudes $\min(1, d_i / r_i)$ are at their maximum for such a circle, since any positive distance is infinitely many radii.
 
 **Convergence condition:**
 

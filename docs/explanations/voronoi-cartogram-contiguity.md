@@ -27,7 +27,7 @@ A group has a **satellite** if its cells form more than one connected
 component in the adjacency graph. The satellite components are all
 components except the largest (the "main body").
 
-Naive approaches (e.g. re-initialising dislocated generators) tend to
+Naive approaches (e.g. re-initializing dislocated generators) tend to
 oscillate. The slot-permutation approach avoids this by operating directly
 on the assignment of generators to slots, preserving area balance.
 

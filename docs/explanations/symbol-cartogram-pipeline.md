@@ -75,7 +75,7 @@ Because of that, the default is per layout: the grid layout defaults to `"max"`,
 A zero data value is valid and gives a symbol of zero size. Every layout keeps
 that symbol as a row of the result, aligned with the input GeoDataFrame, and
 renders it as a zero-area geometry. A zero-size symbol has no extent, so it
-cannot overlap a neighbour and cannot be pushed apart from one; quantities that
+cannot overlap a neighbor and cannot be pushed apart from one; quantities that
 a layout measures in units of symbol size (a separation relative to the target
 separation, a displacement relative to the symbol radius) are undefined for it
 and are left out of the averages the layout reports.
@@ -111,7 +111,7 @@ and is used to seed the initial tile assignment.
 so that group-level styling overrides and `to_geodataframe(level="group")` can
 aggregate symbols by group. It also sets `group_ids_G`, the same labels at
 geometry level, for layouts that group geometries rather than symbols (mosaic).
-Only layouts whose placement honours the grouping accept it: each layout class
+Only layouts whose placement honors the grouping accept it: each layout class
 declares this with the `supports_group_by` class attribute, and `create_layout`
 raises `ValueError` for the others rather than silently placing symbols as if
 no grouping had been given.

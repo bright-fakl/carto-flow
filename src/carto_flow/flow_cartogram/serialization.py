@@ -120,7 +120,7 @@ def save_cartogram(
         data["index"] = list(src.index)
         non_geom_cols = [c for c in src.columns if c != src.geometry.name]
         data["source_columns"] = non_geom_cols
-        # Convert column values to Python scalars for JSON serialisation
+        # Convert column values to Python scalars for JSON serialization
         records = src[non_geom_cols].to_dict(orient="records")
         data["source_records"] = [
             {k: (v.item() if hasattr(v, "item") else v) for k, v in row.items()} for row in records

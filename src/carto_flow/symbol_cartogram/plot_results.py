@@ -58,8 +58,8 @@ class SymbolsPlotResult:
         numeric column **different** from *facecolor*.
     alpha_colorbar : Colorbar or None
         Colorbar for the alpha channel.  Present when *alpha* maps a numeric
-        column **and** *facecolor* is a constant colour (not data-driven).
-        The colorbar shows the constant colour ramping from transparent to
+        column **and** *facecolor* is a constant color (not data-driven).
+        The colorbar shows the constant color ramping from transparent to
         opaque across the data range.
     legend : Legend or None
         Patch legend for the facecolor channel.  Present when *facecolor*
@@ -73,7 +73,7 @@ class SymbolsPlotResult:
     linewidth_legend : Legend or None
         Discrete line-sample legend for the linewidth channel.  Present when
         *linewidth* maps a numeric column.  Shows ~5 representative values
-        as grey line segments of increasing thickness.
+        as gray line segments of increasing thickness.
     label_colorbar : Colorbar or None
         Colorbar for the label_color channel.  Present when *label_color*
         maps a numeric column **different** from *facecolor*.

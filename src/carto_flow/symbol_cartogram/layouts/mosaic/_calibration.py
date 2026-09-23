@@ -33,7 +33,7 @@ class TilingSetup:
     tiling_result : TilingResult
         Tiling generated at the calibrated tile size.
     adj_list : list of list of int
-        Global tile adjacency lists (``adj_list[t]`` = neighbour tile indices).
+        Global tile adjacency lists (``adj_list[t]`` = neighbor tile indices).
     core_set : set of int
         Tile indices whose intersection with the study union covers at least
         ``min_overlap_frac`` of the tile area.  ``len(core_set) == target_count``
@@ -177,7 +177,7 @@ def calibrate_tiling(
                 adjacency_fresh = False
 
     # Final build with expanded bounds so ring-expansion in the caller always
-    # finds a complete set of neighbours around every core tile. Also covers
+    # finds a complete set of neighbors around every core tile. Also covers
     # the case where the accepted tile size only ever went through a
     # compute_adjacency=False trial build above (buffer_rings == 0): real
     # adjacency must be computed for the returned TilingSetup exactly once.

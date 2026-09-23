@@ -243,7 +243,11 @@ SORT_SCRIPT = """
         var x = cellValue(a, i), y = cellValue(b, i);
         if (x < y) return asc ? -1 : 1;
         if (x > y) return asc ? 1 : -1;
-        return 0;
+        // Ties fall back to the order the page was generated in, so sorting a
+        // column where many rows share a value (every page from the same day,
+        // say) reproduces the default order rather than whatever the previous
+        // click happened to leave behind.
+        return (+a.dataset.ord) - (+b.dataset.ord);
       });
       rows.forEach(function (r) { body.appendChild(r); });
     });
@@ -419,13 +423,17 @@ def _dir_mtime(directory: Path) -> float:
 
 
 def _entry_time(pr: PrDir) -> float:
-    """Sort timestamp: the ``date`` metadata field when usable, else mtime."""
-    raw = pr.meta.get("date")
-    if raw:
+    """Sort timestamp from the ``date`` field, else the directory mtime.
+
+    ``date`` may carry an optional ``HH:MM``; without one it resolves to
+    midnight, so pages from the same day are separated by PR number instead.
+    """
+    raw = str(pr.meta.get("date") or "").strip()
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d"):
         try:
-            return datetime.strptime(str(raw).strip(), "%Y-%m-%d").timestamp()
+            return datetime.strptime(raw, fmt).timestamp()
         except ValueError:
-            pass
+            continue
     return pr.mtime
 
 
@@ -623,7 +631,7 @@ def build_index_page(pr_dirs: list[PrDir], statuses: dict[Path, str] | None = No
         desc_cell = html.escape(pr.description)
         date_cell = html.escape(pr.meta.get("date", ""))
         rows.append(
-            f"<tr{row_class}>"
+            f'<tr{row_class} data-ord="{len(rows)}">'
             f"<td>{status_cell}</td>"
             f"<td>{pr_cell}</td>"
             f"<td>{title_cell}</td>"

@@ -142,8 +142,8 @@ class TestIndexPage:
         page = mod.build_index_page(dirs, statuses)
 
         assert "1 of 2 awaiting review" in page
-        assert '<tr class="todo">' in page
-        assert page.count('<tr class="todo">') == 1
+        assert page.count('<tr class="todo"') == 1
+        assert page.count("<tr ") == 2
 
 
 class TestVocabulary:
@@ -239,3 +239,27 @@ class TestClickSortDirection:
         assert first_asc[1] is False, "PR: highest first"
         assert first_asc[4] is False, "Date: newest first"
         assert first_asc[5] is False, "Figures: most first"
+
+
+class TestTieBreaking:
+    def test_date_accepts_an_optional_time(self, mod, tmp_path):
+        """A page written later the same day can say so and lead its day."""
+        morning = _write(tmp_path, "am", title="am", description="d", date="2026-06-01")
+        evening = _write(tmp_path, "pm", title="pm", description="d", date="2026-06-01 18:00")
+
+        dirs = sorted((mod.scan_pr_dir(p) for p in (morning, evening)), key=mod._sort_key)
+
+        assert [d.title for d in dirs] == ["pm", "am"]
+
+    def test_rows_carry_their_generated_order(self, mod, tmp_path):
+        """The client-side sort breaks ties on this, so a column where many rows
+        share a value reproduces the default order instead of drifting."""
+        a = _write(tmp_path, "a", pr=2, title="a", description="d", date="2026-06-01")
+        b = _write(tmp_path, "b", pr=1, title="b", description="d", date="2026-06-01")
+        dirs = sorted((mod.scan_pr_dir(p) for p in (a, b)), key=mod._sort_key)
+
+        page = mod.build_index_page(dirs, {a: "merged", b: "merged"})
+
+        assert 'data-ord="0"' in page
+        assert 'data-ord="1"' in page
+        assert "a.dataset.ord" in mod.SORT_SCRIPT

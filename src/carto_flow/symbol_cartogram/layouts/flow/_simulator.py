@@ -87,6 +87,10 @@ def _density_field_numba_grouped(
         r_j = radii[cj]
         d = np.sqrt((cx_j - cx_i) ** 2 + (cy_j - cy_i) ** 2)
         r_target = r_i + r_j + spacing_abs
+        if r_target <= 0.0:
+            # Both symbols are zero-sized and there is no spacing: the pair
+            # has no target separation and contributes no density.
+            continue
 
         ratio = d / r_target
         w = np.exp(1.0 - ratio) if (damp and ratio > 1.0) else 1.0
@@ -171,6 +175,10 @@ def _density_field_numba(
         r_j = radii[cj]
         d = np.sqrt((cx_j - cx_i) ** 2 + (cy_j - cy_i) ** 2)
         r_target = r_i + r_j + spacing_abs
+        if r_target <= 0.0:
+            # Both symbols are zero-sized and there is no spacing: the pair
+            # has no target separation and contributes no density.
+            continue
 
         ratio = d / r_target
         w = np.exp(1.0 - ratio) if (damp and ratio > 1.0) else 1.0
@@ -217,6 +225,15 @@ def _density_field_numba(
                 rho[iy, ix] += val
 
     return rho
+
+
+def _relative_to_target(deviation: NDArray, target: NDArray) -> NDArray:
+    """Express a deviation as a fraction of its target separation.
+
+    A target separation of zero means both symbols are zero-sized and there
+    is no separation to achieve, so the deviation counts as no error.
+    """
+    return np.divide(deviation, target, out=np.zeros(np.shape(deviation)), where=target > 0)
 
 
 def _build_density_field_midpoint(
@@ -524,9 +541,9 @@ def run_flow_density(
         nn_idx = nn_idx[:, 1]
         nn_targets = radii + radii[nn_idx] + spacing_abs
         if force_balance == "repulse":
-            nn_errs = np.maximum(0.0, (nn_targets - nn_dists) / nn_targets)
+            nn_errs = np.maximum(0.0, _relative_to_target(nn_targets - nn_dists, nn_targets))
         else:
-            nn_errs = np.abs(nn_dists - nn_targets) / nn_targets
+            nn_errs = np.abs(_relative_to_target(nn_dists - nn_targets, nn_targets))
         nn_err = float(np.mean(nn_errs))
         nn_max_err = float(np.max(nn_errs))
         overlaps = int(np.sum(nn_dists < nn_targets))
@@ -551,7 +568,7 @@ def run_flow_density(
     tree = cKDTree(pts)
     nn_dists_f, nn_idx_f = tree.query(pts, k=2)
     nn_targets_f = radii + radii[nn_idx_f[:, 1]] + spacing_abs
-    final_signed_errors = (nn_targets_f - nn_dists_f[:, 1]) / nn_targets_f
+    final_signed_errors = _relative_to_target(nn_targets_f - nn_dists_f[:, 1], nn_targets_f)
 
     info: dict = {
         "iterations": len(errors),

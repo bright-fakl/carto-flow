@@ -424,6 +424,10 @@ class Tiling(ABC):
         """Apply defaults for *bounds* and *n_tiles*/*tile_size*."""
         if bounds is None:
             bounds = DEFAULT_BOUNDS
+        if tile_size is not None and tile_size <= 0:
+            # A non-positive tile size gives a lattice step of zero, which no
+            # amount of stepping can walk across the bounds.
+            raise ValueError(f"tile_size must be positive, got {tile_size}")
         if n_tiles is None and tile_size is None:
             n_tiles = DEFAULT_N_TILES
         return bounds, n_tiles, tile_size

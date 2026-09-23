@@ -427,6 +427,20 @@ class MosaicLayoutOptions:
         for the tile to be counted as a core tile during calibration. Values
         below 0.5 capture tiles whose centroid falls outside the geometry
         (e.g. narrow peninsulas like Florida). Default 0.1.
+    min_one_tile_per_region : bool
+        Place a symbol for regions that sit on a land mass too small to win a
+        tile of its own.  A region only gets tiles from the pool of its
+        geographic component, and a component whose every tile falls below
+        ``min_overlap_frac`` gets an empty pool and no symbols at all -- which
+        is what happens to small island states at coarse tile sizes.  With this
+        set, such a component is given the unclaimed lattice cells that overlap
+        it most, enough of them to cover its requested count, so its regions are
+        drawn.  The cells come from outside every component's tiles, so no other
+        region loses one.  Off by default: a region below one tile's worth of
+        area is drawn at a full tile either way, which overstates it against
+        every other region on the map, and whether that is the right trade is
+        the caller's decision.  Regions left without a symbol are reported in a
+        warning whether or not this is set.  Default False.
 
     """
 
@@ -438,6 +452,7 @@ class MosaicLayoutOptions:
     spacing: float = 0.0
     extra_tile_rings: int = 1
     min_overlap_frac: float = 0.1
+    min_one_tile_per_region: bool = False
 
     def validate(self) -> None:
         """Validate options."""
@@ -636,6 +651,56 @@ class MosaicLayout(Layout):
                 comp_tile_pools[c].append(t)
             comp_tile_pools = [sorted(pool) for pool in comp_tile_pools]
 
+        # Step 3b': give a component with too few tiles of its own the cells that
+        # overlap it most, so regions on a land mass smaller than one tile still get
+        # a symbol.  Cells are taken from outside the calibrated core, or from a
+        # component that has more tiles in its pool than it needs -- never one that
+        # would leave another region short.  The mosaic then holds more tiles than
+        # the core does.  See ``min_one_tile_per_region``.
+        if opts.min_one_tile_per_region:
+            comp_demand = [int(counts[np.array(idx, dtype=np.intp)].sum()) for idx in components]
+            owner_of_tile: dict[int, int] = {}
+            for c, pool in enumerate(comp_tile_pools):
+                for t in pool:
+                    owner_of_tile[t] = c
+            surplus = [len(comp_tile_pools[c]) - comp_demand[c] for c in range(n_components)]
+            all_polys = np.asarray(tiling_result.polygons)
+            lattice_tree = shapely.STRtree(all_polys)
+            for c in range(n_components):
+                deficit = comp_demand[c] - len(comp_tile_pools[c])
+                if comp_demand[c] == 0 or deficit <= 0:
+                    continue
+                comp_union = comp_union_list[c]
+                # Widen the search until enough cells are available: unclaimed ones,
+                # plus cells held spare by a component that can afford to lose them.
+                taken: list[int] = []
+                for reach in (deficit + 2, 2 * deficit + 8, 4 * deficit + 32):
+                    search = comp_union.buffer(tile_size * reach)
+                    nearby = [int(t) for t in lattice_tree.query(search, predicate="intersects")]
+                    free = [t for t in nearby if t not in owner_of_tile or surplus[owner_of_tile[t]] > 0]
+                    if len(free) < deficit and reach != 4 * deficit + 32:
+                        continue
+                    polys = all_polys[free]
+                    overlap = shapely.area(shapely.intersection(polys, comp_union))
+                    distance = shapely.distance(shapely.centroid(polys), comp_union)
+                    order = sorted(range(len(free)), key=lambda i: (-overlap[i], distance[i], free[i]))
+                    for i in order:
+                        t = free[i]
+                        previous = owner_of_tile.get(t)
+                        if previous is not None:
+                            if surplus[previous] <= 0:
+                                continue
+                            comp_tile_pools[previous].remove(t)
+                            surplus[previous] -= 1
+                        owner_of_tile[t] = c
+                        taken.append(t)
+                        if len(taken) == deficit:
+                            break
+                    if taken:
+                        break
+                if taken:
+                    comp_tile_pools[c] = sorted([*comp_tile_pools[c], *taken])
+
         # Step 3c: Build group labels for group_by mode.
         # Uses the G-level user grouping (group_ids_G), which is None unless
         # group_by was used; data.group_ids is N-level (one entry per symbol)
@@ -774,6 +839,8 @@ class MosaicLayout(Layout):
         )
         regions_correct = int(np.sum(tile_count_per_region == counts))
 
+        _warn_unplaced_regions(tile_count_per_region, counts, source_gdf, enabled=opts.min_one_tile_per_region)
+
         # Region-level topology of the final assignment: a region (and, with
         # group_by, a group) should occupy exactly one connected block.
         n_noncontiguous_regions = _count_split_units(
@@ -838,6 +905,46 @@ class MosaicLayout(Layout):
             source_indices=src_idx,
             group_ids=data.group_ids_G[src_idx] if data.group_ids_G is not None else None,
         )
+
+
+def _warn_unplaced_regions(tile_counts: np.ndarray, counts: np.ndarray, source_gdf, *, enabled: bool) -> None:
+    """Warn about regions that ended up with no symbol at all.
+
+    A region gets no tile when its geographic component wins none: every
+    lattice cell covering that land mass falls below ``min_overlap_frac``, so
+    the component has an empty tile pool.  Silence here would leave the region
+    simply missing from the map, so the names and the ways out are reported.
+    """
+    import warnings
+
+    missing = [int(g) for g in range(len(counts)) if counts[g] > 0 and tile_counts[g] == 0]
+    if not missing:
+        return
+
+    def _label(g: int) -> str:
+        for column in ("name", "NAME", "Name"):
+            if column in source_gdf.columns:
+                return str(source_gdf[column].iloc[g])
+        return str(source_gdf.index[g])
+
+    shown = ", ".join(_label(g) for g in missing[:10])
+    if len(missing) > 10:
+        shown += f", and {len(missing) - 10} more"
+    remedy = (
+        "raise the tile budget so each of them covers more of a tile, or lower min_overlap_frac"
+        if enabled
+        else (
+            "set min_one_tile_per_region=True to place them on the nearest free cells, "
+            "raise the tile budget so each of them covers more of a tile, or lower min_overlap_frac"
+        )
+    )
+    warnings.warn(
+        f"{len(missing)} region(s) received no tile and are missing from the mosaic: {shown}. "
+        f"Each sits on a land mass no tile overlaps by min_overlap_frac, so its geographic "
+        f"component has no tiles to assign. To place them, {remedy}.",
+        UserWarning,
+        stacklevel=2,
+    )
 
 
 def _build_geodataframes(

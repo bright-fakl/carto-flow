@@ -600,13 +600,41 @@ class MosaicLayout(Layout):
         # These ring tiles lie outside the component union (high outside_frac cost)
         # and serve as reserve: used only under strong cost pressure (e.g. high
         # neighbor_weight), preventing zero-surplus situations after partitioning.
+        #
+        # Pools stay disjoint.  Every tile is owned by exactly one component --
+        # core tiles by the partition above, ring tiles by the component that
+        # reaches them in the fewest lattice steps, ties going to the component
+        # whose union centroid is nearest, the same rule the partition uses for a
+        # tile that touches no component.  The rings are therefore grown from all
+        # components at once rather than component by component: a per-component
+        # expansion would reach across a narrow sea into a neighbouring component's
+        # core tiles, both components would place a symbol on the same tile, and
+        # whichever component is solved last would silently overwrite the other's.
         if opts.extra_tile_rings > 0:
-            for c in range(n_components):
-                pool_set = set(comp_tile_pools[c])
-                for _ in range(opts.extra_tile_rings):
-                    ring = {nb for t in pool_set for nb in adj_list[t] if nb not in pool_set}
-                    pool_set |= ring
-                comp_tile_pools[c] = sorted(pool_set)
+            tile_owner = {t: int(tile_to_comp[t]) for t in valid_tile_indices}
+            frontier = list(tile_owner.items())
+            for _ in range(opts.extra_tile_rings):
+                claims: dict[int, set[int]] = {}
+                for t, c in frontier:
+                    for nb in adj_list[t]:
+                        if nb not in tile_owner:
+                            claims.setdefault(nb, set()).add(c)
+                frontier = []
+                for nb, claimants in claims.items():
+                    if len(claimants) == 1:
+                        c = next(iter(claimants))
+                    else:
+                        nb_centroid = tiling_result.polygons[nb].centroid
+                        c = min(
+                            claimants,
+                            key=lambda cc: (nb_centroid.distance(comp_union_list[cc].centroid), cc),
+                        )
+                    tile_owner[nb] = c
+                    frontier.append((nb, c))
+            comp_tile_pools = [[] for _ in range(n_components)]
+            for t, c in tile_owner.items():
+                comp_tile_pools[c].append(t)
+            comp_tile_pools = [sorted(pool) for pool in comp_tile_pools]
 
         # Step 3c: Build group labels for group_by mode.
         # Uses the G-level user grouping (group_ids_G), which is None unless

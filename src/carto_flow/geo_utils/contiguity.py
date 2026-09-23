@@ -108,6 +108,31 @@ def repair_contiguity(
         max_len: int = 10,
         max_k: int = max_candidate_paths,
     ):
+        # Reachability pre-check.  The enumeration below walks *paths*, so a
+        # node is re-expanded once per prefix that reaches it, and the search
+        # ends only when the heap empties -- which, when nothing reaches
+        # ``dst_slots``, means enumerating every simple path of up to
+        # ``max_len`` nodes.  A node-level BFS over the same restricted node
+        # set settles reachability in linear time, and a shortest walk is a
+        # simple path, so "no node of ``dst_slots`` within ``max_len`` nodes"
+        # is exactly the condition under which the enumeration yields nothing.
+        seen = {s for s in src_slots if s not in forbidden_nodes}
+        frontier: deque[tuple[int, int]] = deque((s, 1) for s in seen)
+        reachable = False
+        while frontier:
+            node, depth = frontier.popleft()
+            if node in dst_slots:
+                reachable = True
+                break
+            if depth >= max_len:
+                continue
+            for nb in adj[node]:
+                if nb not in seen and nb not in forbidden_nodes:
+                    seen.add(nb)
+                    frontier.append((nb, depth + 1))
+        if not reachable:
+            return
+
         heap: list[tuple[int, tuple[int, ...]]] = []
         for s in src_slots:
             if s not in forbidden_nodes:

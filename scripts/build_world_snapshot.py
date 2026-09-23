@@ -32,7 +32,8 @@ when reprojected, and rewrites the parquet in place. Three steps, in order:
    projected curve instead of cutting the chord.
 
 The operations are idempotent: running this script on an already-repaired file
-leaves the geometries unchanged.
+leaves the geometries unchanged in shape. ``set_precision`` normalizes its
+output, so a second pass may reorder rings within a geometry.
 
 Usage
 -----

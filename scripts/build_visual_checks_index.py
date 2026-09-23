@@ -30,7 +30,7 @@ Review status comes from the PR's GitHub state via one ``gh`` call - merged or
 closed is done, open needs review - and an explicit ``status:`` always wins, so
 a merged PR can still be flagged for follow-up.  Directories with no PR and no
 ``status:`` need review: an investigation is outstanding until someone says it
-is not.  The recognised values are ``needs review`` (outstanding), ``deferred``
+is not.  The recognized values are ``needs review`` (outstanding), ``deferred``
 (a deliberate park), and ``reviewed`` / ``merged`` / ``closed`` / ``superseded``
 (done); anything else warns.  The generated pages are static, so there is no
 control to click - use ``--set-status DIR STATUS`` to change one and
@@ -437,7 +437,7 @@ def _entry_time(pr: PrDir) -> float:
     return pr.mtime
 
 
-# Recognised review states.  `needs review` is outstanding, `deferred` is a
+# Recognized review states.  `needs review` is outstanding, `deferred` is a
 # deliberate park (neither finished nor awaiting attention), the rest are done.
 OUTSTANDING_STATUSES = {"needs review"}
 PARKED_STATUSES = {"deferred"}

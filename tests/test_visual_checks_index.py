@@ -1,7 +1,7 @@
 """Tests for scripts/build_visual_checks_index.py.
 
 The script has no import path of its own, so it is loaded from source. These
-pin the two behaviours that have silently regressed before: the order pages are
+pin the two behaviors that have silently regressed before: the order pages are
 listed in, and which of them count as still needing review.
 """
 

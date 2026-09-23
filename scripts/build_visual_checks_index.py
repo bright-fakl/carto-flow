@@ -211,6 +211,9 @@ SORT_SCRIPT = """
   if (!table) return;
   var body = table.tBodies[0];
   var state = {};
+  // First click sorts the way that column is actually useful: newest dates,
+  // highest PR, most figures, but outstanding statuses first.
+  var FIRST_ASC = [true, false, true, true, false, false];
   // Status sorts by how much attention an item still needs, not alphabetically:
   // "needs review" before "deferred" before anything finished.
   var STATUS_RANK = {
@@ -234,7 +237,7 @@ SORT_SCRIPT = """
   table.querySelectorAll("th[data-col]").forEach(function (th) {
     th.addEventListener("click", function () {
       var i = +th.dataset.col;
-      var asc = state[i] = !state[i];
+      var asc = state[i] = (i in state) ? !state[i] : FIRST_ASC[i];
       var rows = Array.prototype.slice.call(body.rows);
       rows.sort(function (a, b) {
         var x = cellValue(a, i), y = cellValue(b, i);
@@ -647,9 +650,9 @@ def build_index_page(pr_dirs: list[PrDir], statuses: dict[Path, str] | None = No
 
 def _sort_key(pr: PrDir) -> tuple[float, int]:
     # Newest first, by the `date` metadata field when present and the directory
-    # mtime otherwise.  PR number is only a tie-break: pages are written over
-    # time and read in that order, and several directories are investigations
-    # with no PR at all.
+    # mtime otherwise.  PR number breaks ties within a date.  mtime is
+    # deliberately NOT a tie-break here: --set-status rewrites summary.md, so
+    # using it would let changing a status silently reorder the whole index.
     return (-_entry_time(pr), -(pr.pr or 0))
 
 

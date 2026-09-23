@@ -46,9 +46,24 @@ class TestOrdering:
 
         assert [d.title for d in dirs] == ["new", "inv", "old"]
 
+    def test_status_edit_does_not_reorder(self, mod, tmp_path):
+        """--set-status rewrites summary.md; that must not move the page."""
+        a = _write(tmp_path, "a", pr=10, title="ten", description="d", date="2026-06-01")
+        b = _write(tmp_path, "b", pr=20, title="twenty", description="d", date="2026-06-01")
+        before = sorted((mod.scan_pr_dir(p) for p in (a, b)), key=mod._sort_key)
+
+        mod.set_status(a, "reviewed")
+        after = sorted((mod.scan_pr_dir(p) for p in (a, b)), key=mod._sort_key)
+
+        assert [d.title for d in before] == [d.title for d in after]
+
     def test_pr_number_only_breaks_ties_within_a_date(self, mod, tmp_path):
-        _write(tmp_path, "a", pr=10, title="ten", description="d", date="2026-06-01")
-        _write(tmp_path, "b", pr=20, title="twenty", description="d", date="2026-06-01")
+        import os
+
+        a = _write(tmp_path, "a", pr=10, title="ten", description="d", date="2026-06-01")
+        b = _write(tmp_path, "b", pr=20, title="twenty", description="d", date="2026-06-01")
+        for d in (a, b):  # identical mtimes, so only the PR number separates them
+            os.utime(d / "summary.md", (1_000_000, 1_000_000))
 
         dirs = [mod.scan_pr_dir(p) for p in tmp_path.iterdir() if p.is_dir()]
         dirs.sort(key=mod._sort_key)
@@ -208,3 +223,19 @@ class TestStatusSortOrder:
 
         printed = [ln.split()[-1] for ln in capsys.readouterr().out.strip().split("\n")]
         assert printed == ["c-todo", "b-parked", "a-done"]
+
+
+class TestClickSortDirection:
+    def test_first_click_is_useful_per_column(self, mod):
+        """Clicking Date once must show newest first, not oldest."""
+        import re
+
+        match = re.search(r"FIRST_ASC = \[([^\]]+)\]", mod.SORT_SCRIPT)
+        assert match
+        first_asc = [v.strip() == "true" for v in match.group(1).split(",")]
+
+        assert len(first_asc) == 6
+        assert first_asc[0] is True, "Status: outstanding first"
+        assert first_asc[1] is False, "PR: highest first"
+        assert first_asc[4] is False, "Date: newest first"
+        assert first_asc[5] is False, "Figures: most first"

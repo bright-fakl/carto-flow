@@ -19,12 +19,12 @@ start with a fenced metadata block, parsed as simple ``key: value`` lines
     inputs: districts (bundled, simplify 5000 m, min_island 50000), states (bundled)
     ---
 
-``pr``, ``title``, ``description``, and ``url`` are required - a missing one
-prints a warning naming the directory and falls back to the directory name
-(``pr`` falls back to ``None``, sorted last by mtime; ``url`` falls back to no
-link). ``branch``, ``base``, ``date``, ``before``, ``after``, and ``inputs``
-are optional and, when present, are rendered in the PR page's definition
-list.
+``title`` and ``description`` are required - a missing one prints a warning
+naming the directory and falls back to the directory name. ``pr``, ``url``,
+``branch``, ``base``, ``date``, ``before``, ``after`` and ``inputs`` are
+optional and, when present, are rendered in the page's definition list.
+``pr`` and ``url`` are optional because several directories are investigation
+workspaces that belong to no single PR.
 
 Below the metadata block, ``summary.md`` may contain any number of caption
 lines anywhere in the file:
@@ -38,8 +38,8 @@ This script builds:
 
 - ``<root>/index.html`` - a table of contents: a table of PR (linked to the
   GitHub PR), Title (linked to the page), Description, Date, Figures -
-  sorted by PR number descending (dirs without ``pr`` fall back to mtime,
-  sorted after the numbered ones).
+  sorted newest first, by the ``date`` metadata field where present and by
+  directory mtime otherwise.  PR number only breaks ties.
 - ``<root>/<subdir>/index.html`` - a standalone page per subdirectory:
   ``<h1>PR #N: title</h1>``, a definition list (URL, branch, base, date,
   before/after, inputs), the description, the rest of ``summary.md``
@@ -64,6 +64,7 @@ import html
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 STYLE = """
@@ -142,9 +143,10 @@ a local review workspace, not part of the repo.
    ---
    ```
 
-   `pr`, `title`, `description`, and `url` are required; `branch`, `base`,
+   `title` and `description` are required; `pr`, `url`, `branch`, `base`,
    `date`, `before`, `after`, and `inputs` are optional and rendered in a
-   definition list on the page.
+   definition list on the page.  Pages are listed newest first, by `date`
+   where given and by directory mtime otherwise.
 
 3. Optionally caption a figure by adding a line anywhere below the header:
 
@@ -270,8 +272,8 @@ def render_markdown(text: str) -> str:
 # summary.md metadata header parsing
 # ---------------------------------------------------------------------------
 
-REQUIRED_META_KEYS = ("pr", "title", "description", "url")
-OPTIONAL_META_KEYS = ("branch", "base", "date", "before", "after", "inputs")
+REQUIRED_META_KEYS = ("title", "description")
+OPTIONAL_META_KEYS = ("pr", "url", "branch", "base", "date", "before", "after", "inputs")
 META_LABELS = {
     "url": "URL",
     "branch": "Branch",
@@ -322,9 +324,25 @@ def _parse_figure_captions(text: str) -> dict[str, str]:
 
 
 def _dir_mtime(directory: Path) -> float:
-    """Newest mtime among files directly in the directory."""
-    mtimes = [p.stat().st_mtime for p in directory.iterdir() if p.is_file()]
+    """Newest mtime among files directly in the directory.
+
+    ``index.html`` is skipped: this script writes one into every subdirectory,
+    so counting it would reset each directory's mtime on every rebuild and make
+    it useless for ordering.
+    """
+    mtimes = [p.stat().st_mtime for p in directory.iterdir() if p.is_file() and p.name != "index.html"]
     return max(mtimes) if mtimes else directory.stat().st_mtime
+
+
+def _entry_time(pr: PrDir) -> float:
+    """Sort timestamp: the ``date`` metadata field when usable, else mtime."""
+    raw = pr.meta.get("date")
+    if raw:
+        try:
+            return datetime.strptime(str(raw).strip(), "%Y-%m-%d").timestamp()
+        except ValueError:
+            pass
+    return pr.mtime
 
 
 # ---------------------------------------------------------------------------
@@ -466,11 +484,12 @@ def build_index_page(pr_dirs: list[PrDir]) -> str:
     return _page_shell("Visual checks", body)
 
 
-def _sort_key(pr: PrDir) -> tuple[int, int, float]:
-    # Numbered PRs first (sorted by pr desc), then unnumbered ones by mtime desc.
-    if pr.pr is not None:
-        return (0, pr.pr, 0.0)
-    return (1, 0, pr.mtime)
+def _sort_key(pr: PrDir) -> tuple[float, int]:
+    # Newest first, by the `date` metadata field when present and the directory
+    # mtime otherwise.  PR number is only a tie-break: pages are written over
+    # time and read in that order, and several directories are investigations
+    # with no PR at all.
+    return (-_entry_time(pr), -(pr.pr or 0))
 
 
 def main() -> None:

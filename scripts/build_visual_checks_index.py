@@ -507,11 +507,7 @@ def main() -> None:
 
     pr_dirs = [scan_pr_dir(p) for p in root.iterdir() if p.is_dir()]
 
-    # Numbered dirs sorted by pr descending; unnumbered dirs sorted by mtime
-    # descending, placed after all numbered ones.
-    numbered = sorted((p for p in pr_dirs if p.pr is not None), key=lambda p: p.pr, reverse=True)
-    unnumbered = sorted((p for p in pr_dirs if p.pr is None), key=lambda p: p.mtime, reverse=True)
-    pr_dirs = numbered + unnumbered
+    pr_dirs.sort(key=_sort_key)
 
     for pr in pr_dirs:
         (pr.path / "index.html").write_text(build_pr_page(pr), encoding="utf-8")

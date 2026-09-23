@@ -17,6 +17,7 @@ What the layout guarantees, and what it only attempts:
 
 from __future__ import annotations
 
+import warnings
 from collections import deque
 
 import geopandas as gpd
@@ -1423,3 +1424,50 @@ class TestCalibrationAdjacencySkip:
         # any residual deficit at the call site, so just check it converged
         # close to the target rather than exactly matching it here.
         assert abs(len(setup.core_set) - target) <= 1
+
+
+class TestMinOneTilePerRegion:
+    """A region on a land mass smaller than one tile gets no symbol by default."""
+
+    @staticmethod
+    def _mainland_plus_speck():
+        """A 4x3 block of unit squares plus a far-off speck 1/2500th of a tile."""
+        mainland = [box(x, y, x + 1, y + 1) for y in range(3) for x in range(4)]
+        speck = box(20.0, 20.0, 20.02, 20.02)
+        gdf = gpd.GeoDataFrame(
+            {"name": [f"m{i}" for i in range(len(mainland))] + ["speck"], "n": [1] * (len(mainland) + 1)},
+            geometry=[*mainland, speck],
+        )
+        return gdf
+
+    def test_region_below_overlap_threshold_is_dropped_with_a_warning(self):
+        gdf = self._mainland_plus_speck()
+        with pytest.warns(UserWarning, match="received no tile") as record:
+            result = create_layout(gdf, tile_count="n", layout=MosaicLayout(morph=False), show_progress=False)
+        message = str(next(w.message for w in record if "received no tile" in str(w.message)))
+        assert "speck" in message
+        assert "min_one_tile_per_region" in message
+        assert "min_overlap_frac" in message
+        assert int(result.regions_gdf["tile_count"].iloc[-1]) == 0
+
+    def test_min_one_tile_per_region_places_it(self):
+        gdf = self._mainland_plus_speck()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
+            result = create_layout(
+                gdf,
+                tile_count="n",
+                layout=MosaicLayout(morph=False, min_one_tile_per_region=True),
+                show_progress=False,
+            )
+        counts = result.regions_gdf["tile_count"].to_numpy()
+        assert int(counts[-1]) == 1
+        # No other region gives up a tile: the seeded cell is unclaimed.
+        assert counts.tolist() == result.regions_gdf["target_count"].to_numpy().tolist()
+
+    def test_option_is_inert_when_every_region_already_has_tiles(self):
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        kw = {"tile_count": "tiles", "show_progress": False}
+        plain = create_layout(gdf, layout=MosaicLayout(morph=False), **kw)
+        seeded = create_layout(gdf, layout=MosaicLayout(morph=False, min_one_tile_per_region=True), **kw)
+        assert plain.assignments.tolist() == seeded.assignments.tolist()

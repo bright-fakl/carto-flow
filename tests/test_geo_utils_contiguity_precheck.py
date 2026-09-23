@@ -9,9 +9,10 @@ other would make the repair silently stop repairing.  These tests pin that the
 two agree.
 
 Both are closures inside ``repair_contiguity`` and cannot be imported, so the
-enumerator is lifted out of the function source (``_enumerators``) in two
-forms: as written, and with the pre-check block deleted.  Any disagreement
-between them is a bug in the pre-check.
+enumerator is lifted out of the function source in three forms: as written
+(``_enumerators``, first return value), with the pre-check block deleted
+(second return value), and the pre-check alone returning its verdict
+(``_precheck``).  Any disagreement between them is a bug in the pre-check.
 """
 
 from __future__ import annotations

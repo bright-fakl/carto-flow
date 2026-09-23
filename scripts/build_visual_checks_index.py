@@ -61,7 +61,9 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -84,6 +86,13 @@ STYLE = """
   h3, h4 { font-size: 1.05rem; }
   table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.85rem; }
   th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+  th[data-col] { cursor: pointer; user-select: none; }
+  th[data-col]:hover { background: #eef; }
+  tr.todo { background: #fffbe6; }
+  tr.todo td:first-child { border-left: 3px solid #d98c00; }
+  .status { font-size: 0.8rem; white-space: nowrap; }
+  .status.todo { color: #8a5a00; font-weight: 600; }
+  .status.done { color: #4a7a4a; }
   th { background: rgba(0,0,0,0.05); }
   code { background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
   ul { padding-left: 1.4rem; }
@@ -106,6 +115,10 @@ DARK_STYLE = """
   @media (prefers-color-scheme: dark) {
     body { background: #1a1a1a; color: #eee; }
     table, th, td { border-color: #444 !important; }
+    th[data-col]:hover { background: #26304a !important; }
+    tr.todo { background: #2a2618 !important; }
+    .status.todo { color: #e0b050 !important; }
+    .status.done { color: #8fbf8f !important; }
     th { background: rgba(255,255,255,0.08); }
     code { background: rgba(255,255,255,0.1); }
     .figure, .toc-item { background: #242424; border-color: #333; }
@@ -167,6 +180,38 @@ uv run python scripts/build_visual_checks_index.py --root /path/to/visual_checks
 ```
 
 Regenerates `index.html` and every `<subdir>/index.html`, plus this file.
+"""
+
+
+SORT_SCRIPT = """
+<script>
+(function () {
+  var table = document.getElementById("toc");
+  if (!table) return;
+  var body = table.tBodies[0];
+  var state = {};
+  function cellValue(row, i) {
+    var text = (row.cells[i].innerText || "").trim();
+    if (i === 1) return parseInt(text.replace("#", ""), 10) || -1;  // PR
+    if (i === 5) return parseInt(text, 10) || 0;                    // Figures
+    return text.toLowerCase();
+  }
+  table.querySelectorAll("th[data-col]").forEach(function (th) {
+    th.addEventListener("click", function () {
+      var i = +th.dataset.col;
+      var asc = state[i] = !state[i];
+      var rows = Array.prototype.slice.call(body.rows);
+      rows.sort(function (a, b) {
+        var x = cellValue(a, i), y = cellValue(b, i);
+        if (x < y) return asc ? -1 : 1;
+        if (x > y) return asc ? 1 : -1;
+        return 0;
+      });
+      rows.forEach(function (r) { body.appendChild(r); });
+    });
+  });
+})();
+</script>
 """
 
 
@@ -273,12 +318,13 @@ def render_markdown(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 REQUIRED_META_KEYS = ("title", "description")
-OPTIONAL_META_KEYS = ("pr", "url", "branch", "base", "date", "before", "after", "inputs")
+OPTIONAL_META_KEYS = ("pr", "url", "status", "branch", "base", "date", "before", "after", "inputs")
 META_LABELS = {
     "url": "URL",
     "branch": "Branch",
     "base": "Base",
     "date": "Date",
+    "status": "Status",
     "before": "Before",
     "after": "After",
     "inputs": "Inputs",
@@ -345,6 +391,55 @@ def _entry_time(pr: PrDir) -> float:
     return pr.mtime
 
 
+DONE_STATUSES = {"done", "reviewed", "merged", "closed"}
+
+# PR state -> status label, used when `summary.md` does not set one.
+_PR_STATE_STATUS = {"MERGED": "merged", "CLOSED": "closed", "OPEN": "needs review"}
+
+
+def fetch_pr_states(timeout: float = 20.0) -> dict[int, str]:
+    """Map PR number -> GitHub state, via one `gh` call.
+
+    Returns an empty map when `gh` is missing, unauthenticated or offline; the
+    caller then falls back to whatever `summary.md` declares.  One batched call
+    rather than one per directory.
+    """
+    try:
+        proc = subprocess.run(
+            ["gh", "pr", "list", "--state", "all", "--limit", "200", "--json", "number,state"],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    if proc.returncode != 0:
+        return {}
+    try:
+        return {int(row["number"]): str(row["state"]) for row in json.loads(proc.stdout or "[]")}
+    except (ValueError, KeyError, TypeError):
+        return {}
+
+
+def resolve_status(pr: PrDir, pr_states: dict[int, str]) -> str:
+    """Review status for one directory.
+
+    An explicit ``status:`` in ``summary.md`` always wins, so a merged PR can
+    still be flagged for follow-up.  Otherwise the PR's GitHub state decides.
+    Directories with no PR and no ``status:`` are "needs review": an
+    investigation is outstanding until someone says it is not.
+    """
+    declared = (pr.meta.get("status") or "").strip().lower()
+    if declared:
+        return declared
+    if pr.pr is not None and pr.pr in pr_states:
+        return _PR_STATE_STATUS.get(pr_states[pr.pr], "needs review")
+    if pr.pr is not None:
+        return "unknown"
+    return "needs review"
+
+
 # ---------------------------------------------------------------------------
 # Directory scanning
 # ---------------------------------------------------------------------------
@@ -405,10 +500,12 @@ def scan_pr_dir(directory: Path) -> PrDir:
     )
 
 
-def build_pr_page(pr: PrDir) -> str:
+def build_pr_page(pr: PrDir, status: str = "needs review") -> str:
     captions = _parse_figure_captions(pr.body_text)
 
-    dl_items = []
+    dl_items: list[tuple[str, str]] = []
+    done = status in DONE_STATUSES
+    dl_items.append(("Status", f'<span class="status {"done" if done else "todo"}">{html.escape(status)}</span>'))
     if pr.url:
         dl_items.append(("URL", f'<a href="{html.escape(pr.url)}">{html.escape(pr.url)}</a>'))
     else:
@@ -452,9 +549,14 @@ def build_pr_page(pr: PrDir) -> str:
     return _page_shell(heading, body)
 
 
-def build_index_page(pr_dirs: list[PrDir]) -> str:
+def build_index_page(pr_dirs: list[PrDir], statuses: dict[Path, str] | None = None) -> str:
+    statuses = statuses or {}
     rows = []
     for pr in pr_dirs:
+        status = statuses.get(pr.path, "needs review")
+        done = status in DONE_STATUSES
+        row_class = "" if done else ' class="todo"'
+        status_cell = f'<span class="status {"done" if done else "todo"}">{html.escape(status)}</span>'
         pr_cell = (
             f'<a href="{html.escape(pr.url)}">#{pr.pr}</a>'
             if pr.url and pr.pr is not None
@@ -464,7 +566,8 @@ def build_index_page(pr_dirs: list[PrDir]) -> str:
         desc_cell = html.escape(pr.description)
         date_cell = html.escape(pr.meta.get("date", ""))
         rows.append(
-            "<tr>"
+            f"<tr{row_class}>"
+            f"<td>{status_cell}</td>"
             f"<td>{pr_cell}</td>"
             f"<td>{title_cell}</td>"
             f"<td>{desc_cell}</td>"
@@ -473,14 +576,15 @@ def build_index_page(pr_dirs: list[PrDir]) -> str:
             "</tr>"
         )
 
+    headers = ("Status", "PR", "Title", "Description", "Date", "Figures")
+    header_row = "".join(f'<th data-col="{i}" title="Sort by {h}">{h}</th>' for i, h in enumerate(headers))
     table = (
-        "<table>\n"
-        "<tr><th>PR</th><th>Title</th><th>Description</th><th>Date</th><th>Figures</th></tr>\n"
-        + "\n".join(rows)
-        + "\n</table>"
+        f'<table id="toc">\n<thead><tr>{header_row}</tr></thead>\n<tbody>\n' + "\n".join(rows) + "\n</tbody>\n</table>"
     )
 
-    body = "<h1>Visual checks</h1>\n<p>Before/after visual review pages for PRs.</p>\n" + table
+    outstanding = sum(1 for pr in pr_dirs if statuses.get(pr.path, "needs review") not in DONE_STATUSES)
+    lead = f"<p>{outstanding} of {len(pr_dirs)} awaiting review. Newest first; click a column heading to re-sort.</p>"
+    body = "<h1>Visual checks</h1>\n" + lead + "\n" + table + SORT_SCRIPT
     return _page_shell("Visual checks", body)
 
 
@@ -499,6 +603,11 @@ def main() -> None:
         default="visual_checks",
         help="Root directory containing per-PR subdirectories (default: visual_checks, relative to cwd).",
     )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Skip the gh lookup for PR state; use the status declared in summary.md only.",
+    )
     args = parser.parse_args()
 
     root = Path(args.root)
@@ -509,10 +618,15 @@ def main() -> None:
 
     pr_dirs.sort(key=_sort_key)
 
-    for pr in pr_dirs:
-        (pr.path / "index.html").write_text(build_pr_page(pr), encoding="utf-8")
+    pr_states = {} if args.offline else fetch_pr_states()
+    statuses = {pr.path: resolve_status(pr, pr_states) for pr in pr_dirs}
+    if not pr_states and not args.offline and any(pr.pr is not None for pr in pr_dirs):
+        print("note: could not read PR state from gh; using declared status only", file=sys.stderr)
 
-    (root / "index.html").write_text(build_index_page(pr_dirs), encoding="utf-8")
+    for pr in pr_dirs:
+        (pr.path / "index.html").write_text(build_pr_page(pr, statuses[pr.path]), encoding="utf-8")
+
+    (root / "index.html").write_text(build_index_page(pr_dirs, statuses), encoding="utf-8")
     (root / "README.md").write_text(README_TEXT, encoding="utf-8")
 
     total_warnings = sum(len(pr.warnings) for pr in pr_dirs)

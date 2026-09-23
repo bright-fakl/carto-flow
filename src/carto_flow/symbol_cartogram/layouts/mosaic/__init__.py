@@ -349,9 +349,15 @@ class HungarianOptions:
     max_connectivity_iters : int
         Maximum number of iterative re-solve passes for connectivity
         repair (intra-region disconnections + inter-region gap bridging).
-    disconnected_penalty_mult : float
-        Per-iteration cost raise for intra-region disconnected tiles:
-        ``cost_iter.max() x disconnected_penalty_mult``.
+        The loop also stops as soon as a pass fails to improve on the
+        incumbent, which on every input measured happens well inside the
+        cap -- four passes at most.  Default 5.
+    penalize_disconnected : bool
+        Raise the cost of a tile that sits apart from the rest of its
+        region's block, so the next pass has to place it elsewhere.  The
+        raise is a multiple of the static cost maximum and any multiple
+        above one puts the tile out of contention outright, which is why
+        this is a switch and not a magnitude.  Default True.
     neighbor_weight : float
         Weight on the neighbor cost term. After each solve, penalizes placing
         geometry g's tiles far from the pool centroids of g's geographic
@@ -381,8 +387,8 @@ class HungarianOptions:
     distance_weight: float = 1.0
     outside_penalty: float = 1.0
     interior_bonus: float = 2.0
-    max_connectivity_iters: int = 15
-    disconnected_penalty_mult: float = 10.0
+    max_connectivity_iters: int = 5
+    penalize_disconnected: bool = True
     neighbor_weight: float = 0.3
     neighbor_bfs: bool = False
     swap_repair_passes: int = 10

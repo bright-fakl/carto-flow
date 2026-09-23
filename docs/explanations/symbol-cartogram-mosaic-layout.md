@@ -189,7 +189,7 @@ used to happen — the tile score preferred an assignment with 9 split states ov
 
 If the score is non-zero, the cost matrix is modified before the next re-solve:
 
-- **Disconnected tiles**: cost raised by $C_{\max} \cdot$ `disconnected_penalty_mult` (default 10×)
+- **Disconnected tiles**: cost raised by $10 C_{\max}$, unless `penalize_disconnected` is off
 - **Bridge-candidate tiles** at gaps: cost reduced by $5 C_{\max}$
 
 The best-scoring assignment across all iterations is returned, and the loop stops early when an
@@ -278,8 +278,8 @@ large tile count would otherwise have to borrow tiles from its neighbours' space
 | `interior_bonus` | 2.0 | Connectivity bonus weight (interior-tile preference). |
 | `neighbor_weight` | 0.3 | Weight on the neighbour-proximity term; 0 disables it. |
 | `neighbor_bfs` | `False` | Measure neighbour proximity in tile-graph hops instead of distance. |
-| `max_connectivity_iters` | 15 | Maximum connectivity repair iterations. |
-| `disconnected_penalty_mult` | 10.0 | Cost raise for disconnected tiles (x current max cost). |
+| `max_connectivity_iters` | 5 | Maximum connectivity repair iterations. |
+| `penalize_disconnected` | `True` | Raise the cost of tiles sitting apart from their region's block. |
 | `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
 | `ring_swapback_max_hops` | 16 | BFS search radius for the extra-ring swap-back; 0 disables it. |
 

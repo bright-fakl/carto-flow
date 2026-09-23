@@ -115,6 +115,21 @@ Only layouts whose placement honors the grouping accept it: each layout class
 declares this with the `supports_group_by` class attribute, and `create_layout`
 raises `ValueError` for the others rather than silently placing symbols as if
 no grouping had been given.
+A layout that accepts the grouping can still be configured so that it reads the
+labels and places symbols exactly as it would without them, and each such layout
+warns rather than staying silent: `packing` when `group_weight` is 0.0, its
+default, because the pull toward the group centroid is then switched off; and
+`flow_density` when `cross_group_pull_scale` is 1.0, its default, because
+cross-group pairs are then pulled together exactly like within-group pairs.
+In both cases the warning names the option to set.
+
+`cross_group_pull_scale` attenuates the cross-group *pull*; it does not isolate
+groups. The field is global — one multiplier applied to every cross-group pair —
+and the density field that drives advection is built from all pairs at once and
+covers the whole domain, so at `cross_group_pull_scale=0` groups still push on
+each other and still interact through the shared field geometry.
+`FlowDensityLayout` also converges on the *mean* nearest-neighbor spacing error,
+so a converged result can still contain individual overlapping pairs.
 `tile_count` cannot be combined with `group_by`, so it leaves `group_ids_G` as
 `None` and `group_ids` simply records which geometry each tile came from.
 `None` means *each geometry is its own group* rather than *no grouping*: the

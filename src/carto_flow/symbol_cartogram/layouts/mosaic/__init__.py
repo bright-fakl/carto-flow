@@ -471,6 +471,12 @@ class MosaicLayout(Layout):
     >>> layout = MosaicLayout(count_column="n_tiles")  # N tiles per geometry
     >>> layout = MosaicLayout(tiling="square", morph=False)
 
+    Notes
+    -----
+    Symbol scale comes from the tile lattice: each symbol fills its tile in
+    proportion to the largest symbol. ``size_normalization`` scales every
+    symbol by the same factor and so has no effect on the result.
+
     """
 
     #: ``group_by`` defines the blocks kept contiguous by tile assignment and repair.

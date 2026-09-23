@@ -770,11 +770,12 @@ class TestPreScale:
 
         assert island_area_scaled > island_area_plain
 
-    def test_pre_scale_does_not_change_mean_area_or_max_normalized_sizes(self):
-        """``mean_area`` and ``size_normalization="max"`` sizing are recomputed
-        from the rescaled geometries, but are unaffected in practice: each
-        component's rescaled area matches its share of the data by
-        construction, so the total area (and mean) is unchanged."""
+    def test_pre_scale_does_not_change_mean_area_or_normalized_sizes(self):
+        """``mean_area`` and symbol sizing are recomputed from the rescaled
+        geometries, but are unaffected in practice: each component's rescaled
+        area matches its share of the data by construction, so the total area
+        (and mean) is unchanged. That holds for either ``size_normalization``:
+        both anchor to a total that pre-scaling leaves alone."""
         gdf = grid_gdf(3, 3, COUNTS_3X3)
         island = gpd.GeoDataFrame({"tiles": [5]}, geometry=[box(6, 1, 7, 2)])
         gdf = gpd.GeoDataFrame(gpd.pd.concat([gdf, island], ignore_index=True), geometry="geometry")

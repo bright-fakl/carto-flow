@@ -59,6 +59,19 @@ class LayoutData:
 
 The `size_max_value` parameter fixes the reference maximum, enabling consistent size scaling across multiple cartograms of different datasets.
 
+`size_normalization` then rescales every symbol by one global factor, which fixes the absolute scale of the symbols against the input geometries:
+
+| Mode | Anchor | Fraction of the total geometry area covered |
+|------|--------|---------------------------------------------|
+| `"total"` | Σ π × radius² = Σ geometry area | 1, whatever the data |
+| `"max"` | largest symbol area = mean geometry area | mean(value) / max(value) under the `"sqrt"` scale |
+
+Under `"max"` the covered fraction follows the skew of the sizing column: a column whose mean is a sixth of its maximum leaves five sixths of the map empty, and a uniform column fills it.
+
+The factor is global, so it never changes the size *ratios* between symbols — only the scale of the whole set. Layouts that place symbols by their radii (circle packing, physics, centroid, flow density) therefore lay out a differently sized set of symbols under each mode. Layouts that place symbols on a calibrated tile lattice react differently: the mosaic layout scales each symbol to its tile and is unaffected, while the grid layout derives its tile size from the largest symbol, so the mode rescales lattice and symbols together and leaves the arrangement alone.
+
+Because of that, the default is per layout: the grid layout defaults to `"max"`, which keeps the lattice at the scale of the input geometries, and every other layout defaults to `"total"`. Passing `size_normalization` explicitly overrides the layout's default.
+
 A zero data value is valid and gives a symbol of zero size. Every layout keeps
 that symbol as a row of the result, aligned with the input GeoDataFrame, and
 renders it as a zero-area geometry. A zero-size symbol has no extent, so it

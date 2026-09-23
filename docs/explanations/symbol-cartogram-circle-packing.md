@@ -372,66 +372,55 @@ The system converges when the smoothed fraction of negative drift rates falls be
 
 ## Usage Example
 
+The simulator is internal. Reach it through `CirclePackingLayout`, which builds the
+adjacency matrix from the input geometries, scales the data into the simulator's working
+frame and maps the result back:
+
 ```python
-import numpy as np
-from carto_flow.symbol_cartogram.placement import TopologyPreservingSimulator
+import carto_flow.symbol_cartogram as sym
 
-# Initialize with circle data
-simulator = TopologyPreservingSimulator(
-    positions=initial_positions,      # Shape: (n, 2)
-    radii=radii,                       # Shape: (n,)
-    original_positions=centroids,     # Shape: (n, 2)
-    adjacency=adjacency_matrix,       # Shape: (n, n), required for topology
-    spacing=0.05,
-    compactness=0.5,
-    topology_weight=0.3,
-    overlap_tolerance=1e-4,
-    max_expansion_factor=2.0,
-    topology_gate_distance=2.5,
-    neighbor_weight=0.5,
-    contact_tolerance=0.02,
-    max_step=0.3,
-    contact_transfer_ratio=0.5,      # Balance cancel vs transfer
-    contact_elasticity=0.0,          # Neutral compression behavior
-    size_sensitivity=0.0             # Uniform step size for all circles
+layout = sym.CirclePackingLayout(
+    sym.CirclePackingLayoutOptions(
+        spacing=0.05,
+        compactness=0.5,
+        topology_weight=0.3,
+        neighbor_weight=0.5,
+        origin_weight=0.1,
+        expansion=1.0,
+        max_iterations=500,
+        convergence_tolerance=0.025,
+        advanced=sym.CirclePackingAdvancedOptions(
+            topology_gate_distance=2.5,   # gate topology forces at 2.5 * (r_i + r_j)
+            contact_tolerance=0.02,       # contact detection tolerance
+            contact_elasticity=0.0,       # neutral compression behavior
+            size_sensitivity=0.0,         # uniform step size for all circles
+        ),
+    )
 )
 
-# Run simulation
-final_positions, info, history = simulator.run(
-    max_iterations=500,
-    tolerance=1e-4,
-    show_progress=True,
-    save_history=False
-)
+layout_result = sym.create_layout(gdf, "population", layout=layout)
 
-print(f"Converged: {info['converged']}")
-print(f"Overlap resolution iterations: {info['stage1_iterations']}")
-print(f"Packing iterations: {info['stage2_iterations']}")
-print(f"Final overlaps: {info['final_overlaps']}")
+print(f"Converged: {layout_result.metrics.converged}")
+print(f"Iterations: {layout_result.metrics.iterations}")
+print(f"Final overlaps: {layout_result.metrics.final_overlaps}")
+print(f"Final drift: {layout_result.metrics.algorithm.final_drift}")
 ```
+
+`contact_transfer_ratio` (cancel vs transfer of compressive forces at contacts) and
+`max_step` sit on `CirclePackingLayoutOptions` itself rather than on `advanced`.
 
 ## Return Value
 
-The `run()` method returns:
+`create_layout` returns a `LayoutResult`. Its `metrics` field carries the scalar summary
+common to all physics-based layouts plus a `PackingMetrics` subobject:
 
 ```python
-(
-    final_positions: np.ndarray,    # Shape: (n, 2) in original coordinates
-    info: dict,                      # Simulation statistics
-    history: list[np.ndarray] | None # Position history if save_history=True
-)
+layout_result.metrics.converged          # bool  — convergence criteria met
+layout_result.metrics.iterations         # int   — Stage 1 + Stage 2 iterations
+layout_result.metrics.final_overlaps     # int   — remaining overlap count
+layout_result.metrics.algorithm.final_drift    # float — final smoothed drift metric
+layout_result.metrics.algorithm.final_jitter   # float — final jitter metric
 ```
 
-**Info dictionary:**
-
-```python
-{
-    "iterations": int,            # Total iterations (stage1 + stage2)
-    "converged": bool,            # Whether convergence criteria met
-    "final_overlaps": int,        # Remaining overlap count
-    "stage1_iterations": int,     # Iterations in Stage 1
-    "stage2_iterations": int,     # Iterations in Stage 2
-    "final_mean_step": float,     # Final mean step magnitude
-    "final_rel_change": float,    # Final relative change in step magnitude
-}
-```
+Per-iteration series (`drift`, `jitter`, `drift_rate`) live on
+`layout_result.history.algorithm` when `create_layout` is called with `save_history=True`.

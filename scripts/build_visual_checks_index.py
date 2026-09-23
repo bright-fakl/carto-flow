@@ -21,10 +21,20 @@ start with a fenced metadata block, parsed as simple ``key: value`` lines
 
 ``title`` and ``description`` are required - a missing one prints a warning
 naming the directory and falls back to the directory name. ``pr``, ``url``,
-``branch``, ``base``, ``date``, ``before``, ``after`` and ``inputs`` are
-optional and, when present, are rendered in the page's definition list.
-``pr`` and ``url`` are optional because several directories are investigation
-workspaces that belong to no single PR.
+``status``, ``branch``, ``base``, ``date``, ``before``, ``after`` and
+``inputs`` are optional and, when present, are rendered in the page's
+definition list.  ``pr`` and ``url`` are optional because several directories
+are investigation workspaces that belong to no single PR.
+
+Review status comes from the PR's GitHub state via one ``gh`` call - merged or
+closed is done, open needs review - and an explicit ``status:`` always wins, so
+a merged PR can still be flagged for follow-up.  Directories with no PR and no
+``status:`` need review: an investigation is outstanding until someone says it
+is not.  The recognised values are ``needs review`` (outstanding), ``deferred``
+(a deliberate park), and ``reviewed`` / ``merged`` / ``closed`` / ``superseded``
+(done); anything else warns.  The generated pages are static, so there is no
+control to click - use ``--set-status DIR STATUS`` to change one and
+``--list-status`` to print them all.
 
 Below the metadata block, ``summary.md`` may contain any number of caption
 lines anywhere in the file:
@@ -65,6 +75,7 @@ import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -90,8 +101,11 @@ STYLE = """
   th[data-col]:hover { background: #eef; }
   tr.todo { background: #fffbe6; }
   tr.todo td:first-child { border-left: 3px solid #d98c00; }
+  tr.parked { background: #f2f2f5; }
+  tr.parked td:first-child { border-left: 3px solid #8a8a99; }
   .status { font-size: 0.8rem; white-space: nowrap; }
   .status.todo { color: #8a5a00; font-weight: 600; }
+  .status.parked { color: #5a5a6a; font-style: italic; }
   .status.done { color: #4a7a4a; }
   th { background: rgba(0,0,0,0.05); }
   code { background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
@@ -117,6 +131,8 @@ DARK_STYLE = """
     table, th, td { border-color: #444 !important; }
     th[data-col]:hover { background: #26304a !important; }
     tr.todo { background: #2a2618 !important; }
+    tr.parked { background: #222 !important; }
+    .status.parked { color: #9a9aaa !important; }
     .status.todo { color: #e0b050 !important; }
     .status.done { color: #8fbf8f !important; }
     th { background: rgba(255,255,255,0.08); }
@@ -156,10 +172,15 @@ a local review workspace, not part of the repo.
    ---
    ```
 
-   `title` and `description` are required; `pr`, `url`, `branch`, `base`,
-   `date`, `before`, `after`, and `inputs` are optional and rendered in a
-   definition list on the page.  Pages are listed newest first, by `date`
+   `title` and `description` are required; `pr`, `url`, `status`, `branch`,
+   `base`, `date`, `before`, `after`, and `inputs` are optional and rendered
+   in a definition list on the page.  Pages are listed newest first, by `date`
    where given and by directory mtime otherwise.
+
+   Review status is taken from the PR's GitHub state unless `status:` says
+   otherwise. Values: `needs review`, `deferred`, `reviewed`, `merged`,
+   `closed`, `superseded`. Change one with
+   `--set-status <dir> <status>`; list them all with `--list-status`.
 
 3. Optionally caption a figure by adding a line anywhere below the header:
 
@@ -391,7 +412,22 @@ def _entry_time(pr: PrDir) -> float:
     return pr.mtime
 
 
-DONE_STATUSES = {"done", "reviewed", "merged", "closed"}
+# Recognised review states.  `needs review` is outstanding, `deferred` is a
+# deliberate park (neither finished nor awaiting attention), the rest are done.
+OUTSTANDING_STATUSES = {"needs review"}
+PARKED_STATUSES = {"deferred"}
+DONE_STATUSES = {"reviewed", "merged", "closed", "superseded"}
+KNOWN_STATUSES = OUTSTANDING_STATUSES | PARKED_STATUSES | DONE_STATUSES
+
+
+def status_class(status: str) -> str:
+    """CSS class for a status: one of ``todo``, ``parked`` or ``done``."""
+    if status in PARKED_STATUSES:
+        return "parked"
+    if status in DONE_STATUSES:
+        return "done"
+    return "todo"
+
 
 # PR state -> status label, used when `summary.md` does not set one.
 _PR_STATE_STATUS = {"MERGED": "merged", "CLOSED": "closed", "OPEN": "needs review"}
@@ -432,6 +468,11 @@ def resolve_status(pr: PrDir, pr_states: dict[int, str]) -> str:
     """
     declared = (pr.meta.get("status") or "").strip().lower()
     if declared:
+        if declared not in KNOWN_STATUSES:
+            pr.warnings.append(
+                f"visual_checks/{pr.path.name}: unknown status {declared!r} in summary.md; "
+                f"expected one of {', '.join(sorted(KNOWN_STATUSES))}"
+            )
         return declared
     if pr.pr is not None and pr.pr in pr_states:
         return _PR_STATE_STATUS.get(pr_states[pr.pr], "needs review")
@@ -504,8 +545,7 @@ def build_pr_page(pr: PrDir, status: str = "needs review") -> str:
     captions = _parse_figure_captions(pr.body_text)
 
     dl_items: list[tuple[str, str]] = []
-    done = status in DONE_STATUSES
-    dl_items.append(("Status", f'<span class="status {"done" if done else "todo"}">{html.escape(status)}</span>'))
+    dl_items.append(("Status", f'<span class="status {status_class(status)}">{html.escape(status)}</span>'))
     if pr.url:
         dl_items.append(("URL", f'<a href="{html.escape(pr.url)}">{html.escape(pr.url)}</a>'))
     else:
@@ -554,9 +594,9 @@ def build_index_page(pr_dirs: list[PrDir], statuses: dict[Path, str] | None = No
     rows = []
     for pr in pr_dirs:
         status = statuses.get(pr.path, "needs review")
-        done = status in DONE_STATUSES
-        row_class = "" if done else ' class="todo"'
-        status_cell = f'<span class="status {"done" if done else "todo"}">{html.escape(status)}</span>'
+        cls = status_class(status)
+        row_class = "" if cls == "done" else f' class="{cls}"'
+        status_cell = f'<span class="status {cls}">{html.escape(status)}</span>'
         pr_cell = (
             f'<a href="{html.escape(pr.url)}">#{pr.pr}</a>'
             if pr.url and pr.pr is not None
@@ -582,8 +622,11 @@ def build_index_page(pr_dirs: list[PrDir], statuses: dict[Path, str] | None = No
         f'<table id="toc">\n<thead><tr>{header_row}</tr></thead>\n<tbody>\n' + "\n".join(rows) + "\n</tbody>\n</table>"
     )
 
-    outstanding = sum(1 for pr in pr_dirs if statuses.get(pr.path, "needs review") not in DONE_STATUSES)
-    lead = f"<p>{outstanding} of {len(pr_dirs)} awaiting review. Newest first; click a column heading to re-sort.</p>"
+    counts = Counter(status_class(statuses.get(pr.path, "needs review")) for pr in pr_dirs)
+    parts = [f"{counts['todo']} of {len(pr_dirs)} awaiting review"]
+    if counts["parked"]:
+        parts.append(f"{counts['parked']} deferred")
+    lead = f"<p>{', '.join(parts)}. Newest first; click a column heading to re-sort.</p>"
     body = "<h1>Visual checks</h1>\n" + lead + "\n" + table + SORT_SCRIPT
     return _page_shell("Visual checks", body)
 
@@ -596,12 +639,58 @@ def _sort_key(pr: PrDir) -> tuple[float, int]:
     return (-_entry_time(pr), -(pr.pr or 0))
 
 
+def set_status(directory: Path, status: str) -> None:
+    """Write ``status:`` into a directory's summary.md, replacing any existing one.
+
+    The generated pages are static files, so there is no control in the browser
+    to click; this is how a status is changed by hand or by a script.
+    """
+    status = status.strip().lower()
+    if status not in KNOWN_STATUSES:
+        raise SystemExit(f"Unknown status {status!r}; expected one of {', '.join(sorted(KNOWN_STATUSES))}")
+    summary = directory / "summary.md"
+    if not summary.is_file():
+        raise SystemExit(f"No summary.md in {directory}")
+
+    text = summary.read_text(encoding="utf-8")
+    match = re.match(r"(---\n)(.*?)(\n---\n)", text, re.S)
+    if not match:
+        raise SystemExit(f"{summary} has no metadata header to write into")
+
+    header = match.group(2)
+    if re.search(r"^status:.*$", header, re.M):
+        header = re.sub(r"^status:.*$", f"status: {status}", header, count=1, flags=re.M)
+    else:
+        header = f"{header}\nstatus: {status}"
+    summary.write_text(text[: match.start(2)] + header + text[match.end(2) :], encoding="utf-8")
+    print(f"{directory.name}: status set to {status}")
+
+
+def list_status(pr_dirs: list[PrDir], statuses: dict[Path, str]) -> None:
+    """Print each directory and its status, outstanding first."""
+    order = {"todo": 0, "parked": 1, "done": 2}
+    for pr in sorted(pr_dirs, key=lambda d: (order[status_class(statuses[d.path])], -_entry_time(d))):
+        pr_label = f"#{pr.pr}" if pr.pr is not None else "-"
+        print(f"{statuses[pr.path]:<13} {pr_label:>5}  {pr.path.name}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Regenerate visual_checks/index.html and per-PR pages.")
     parser.add_argument(
         "--root",
         default="visual_checks",
         help="Root directory containing per-PR subdirectories (default: visual_checks, relative to cwd).",
+    )
+    parser.add_argument(
+        "--set-status",
+        nargs=2,
+        metavar=("DIR", "STATUS"),
+        help=f"Set a directory's review status and rebuild. One of: {', '.join(sorted(KNOWN_STATUSES))}.",
+    )
+    parser.add_argument(
+        "--list-status",
+        action="store_true",
+        help="Print each page's status, outstanding first, and exit without rebuilding.",
     )
     parser.add_argument(
         "--offline",
@@ -614,6 +703,10 @@ def main() -> None:
     if not root.is_dir():
         raise SystemExit(f"Root directory not found: {root}")
 
+    if args.set_status:
+        name, status = args.set_status
+        set_status(root / name, status)
+
     pr_dirs = [scan_pr_dir(p) for p in root.iterdir() if p.is_dir()]
 
     pr_dirs.sort(key=_sort_key)
@@ -622,6 +715,10 @@ def main() -> None:
     statuses = {pr.path: resolve_status(pr, pr_states) for pr in pr_dirs}
     if not pr_states and not args.offline and any(pr.pr is not None for pr in pr_dirs):
         print("note: could not read PR state from gh; using declared status only", file=sys.stderr)
+
+    if args.list_status:
+        list_status(pr_dirs, statuses)
+        return
 
     for pr in pr_dirs:
         (pr.path / "index.html").write_text(build_pr_page(pr, statuses[pr.path]), encoding="utf-8")

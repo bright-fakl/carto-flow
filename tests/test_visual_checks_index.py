@@ -129,3 +129,58 @@ class TestIndexPage:
         assert "1 of 2 awaiting review" in page
         assert '<tr class="todo">' in page
         assert page.count('<tr class="todo">') == 1
+
+
+class TestVocabulary:
+    def test_the_three_states_are_disjoint(self, mod):
+        assert not (mod.OUTSTANDING_STATUSES & mod.PARKED_STATUSES)
+        assert not (mod.PARKED_STATUSES & mod.DONE_STATUSES)
+        assert not (mod.OUTSTANDING_STATUSES & mod.DONE_STATUSES)
+
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            ("needs review", "todo"),
+            ("deferred", "parked"),
+            ("reviewed", "done"),
+            ("merged", "done"),
+            ("closed", "done"),
+            ("superseded", "done"),
+            ("nonsense", "todo"),
+        ],
+    )
+    def test_status_class(self, mod, status, expected):
+        assert mod.status_class(status) == expected
+
+    def test_unknown_declared_status_warns(self, mod, tmp_path):
+        """A typo must not silently read as outstanding forever."""
+        pr_dir = mod.scan_pr_dir(_write(tmp_path, "d", title="t", description="d", status="reviewd"))
+        mod.resolve_status(pr_dir, {})
+
+        assert any("unknown status" in w for w in pr_dir.warnings)
+
+
+class TestSetStatus:
+    def test_adds_then_replaces(self, mod, tmp_path):
+        directory = _write(tmp_path, "d", title="t", description="d")
+
+        mod.set_status(directory, "deferred")
+        assert "status: deferred" in (directory / "summary.md").read_text()
+
+        mod.set_status(directory, "reviewed")
+        text = (directory / "summary.md").read_text()
+        assert "status: reviewed" in text
+        assert "deferred" not in text
+
+    def test_rejects_an_unknown_status(self, mod, tmp_path):
+        directory = _write(tmp_path, "d", title="t", description="d")
+
+        with pytest.raises(SystemExit, match="Unknown status"):
+            mod.set_status(directory, "reviewd")
+
+    def test_leaves_the_body_alone(self, mod, tmp_path):
+        directory = _write(tmp_path, "d", title="t", description="d")
+
+        mod.set_status(directory, "reviewed")
+
+        assert (directory / "summary.md").read_text().endswith("body\n")

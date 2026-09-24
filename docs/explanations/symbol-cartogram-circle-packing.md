@@ -107,6 +107,7 @@ The total force acting on each circle $i$ is the sum of:
 - a pull force $\mathbf{f}_i^{\text{origin}}$ towards the original circle positions
 - a neighbor attraction force $\mathbf{f}_i^{\text{neigh}}$ that keeps circles representing adjacent geometries together
 - a topological attraction force $\mathbf{f}_i^{\text{topo}}$ that tries to maintain the relative orientation between neighboring circles according to the topology of the original geometries
+- a group attraction force $\mathbf{f}_i^{\text{group}}$, present only when the layout is run with `group_by`, that pulls each circle toward the centroid of its own group
 
 Let's define a single force vector acting on a circle as $\vec{f}=\left\langle f_{x}, f_{y} \right\rangle$ and the vector of forces acting on all $n$ circles as $\mathbf{f}=\left[\vec{f}_1,\cdots,\vec{f}_n \right]^{\top}$. We can now define a matrix that combines all three attractive forces as $\mathbf{F}=\left[ \mathbf{f}^{\text{global}}, \mathbf{f}^{\text{origin}}, \mathbf{f}^{\text{neigh}}, \mathbf{f}^{\text{topo}} \right]$. The four forces are combined through user-defined weights $\mathbf{w}=\left[ w^{\text{global}}, w^{\text{origin}}, w^{\text{neigh}}, w^{\text{topo}} \right]$ and passed through a contact reaction function $K$ that cancels or otherwise modifies compressing forces acting on touching (or overlapping) circles. For each iteration in the algorithm, the final forces acting on the circles is then: $\mathbf{f}_t = K \left( \mathbf{F_t}\mathbf{w}^{\top} \right)$.
 
@@ -237,6 +238,55 @@ where $w_{ij}$ is the adjacency weight for the pair.
 ![Topology Force Diagram](../diagrams/stage2-angular-topology-force_v2.svg)
 
 
+#### 2.5 Group Attraction Force
+
+When the layout is run with `group_by`, each circle is also pulled toward the current
+centroid of its own group, with strength `group_weight`. The centroid is recomputed every
+step rather than taken from the original positions, so a group drifts as a unit instead of
+being anchored where it started. The magnitude follows the same `force_mode` table as
+global compaction, with the group centroid in place of $\mathbf{C}$. At the default
+`group_weight` of 0, the force is skipped entirely and the grouping affects styling and
+export but not placement.
+
+### How the Force Weights Relate
+
+The weights are comparable **per interaction**, but not per circle, and the difference is
+what decides how a given setting behaves.
+
+In the default `direction` mode each of the three per-circle forces - global compaction,
+origin attraction and group attraction - has magnitude $w \cdot \min(1, d/r)$, so it
+contributes at most its own weight to a circle in one step. The two pair forces are bounded
+the same way per pair: the neighbor force is at most $w^{\text{neigh}} \cdot w_{ij}$, and
+the topology force at most $2 \cdot w^{\text{topo}} \cdot w_{ij}$, because
+$(\hat{\mathbf{u}}_0 - \hat{\mathbf{u}})$ is a difference of unit vectors and so reaches
+length 2 when the two directions are opposed.
+
+**Accumulation is where they part.** Compaction, origin and group attraction are applied
+once per circle. The neighbor and topology forces are applied once per adjacent *pair* and
+summed into both endpoints, so a circle receives as many contributions as it has neighbors.
+With the default binary adjacency every pair weight $w_{ij}$ is 1, and the sum is simply the
+region's neighbor count - which for a geographic input is typically around four or five, and
+varies from one for a region with a single neighbor to eight or more for a well-connected
+interior one. A neighbor weight is therefore effectively multiplied by each region's degree,
+while a group weight is not, and two weights of equal value do not carry equal influence.
+
+Two consequences worth keeping in mind:
+
+- Raising `group_weight` to match `neighbor_weight` does not balance the two. To make group
+  attraction weigh as much as neighbor attraction on a typical region, `group_weight` has to
+  be larger by roughly the mean neighbor count.
+- The amplification is a property of the adjacency values, not of the force. Under
+  `adjacency_mode=WEIGHTED` or `AREA_WEIGHTED` the pair weights are fractions of a shared
+  perimeter or area rather than ones, and they sum to about 1 per region, so the pair forces
+  lose the degree multiplier and land back on the same scale as the per-circle ones.
+
+**The common scale is specific to `direction` mode.** `force_mode` changes only the three
+per-circle forces; the neighbor and topology forces always use the bounded form above. Under
+`linear` the per-circle forces become proportional to raw distance in map units, and under
+`normalized` proportional to distance in radii with no upper clip. In either mode they are no
+longer bounded by their weight, so they cannot be compared against the pair forces by weight
+at all.
+
 ## Contact Reaction
 
 The contact reaction constraint allows circles to slide along each other without penetrating. This is critical for achieving tight packing. The behavior is controlled by two parameters:
@@ -352,6 +402,7 @@ The system converges when the smoothed fraction of negative drift rates falls be
 | `origin_weight` | $w^{\text{origin}}$ | float | 0.0 | Origin attraction strength. 0=disabled; 0.1-0.5=gentle pull; >1.0=strong pull |
 | `topology_weight` | $w^{\text{topo}}$ | float | 0.3 | Topology preservation strength (0-1) |
 | `neighbor_weight` | $w^{\text{neigh}}$ | float | 0.5 | Neighbor tangency force coefficient |
+| `group_weight` | $w^{\text{group}}$ | float | 0.0 | Pull toward the group centroid; only acts when the layout is run with `group_by` |
 | `force_mode` | - | str | "direction" | Force magnitude mode: "direction", "linear", or "normalized" |
 | `max_step` | $\Delta_{\max}$ | float | 0.3 | Maximum step size (fraction of avg radius) |
 | `overlap_tolerance` | $\tau$ | float | 1e-4 | Overlap tolerance for overlap resolution (fraction of avg radius) |

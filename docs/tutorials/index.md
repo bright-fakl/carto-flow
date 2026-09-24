@@ -11,7 +11,7 @@ Master morphing algorithms, data preparation, and parameter tuning for productio
 Split and shrink shapes to represent proportions and multiple data dimensions within regions.
 
 ### [Symbol Cartograms](basic-symbol-cartogram.ipynb)
-Create Dorling-style symbol cartograms with physics-based circle placement and tiling layouts.
+Create Dorling-style symbol cartograms with force-based circle placement and tiling layouts.
 
 ### [Voronoi Cartograms](basic-voronoi-cartogram.ipynb)
 Build cartograms using Voronoi tessellation with topology-preserving deformation and contiguity repair.

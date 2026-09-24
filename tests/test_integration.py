@@ -68,10 +68,10 @@ class TestIntegration:
 
     def test_symbol_cartogram_workflow(self):
         """Test complete symbol cartogram workflow."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",

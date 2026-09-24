@@ -21,7 +21,6 @@ from .packing import (
     PackingHistory,
     PackingMetrics,
 )
-from .physics import CirclePhysicsLayout, CirclePhysicsLayoutOptions, PhysicsHistory, PhysicsMetrics
 
 __all__ = [
     "AlgorithmMetrics",
@@ -31,8 +30,6 @@ __all__ = [
     "CirclePackingAdvancedOptions",
     "CirclePackingLayout",
     "CirclePackingLayoutOptions",
-    "CirclePhysicsLayout",
-    "CirclePhysicsLayoutOptions",
     "FlowDensityHistory",
     "FlowDensityLayout",
     "FlowDensityLayoutOptions",
@@ -49,8 +46,6 @@ __all__ = [
     "MosaicMetrics",
     "PackingHistory",
     "PackingMetrics",
-    "PhysicsHistory",
-    "PhysicsMetrics",
     "SimulationHistory",
     "Transform",
     "_apply_kwargs_to_options",
@@ -67,5 +62,4 @@ register_layout("flow_density", FlowDensityLayout)
 register_layout("grid", GridBasedLayout)
 register_layout("mosaic", MosaicLayout)
 register_layout("packing", CirclePackingLayout)
-register_layout("physics", CirclePhysicsLayout)
 register_layout("topology", CirclePackingLayout)  # backward-compat alias

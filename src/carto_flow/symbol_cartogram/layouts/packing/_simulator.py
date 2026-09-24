@@ -134,8 +134,7 @@ class ScalarEMA:
 class TopologyPreservingSimulator:
     """Two-phase force-based simulator with topology preservation.
 
-    Unlike CirclePhysicsSimulator which uses velocity-based physics,
-    this simulator uses:
+    This simulator uses:
 
     - **Overlap Resolution Phase**: Global expansion + overlap projection
       to reach a non-overlapping state

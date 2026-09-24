@@ -881,7 +881,7 @@ class TestCollapsedComponentAcrossLayouts:
         assert collapsed.area == 0.0
         assert collapsed.is_valid is False
 
-    @pytest.mark.parametrize("layout_name", ["centroid", "flow_density", "grid", "packing", "physics", "topology"])
+    @pytest.mark.parametrize("layout_name", ["centroid", "flow_density", "grid", "packing", "topology"])
     def test_non_mosaic_layout_handles_collapsed_component(self, layout_name):
         from carto_flow.symbol_cartogram.layouts.base import get_layout
 

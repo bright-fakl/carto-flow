@@ -2,7 +2,7 @@
 Circle Packing Layout
 =====================
 
-Create a symbol cartogram with symbols placed using a physics-based circle packing layout.
+Create a symbol cartogram with symbols placed using a force-based circle packing layout.
 """
 
 # %%
@@ -19,7 +19,7 @@ symbol_carto = smb.create_symbol_cartogram(
     us_states,
     # provide a column for proportional sizing of the symbols
     "Population",
-    # use a physics-based circle packing layout
+    # use a force-based circle packing layout
     layout=smb.CirclePackingLayout(),
     size_normalization="total",
     show_progress=False,

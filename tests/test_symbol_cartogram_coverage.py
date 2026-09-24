@@ -40,11 +40,11 @@ class TestSymbolCartogramCoverage:
 
     def test_result_properties(self):
         """Test various properties of SymbolCartogramResult."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
         from carto_flow.symbol_cartogram.status import SymbolCartogramStatus
 
         gdf = make_test_gdf()
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -62,7 +62,7 @@ class TestSymbolCartogramCoverage:
         assert "displacement_max" in result.placement_metrics
         assert "displacement_std" in result.placement_metrics
 
-        # simulation_history is always populated for physics-based layouts
+        # simulation_history is always populated for force-based layouts
         # (overlaps and algorithm diagnostics are always recorded)
         assert result.layout_result.history is not None
         assert result.layout_result.history.positions is None  # save_history=False
@@ -97,7 +97,7 @@ class TestSymbolCartogramCoverage:
         assert len(result.symbols) == len(gdf)
 
     def test_layout_options(self):
-        """Test layout options for grid and physics layouts."""
+        """Test layout options for the grid layout."""
         from carto_flow.symbol_cartogram import GridBasedLayout, create_symbol_cartogram
 
         gdf = make_grid_gdf()

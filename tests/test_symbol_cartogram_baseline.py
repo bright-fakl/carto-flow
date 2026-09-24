@@ -45,10 +45,10 @@ class TestCurrentAPIContract:
 
     def test_basic_proportional_cartogram(self):
         """Basic proportional cartogram returns valid result."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -69,10 +69,10 @@ class TestCurrentAPIContract:
 
     def test_uniform_size_mode(self):
         """Uniform sizing (no value_column) creates equal-sized symbols."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             layout=layout,
@@ -150,11 +150,11 @@ class TestCurrentAPIContract:
 
     def test_null_values_skipped(self):
         """Null values are skipped with warning."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf(n=5)
         gdf.loc[gdf.index[0], "population"] = np.nan
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         with pytest.warns(UserWarning, match="Skipping 1 rows"):
             result = create_symbol_cartogram(
                 gdf,
@@ -184,10 +184,10 @@ class TestCurrentAPIContract:
 
     def test_save_history(self):
         """History is saved when requested."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePhysicsLayout(max_iterations=20)
+        layout = CirclePackingLayout(max_iterations=20)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -233,11 +233,11 @@ class TestCurrentAPIContract:
 
     def test_result_to_geodataframe(self):
         """to_geodataframe preserves original columns."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
         gdf["region_name"] = [f"Region_{i}" for i in range(len(gdf))]
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -252,32 +252,6 @@ class TestCurrentAPIContract:
 
 class TestDirectSimulatorUsage:
     """Tests for direct simulator usage that must remain unchanged."""
-
-    def test_circle_physics_simulator(self):
-        """CirclePhysicsSimulator runs with kwargs."""
-        from carto_flow.symbol_cartogram.layouts.physics._simulator import CirclePhysicsSimulator
-
-        n = 5
-        positions = np.random.default_rng(42).uniform(0, 10, (n, 2))
-        radii = np.full(n, 1.0)
-
-        sim = CirclePhysicsSimulator(
-            positions=positions.copy(),
-            radii=radii,
-            original_positions=positions,
-            adjacency=None,
-            spacing=0.05,
-            compactness=0.5,
-            topology_weight=0.0,
-        )
-        final_positions, info, _history = sim.run(
-            max_iterations=20,
-            show_progress=False,
-            save_history=False,
-        )
-        assert final_positions.shape == (n, 2)
-        assert "converged" in info
-        assert "iterations" in info
 
     def test_topology_preserving_simulator(self):
         """TopologyPreservingSimulator runs with kwargs."""
@@ -338,13 +312,13 @@ class TestVisualization:
         matplotlib.use("Agg")
         from carto_flow.symbol_cartogram import (
             AdjacencyPlotResult,
-            CirclePhysicsLayout,
+            CirclePackingLayout,
             create_symbol_cartogram,
             plot_adjacency,
         )
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePhysicsLayout(max_iterations=10)
+        layout = CirclePackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -360,10 +334,10 @@ class TestVisualization:
         import matplotlib
 
         matplotlib.use("Agg")
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram, plot_adjacency
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram, plot_adjacency
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePhysicsLayout(max_iterations=10)
+        layout = CirclePackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -399,15 +373,15 @@ class TestVisualization:
         assert isinstance(plot_result, TilingPlotResult)
         assert plot_result.ax is not None
 
-    def test_plot_tiling_raises_for_physics(self):
+    def test_plot_tiling_raises_for_packing(self):
         """plot_tiling raises ValueError for non-grid placement result."""
         import matplotlib
 
         matplotlib.use("Agg")
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram, plot_tiling
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram, plot_tiling
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePhysicsLayout(max_iterations=10)
+        layout = CirclePackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -436,7 +410,7 @@ class TestSizeNormalizationDefault:
         from carto_flow.symbol_cartogram import create_layout
 
         gdf = make_grid_gdf()
-        for layout in ("physics", "topology", "centroid"):
+        for layout in ("packing", "topology", "centroid"):
             data_sizes = create_layout(gdf, "population", layout=layout, show_progress=False).sizes
             total_symbol_area = float(np.pi * np.sum(data_sizes**2))
             assert total_symbol_area == pytest.approx(float(gdf.geometry.area.sum())), layout

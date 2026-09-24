@@ -463,7 +463,7 @@ print(f"Final drift: {layout_result.metrics.algorithm.final_drift}")
 ## Return Value
 
 `create_layout` returns a `LayoutResult`. Its `metrics` field carries the scalar summary
-common to all physics-based layouts plus a `PackingMetrics` subobject:
+common to all force-based layouts plus a `PackingMetrics` subobject:
 
 ```python
 layout_result.metrics.converged          # bool  — convergence criteria met

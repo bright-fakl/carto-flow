@@ -130,8 +130,8 @@ def create_symbol_cartogram(
 
     With layout options:
 
-    >>> from carto_flow.symbol_cartogram import PhysicsBasedLayout, TopologySimulatorOptions
-    >>> layout = PhysicsBasedLayout(TopologySimulatorOptions(spacing=0.1, max_iterations=1000))
+    >>> from carto_flow.symbol_cartogram import CirclePackingLayout, CirclePackingLayoutOptions
+    >>> layout = CirclePackingLayout(CirclePackingLayoutOptions(spacing=0.1, max_iterations=1000))
     >>> result = create_symbol_cartogram(gdf, "population", layout=layout)
 
     With styling:
@@ -287,8 +287,8 @@ def create_layout(
     >>> result = create_layout(gdf, "population", layout="grid", size_scale="linear")
 
     >>> # Explicit Layout instance
-    >>> from carto_flow.symbol_cartogram import PhysicsBasedLayout, TopologySimulatorOptions
-    >>> layout = PhysicsBasedLayout(TopologySimulatorOptions(spacing=0.1))
+    >>> from carto_flow.symbol_cartogram import CirclePackingLayout, CirclePackingLayoutOptions
+    >>> layout = CirclePackingLayout(CirclePackingLayoutOptions(spacing=0.1))
     >>> result = create_layout(gdf, "population", layout=layout)
 
     >>> # Then style the result

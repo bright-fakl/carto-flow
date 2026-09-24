@@ -15,7 +15,7 @@ Carto-flow provides tools to transform geographic data into meaningful cartograp
 - **Proportional cartograms**: Split and shrink shapes to show proportions within regions
 - **Dot density cartograms**: Visualize data through randomly distributed points
 
-The library uses advanced diffusion-based algorithms for smooth morphing, physics-based simulation for optimal symbol placement, and provides tools for multi-resolution processing and batch operations.
+The library uses advanced diffusion-based algorithms for smooth morphing, force-based simulation for optimal symbol placement, and provides tools for multi-resolution processing and batch operations.
 
 ![Example Flow Cartogram showing population distribution](./generated/gallery/images/mkd_glr_plot_flow_cartogram_001.png)
 

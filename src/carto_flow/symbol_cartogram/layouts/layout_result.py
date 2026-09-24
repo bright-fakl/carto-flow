@@ -163,7 +163,10 @@ class LayoutResult:
     crs : str | None
         CRS information as WKT string from source GeoDataFrame.
     layout_type : str
-        Identifier for the layout algorithm used (e.g. ``"grid"``, ``"physics"``).
+        Registry key of the layout that produced the result (``"packing"``,
+        ``"flow_density"``, ``"centroid"``, ``"grid"``, ``"mosaic"``). It
+        records which layout ran, and selects the result class to rebuild
+        when a serialized result is read back with :meth:`from_dict`.
     metrics : AlgorithmMetrics | None
         Final scalar summaries (converged, iterations, overlaps, algorithm-specific).
         Populated by all layout types.

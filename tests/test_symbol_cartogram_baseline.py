@@ -513,3 +513,58 @@ class TestSizeNormalizationValidation:
 
         assert float(np.pi * np.sum(packed.sizes**2)) == pytest.approx(float(gdf.geometry.area.sum()))
         assert float(np.pi * np.max(gridded.sizes) ** 2) == pytest.approx(float(gdf.geometry.area.mean()))
+
+
+# Registry key -> the ``layout_type`` the layout records on its result.
+EXPECTED_LAYOUT_TYPES = {
+    "centroid": "centroid",
+    "flow_density": "flow_density",
+    "grid": "grid",
+    "mosaic": "mosaic",
+    "packing": "packing",
+    "topology": "packing",  # registered alias of the packing layout
+}
+
+
+class TestLayoutTypeProvenance:
+    """``layout_type`` names the layout that produced the result.
+
+    Its one functional job is selecting the result class when a serialized
+    result is read back, so both halves are pinned here.
+    """
+
+    def test_every_registered_layout_is_covered(self):
+        """The table above lists every registry key, so none can drift."""
+        from carto_flow.symbol_cartogram.layouts.base import _LAYOUT_REGISTRY
+
+        assert set(_LAYOUT_REGISTRY) == set(EXPECTED_LAYOUT_TYPES)
+
+    @pytest.mark.parametrize("name", sorted(EXPECTED_LAYOUT_TYPES))
+    def test_layout_type_is_the_registry_key(self, name):
+        from carto_flow.symbol_cartogram import create_layout
+
+        gdf = make_grid_gdf(rows=3, cols=3)
+        result = create_layout(gdf, "population", layout=name, show_progress=False)
+
+        assert result.layout_type == EXPECTED_LAYOUT_TYPES[name]
+
+    @pytest.mark.parametrize("name", sorted(EXPECTED_LAYOUT_TYPES))
+    def test_serialize_round_trip_restores_the_result_class(self, name):
+        from carto_flow.symbol_cartogram import create_layout
+        from carto_flow.symbol_cartogram.layouts.layout_result import (
+            GridLayoutResult,
+            LayoutResult,
+            MosaicLayoutResult,
+        )
+
+        gdf = make_grid_gdf(rows=3, cols=3)
+        result = create_layout(gdf, "population", layout=name, show_progress=False)
+
+        restored = LayoutResult.from_serialized(result.serialize())
+
+        expected_cls = {"grid": GridLayoutResult, "mosaic": MosaicLayoutResult}.get(
+            EXPECTED_LAYOUT_TYPES[name], LayoutResult
+        )
+        assert type(restored) is expected_cls
+        assert restored.layout_type == EXPECTED_LAYOUT_TYPES[name]
+        np.testing.assert_allclose(restored.positions, result.positions)

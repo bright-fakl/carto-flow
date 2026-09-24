@@ -8,7 +8,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ...options import ForceMode
-from ..base import Layout, _apply_kwargs_to_options, _build_physics_layout_result
+from ..base import Layout, _apply_kwargs_to_options, _build_force_layout_result
 from ..data_prep import LayoutData
 from ..layout_result import LayoutResult
 
@@ -492,4 +492,6 @@ class CirclePackingLayout(Layout):
                 final_jitter=info.pop("final_jitter"),
             ),
         )
-        return _build_physics_layout_result(positions, info, history, data, metrics=metrics, sim_history=sim_history)
+        return _build_force_layout_result(
+            positions, info, history, data, "packing", metrics=metrics, sim_history=sim_history
+        )

@@ -450,7 +450,8 @@ class SymbolCartogram:
             ``"tile"`` (default): one row per symbol tile, joined to source
             rows via original_index.
             ``"group"``: one row per group (requires group_by was used);
-            returns union geometry and tile_count per group.
+            returns union geometry and tile_count per group. Attribute
+            columns come from the group's first source row.
 
         Returns
         -------
@@ -470,9 +471,15 @@ class SymbolCartogram:
                 if (gdf_src is not None and self._valid_mask is not None)
                 else (gdf_src.reset_index(drop=True) if gdf_src is not None else None)
             )
+            group_column = np.asarray(self.symbols["group_index"])
+            source_column = (
+                np.asarray(self.symbols["original_index"])
+                if "original_index" in self.symbols.columns
+                else np.arange(len(self.symbols))
+            )
             rows = []
-            for g_id in np.unique(self.symbols["group_index"]):
-                mask = self.symbols["group_index"] == g_id
+            for g_id in np.unique(group_column):
+                mask = group_column == g_id
                 geom = unary_union(self.symbols.geometry[mask].values)
                 row: dict = {
                     "group_index": int(g_id),
@@ -480,7 +487,7 @@ class SymbolCartogram:
                     "tile_count": int(mask.sum()),
                 }
                 if valid_source is not None:
-                    src_row = valid_source.iloc[int(g_id)]
+                    src_row = valid_source.iloc[int(source_column[mask].min())]
                     for col in valid_source.columns:
                         if col != valid_source.geometry.name:
                             row[col] = src_row[col]

@@ -30,7 +30,7 @@ Combine the two modules: morph geometries with the flow cartogram, then apply pr
 Separate layout computation from styling: map data columns to colors, shapes, opacity, hatching, and labels using `plot()` keyword arguments.
 
 ### [Create a Tile-Count Map](tile-count-maps.ipynb)
-Use `tile_count` to assign each region an integer number of tiles (e.g. parliamentary seats), export group-level union geometries with `to_geodataframe(level="group")`, and apply per-group symbol shapes with `Styling.set_group_symbol()`.
+Use `tile_count` with the mosaic layout to give each region an integer number of tiles (e.g. parliamentary seats), place regions on a land mass too small to win a tile with `min_one_tile_per_region`, and hold a group's tiles together with `group_by`.
 
 ### [Choose Between the Grid and Mosaic Layouts](choose-grid-or-mosaic-layout.ipynb)
 Run both tile-lattice layouts on the same input and compare what each preserves — neighbor relationships, contiguity of a region's tiles, the outline of the whole tilegram — with a decision table and the capability differences (`group_by`, `tile_count`, `morph`, presets).

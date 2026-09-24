@@ -426,11 +426,11 @@ class MosaicLayoutOptions:
     tile_size : float or None
         Explicit tile size; skips calibration if provided.
     spacing : float
-        Gap between drawn symbols as a fraction of tile size (0-1). 0 means
-        symbols touch flat-edge to flat-edge; 0.05 matches GridBasedLayout's
-        default.  ``spacing`` does not change the assignment: it divides each
+        Gap between drawn symbols as a fraction of tile size (0-1). Default
+        0.05, matching GridBasedLayout. 0 makes symbols touch flat-edge to
+        flat-edge.  ``spacing`` does not change the assignment: it divides each
         symbol's ``Transform.scale`` by ``1 + spacing`` and leaves the tile
-        size and ``tiles_gdf`` untouched.  Default 0.0.
+        size and ``tiles_gdf`` untouched.
     extra_tile_rings : int
         Number of rings of adjacent tiles to add to each component's pool beyond
         those produced by calibration. Extra tiles are outside the study union
@@ -470,7 +470,7 @@ class MosaicLayoutOptions:
     morph_options: object = None  # MorphOptions | None — lazy import
     hungarian_options: object = None  # HungarianOptions | None — lazy import
     tile_size: float | None = None
-    spacing: float = 0.0
+    spacing: float = 0.05
     extra_tile_rings: int = 1
     min_overlap_frac: float = 0.1
     min_one_tile_per_region: bool = False

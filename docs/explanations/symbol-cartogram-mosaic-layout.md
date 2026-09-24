@@ -298,7 +298,7 @@ large tile count would otherwise have to borrow tiles from its neighbors' space.
 | `morph_options` | `MorphOptions` or `None` | `None` | Options for the pre-step; `None` means `MorphOptions(n_iter=100)`. |
 | `hungarian_options` | `HungarianOptions` or `None` | `None` | Cost-function parameters; `None` means `HungarianOptions()`. |
 | `tile_size` | `float` or `None` | `None` | Explicit tile size; bypasses calibration. |
-| `spacing` | `float` | `0.0` | Gap between drawn symbols as a fraction of tile size (0-1). |
+| `spacing` | `float` | `0.05` | Gap between drawn symbols as a fraction of tile size (0-1). |
 | `extra_tile_rings` | `int` | `1` | Rings of adjacent tiles added to each component's pool as reserve. |
 | `min_overlap_frac` | `float` | `0.1` | Minimum tile/union overlap for a tile to count as core. |
 | `min_one_tile_per_region` | `bool` | `False` | Give a component with no tiles of its own the free cells that overlap it most, so its regions are drawn. |
@@ -368,11 +368,18 @@ of those defects.
 
 ### `spacing`
 
-`spacing` never changes which tile a region gets. It divides each symbol's `Transform.scale` by
-`1 + spacing` and touches nothing else: the assignment, the calibrated tile size, and
-`tiles_gdf` are identical for every value. The gap appears only in output drawn through
-`transforms`, and symbol area follows `1 / (1 + spacing)²`. To change the layout, change
-`tile_size` or the cost weights.
+`spacing` draws a gap between symbols by shrinking each symbol inside its tile. The lattice is
+calibrated first, without `spacing`; each symbol's `Transform.scale` is then divided by
+`1 + spacing`, so symbol area follows `1 / (1 + spacing)²`. The grid layout applies the same
+treatment.
+
+Because the lattice is calibrated first, `spacing` leaves the assignment, the calibrated tile
+size and `tiles_gdf` unchanged. Which tile a region gets does not depend on the gap drawn
+between symbols. The gap appears only in output drawn through `transforms`. To change the
+layout itself, change `tile_size` or the cost weights.
+
+`CirclePackingLayout` treats `spacing` differently because it has no lattice: there the gap is
+a target separation in the force simulation and does move symbols.
 
 ### `extra_tile_rings`
 

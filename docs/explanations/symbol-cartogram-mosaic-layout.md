@@ -114,6 +114,15 @@ The tile pool is then split per component and grown outward:
   when cost pressure exhausts the interior. After the solve, any assigned ring tile that has an
   unassigned core neighbor of the same region is swapped back inward, which removes holes.
 
+Component pools are **disjoint by construction**: every tile of the lattice belongs to at most one
+component. Core tiles are partitioned by which component union they overlap most. Ring tiles are
+not grown one component at a time but from all components at once, so a ring tile is owned by the
+component that reaches it in the fewest lattice steps, ties broken by the nearest component union
+centroid - the same rule that places a tile touching no component at all. The guarantee this buys
+is that two components can never both place a symbol on the same tile: without it, rings grown
+per component would reach across a narrow sea into a neighbor's core, and whichever component was
+solved last would silently overwrite the other's symbol.
+
 The Hungarian assignment selects $N$ tiles from core + rings; unused tiles remain unassigned.
 `core_tile_indices` and `pool_tile_indices` on the result expose both sets, and
 `plot_tiling(show_pool=True)` colors their borders.
@@ -184,8 +193,10 @@ not form a single connected block, and $w_{\text{disc}} = 100$. The first term d
 number of regions, prioritizing intra-region contiguity over inter-region adjacency.
 
 Ranking by split regions rather than by disconnected tiles matters: an iteration can cut the
-number of stray tiles while scattering them over more regions. On US states that is exactly what
-used to happen — the tile score preferred an assignment with 9 split states over one with 2.
+number of stray tiles while scattering them over more regions. Counting tiles rewards that trade,
+because one stray tile pulled back from each of several regions looks like progress even as the
+map gains regions drawn in two pieces. Counting regions does not: a region is either whole or it
+is not, whatever the size of the piece that broke off.
 
 If the score is non-zero, the cost matrix is modified before the next re-solve:
 
@@ -206,10 +217,11 @@ is `False` on a result that has every tile count right but a region in two piece
 
 Whatever the Hungarian loop leaves split, a final **chain-swap repair** tries to close, and it
 runs *after* the extra-ring swap-back rather than before it. That ordering matters: the ring
-swap-back is itself a strong repair — on US states it takes the assignment from 10 split states
-to 2, and on districts grouped by state from 19 split groups to 14 — so a repair placed before
-it spends its swaps on satellites the ring step would have reconnected anyway, and then has its
-work partly undone.
+swap-back is itself a repair, and it reconnects a whole class of splits cheaply — a stranded ring
+tile pulled back into an unassigned core tile of its own region. A chain-swap repair placed before
+it cannot tell those satellites apart from the rest, so it spends swaps reconnecting tiles the ring
+step would have reconnected anyway, and the ring step then moves those same tiles again and undoes
+part of the work. Run last, the chain swap sees only what the ring step could not fix.
 
 The move is the one in `geo_utils.contiguity.repair_contiguity`: enumerate short chains of tiles
 from a stranded satellite back to its region's main body and rotate ownership along the chain.
@@ -232,9 +244,12 @@ still terminates in reasonable time.
 
 ### What is guaranteed, and what is not
 
-- **Guaranteed**: each region receives exactly `tile_count[g]` tiles. The slot expansion makes
-  this structural, so `MosaicMetrics.regions_correct == regions_total` for any input that fits
-  in the calibrated pool.
+- **Guaranteed**: each region receives exactly `tile_count[g]` tiles, provided its geographic
+  component has tiles at all. The slot expansion makes this structural, so
+  `MosaicMetrics.regions_correct == regions_total` for any input that fits in the calibrated
+  pool. A region whose land mass no tile overlaps by `min_overlap_frac` is the exception: its
+  component has an empty pool, so it receives no tile and is simply missing from the map. That
+  case always raises a `UserWarning` naming the regions concerned.
 - **Best effort**: intra-region contiguity and inter-region adjacency. The repair loop keeps the
   best assignment it finds; on hard inputs some regions can still come out split. Check
   `MosaicMetrics` and the tiling plot before trusting a specific figure.
@@ -248,6 +263,16 @@ tiles of one group must form a connected block. Groups are **split at component 
 a group that spans a mainland and an island becomes two independent parts, each with the tile
 count of its own geometries. Without this split the solver would try to connect tiles across
 open water.
+
+`min_one_tile_per_region=True` handles the small-island case the calibration cannot: a
+component every tile of which falls below `min_overlap_frac` gets an empty pool, and its regions
+are dropped. With the flag set, such a component is instead handed the lattice cells that overlap
+it most - enough to cover its requested count - taken only from cells no component claims or from
+a component holding more tiles than it needs, so no other region loses one. The mosaic then holds
+more tiles than calibration produced. It is off by default because a region below one tile's worth
+of area is drawn at a full tile either way, which overstates it against every other region on the
+map; whether that trade is worth making is the caller's decision. The warning is emitted either
+way, with the remedies that still apply.
 
 `pre_scale=True` (a `create_layout` / `create_symbol_cartogram` argument, not a layout option)
 uniformly scales each connected component so its area matches its share of the data before
@@ -267,6 +292,7 @@ large tile count would otherwise have to borrow tiles from its neighbors' space.
 | `spacing` | `0.0` | Gap between symbols as a fraction of tile size (0-1). |
 | `extra_tile_rings` | `1` | Rings of adjacent tiles added to each component's pool as reserve. |
 | `min_overlap_frac` | `0.1` | Minimum tile/union overlap for a tile to count as core. |
+| `min_one_tile_per_region` | `False` | Give a component with no tiles of its own the free cells that overlap it most, so its regions are drawn. |
 | `hungarian_options` | `None` | `HungarianOptions` for cost weights; defaults shown below. |
 
 **`HungarianOptions` defaults**:
@@ -293,5 +319,5 @@ and keeps the directions between them truer; and on finely divided inputs a weig
 above the default starts to break groups apart, because holding one region's tiles
 together can only be paid for out of its neighbors'.
 
-The cost weights were renamed from `alpha` / `beta` / `delta` to `distance_weight` /
-`outside_penalty` / `interior_bonus` before the layout became public; there are no aliases.
+The three cost weights are named `distance_weight`, `outside_penalty` and `interior_bonus`;
+those are the only accepted spellings.

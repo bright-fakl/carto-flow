@@ -120,18 +120,34 @@ result.plot(column="population", facecolor="#ff6b6b")
 
 ### Using Presets
 
-```python
-from carto_flow.symbol_cartogram import create_symbol_cartogram
-from carto_flow.symbol_cartogram.presets import preset_tile_map
+Presets are named entry points that wrap `create_symbol_cartogram` with a
+particular algorithmic style and expose only the parameters that matter for it.
+Each one returns a `SymbolCartogram` directly.
 
-result = create_symbol_cartogram(gdf, "population", **preset_tile_map())
-result.plot(column="category", categorical=True, cmap="Set3")
+```python
+from carto_flow.symbol_cartogram import tile_map_cartogram
+
+# Uniform hexagons on a grid; no size column — a tile map, not a proportional cartogram
+result = tile_map_cartogram(gdf)
+result.plot(column="region", cmap="Set3", source_gdf=gdf)
 ```
+
+```python
+from carto_flow.symbol_cartogram import geographic_grouped_cartogram
+
+# Proportional circles that stay near their geographic position and cluster by group
+result = geographic_grouped_cartogram(gdf, "population", group_by="region")
+result.plot(column="population", cmap="Reds")
+```
+
+The full set is `centroid_cartogram`, `dorling_cartogram`, `geographic_cartogram`,
+`dorling_grouped_cartogram`, `geographic_grouped_cartogram`, `demers_cartogram` and
+`tile_map_cartogram`; see [Presets](presets.md) for the parameters of each.
 
 ### Tiled and Grouped Layouts
 
 ```python
-from carto_flow.symbol_cartogram import create_symbol_cartogram
+from carto_flow.symbol_cartogram import create_symbol_cartogram, CirclePackingLayout
 
 # tile_count: each region gets an integer number of symbols
 result = create_symbol_cartogram(gdf, tile_count="seats", layout="grid")
@@ -139,7 +155,9 @@ result.plot()
 
 # group_by: group symbols by region (layouts that honor it: centroid,
 # flow_density, mosaic, packing)
-result = create_symbol_cartogram(gdf, size="population", group_by="region", layout="packing")
+result = create_symbol_cartogram(
+    gdf, size="population", group_by="region", layout=CirclePackingLayout(group_weight=0.5)
+)
 gdf_regions = result.to_geodataframe(level="group")  # one row per region, union geometry
 ```
 

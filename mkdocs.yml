@@ -32,6 +32,7 @@ nav:
     - Symbol Cartogram:
       - Style Symbols by Category: how-to/style-symbols-by-category.ipynb
       - Create a Tile-Count Map: how-to/tile-count-maps.ipynb
+      - Choose Between the Grid and Mosaic Layouts: how-to/choose-grid-or-mosaic-layout.ipynb
     - Voronoi Cartogram:
       - Choose the Right Backend: how-to/voronoi_cartogram/choose-backend.ipynb
       - Coastal and Peninsula Regions: how-to/voronoi_cartogram/coastal-regions.ipynb

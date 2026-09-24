@@ -32,6 +32,9 @@ Separate layout computation from styling: map data columns to colors, shapes, op
 ### [Create a Tile-Count Map](tile-count-maps.ipynb)
 Use `tile_count` to assign each region an integer number of tiles (e.g. parliamentary seats), export group-level union geometries with `to_geodataframe(level="group")`, and apply per-group symbol shapes with `Styling.set_group_symbol()`.
 
+### [Choose Between the Grid and Mosaic Layouts](choose-grid-or-mosaic-layout.ipynb)
+Run both tile-lattice layouts on the same input and compare what each preserves — neighbor relationships, contiguity of a region's tiles, the outline of the whole tilegram — with a decision table and the capability differences (`group_by`, `tile_count`, `morph`, presets).
+
 ## Voronoi Cartogram
 
 ### [Choose the Right Backend](voronoi_cartogram/choose-backend.ipynb)

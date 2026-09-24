@@ -45,10 +45,10 @@ class TestCurrentAPIContract:
 
     def test_basic_proportional_cartogram(self):
         """Basic proportional cartogram returns valid result."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -69,10 +69,10 @@ class TestCurrentAPIContract:
 
     def test_uniform_size_mode(self):
         """Uniform sizing (no value_column) creates equal-sized symbols."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             layout=layout,
@@ -136,13 +136,25 @@ class TestCurrentAPIContract:
         assert result.status == SymbolCartogramStatus.CONVERGED
         assert result.placement_metrics["displacement_mean"] == 0.0
 
+    def test_no_adjacent_pairs(self):
+        """Input whose regions share no boundary lays out without error."""
+        from carto_flow.symbol_cartogram import create_symbol_cartogram
+
+        gdf = gpd.GeoDataFrame(
+            {"population": [100.0, 200.0, 300.0]},
+            geometry=[box(0, 0, 1, 1), box(10, 0, 11, 1), box(20, 0, 21, 1)],
+        )
+        result = create_symbol_cartogram(gdf, "population", show_progress=False)
+
+        assert len(result.symbols) == 3
+
     def test_null_values_skipped(self):
         """Null values are skipped with warning."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf(n=5)
         gdf.loc[gdf.index[0], "population"] = np.nan
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         with pytest.warns(UserWarning, match="Skipping 1 rows"):
             result = create_symbol_cartogram(
                 gdf,
@@ -172,10 +184,10 @@ class TestCurrentAPIContract:
 
     def test_save_history(self):
         """History is saved when requested."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePhysicsLayout(max_iterations=20)
+        layout = CirclePackingLayout(max_iterations=20)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -221,11 +233,11 @@ class TestCurrentAPIContract:
 
     def test_result_to_geodataframe(self):
         """to_geodataframe preserves original columns."""
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
         gdf["region_name"] = [f"Region_{i}" for i in range(len(gdf))]
-        layout = CirclePhysicsLayout(max_iterations=50)
+        layout = CirclePackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -240,32 +252,6 @@ class TestCurrentAPIContract:
 
 class TestDirectSimulatorUsage:
     """Tests for direct simulator usage that must remain unchanged."""
-
-    def test_circle_physics_simulator(self):
-        """CirclePhysicsSimulator runs with kwargs."""
-        from carto_flow.symbol_cartogram.layouts.physics._simulator import CirclePhysicsSimulator
-
-        n = 5
-        positions = np.random.default_rng(42).uniform(0, 10, (n, 2))
-        radii = np.full(n, 1.0)
-
-        sim = CirclePhysicsSimulator(
-            positions=positions.copy(),
-            radii=radii,
-            original_positions=positions,
-            adjacency=None,
-            spacing=0.05,
-            compactness=0.5,
-            topology_weight=0.0,
-        )
-        final_positions, info, _history = sim.run(
-            max_iterations=20,
-            show_progress=False,
-            save_history=False,
-        )
-        assert final_positions.shape == (n, 2)
-        assert "converged" in info
-        assert "iterations" in info
 
     def test_topology_preserving_simulator(self):
         """TopologyPreservingSimulator runs with kwargs."""
@@ -326,13 +312,13 @@ class TestVisualization:
         matplotlib.use("Agg")
         from carto_flow.symbol_cartogram import (
             AdjacencyPlotResult,
-            CirclePhysicsLayout,
+            CirclePackingLayout,
             create_symbol_cartogram,
             plot_adjacency,
         )
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePhysicsLayout(max_iterations=10)
+        layout = CirclePackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -348,10 +334,10 @@ class TestVisualization:
         import matplotlib
 
         matplotlib.use("Agg")
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram, plot_adjacency
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram, plot_adjacency
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePhysicsLayout(max_iterations=10)
+        layout = CirclePackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -387,15 +373,15 @@ class TestVisualization:
         assert isinstance(plot_result, TilingPlotResult)
         assert plot_result.ax is not None
 
-    def test_plot_tiling_raises_for_physics(self):
+    def test_plot_tiling_raises_for_packing(self):
         """plot_tiling raises ValueError for non-grid placement result."""
         import matplotlib
 
         matplotlib.use("Agg")
-        from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram, plot_tiling
+        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram, plot_tiling
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePhysicsLayout(max_iterations=10)
+        layout = CirclePackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -424,7 +410,7 @@ class TestSizeNormalizationDefault:
         from carto_flow.symbol_cartogram import create_layout
 
         gdf = make_grid_gdf()
-        for layout in ("physics", "topology", "centroid"):
+        for layout in ("packing", "topology", "centroid"):
             data_sizes = create_layout(gdf, "population", layout=layout, show_progress=False).sizes
             total_symbol_area = float(np.pi * np.sum(data_sizes**2))
             assert total_symbol_area == pytest.approx(float(gdf.geometry.area.sum())), layout
@@ -527,3 +513,58 @@ class TestSizeNormalizationValidation:
 
         assert float(np.pi * np.sum(packed.sizes**2)) == pytest.approx(float(gdf.geometry.area.sum()))
         assert float(np.pi * np.max(gridded.sizes) ** 2) == pytest.approx(float(gdf.geometry.area.mean()))
+
+
+# Registry key -> the ``layout_type`` the layout records on its result.
+EXPECTED_LAYOUT_TYPES = {
+    "centroid": "centroid",
+    "flow_density": "flow_density",
+    "grid": "grid",
+    "mosaic": "mosaic",
+    "packing": "packing",
+    "topology": "packing",  # registered alias of the packing layout
+}
+
+
+class TestLayoutTypeProvenance:
+    """``layout_type`` names the layout that produced the result.
+
+    Its one functional job is selecting the result class when a serialized
+    result is read back, so both halves are pinned here.
+    """
+
+    def test_every_registered_layout_is_covered(self):
+        """The table above lists every registry key, so none can drift."""
+        from carto_flow.symbol_cartogram.layouts.base import _LAYOUT_REGISTRY
+
+        assert set(_LAYOUT_REGISTRY) == set(EXPECTED_LAYOUT_TYPES)
+
+    @pytest.mark.parametrize("name", sorted(EXPECTED_LAYOUT_TYPES))
+    def test_layout_type_is_the_registry_key(self, name):
+        from carto_flow.symbol_cartogram import create_layout
+
+        gdf = make_grid_gdf(rows=3, cols=3)
+        result = create_layout(gdf, "population", layout=name, show_progress=False)
+
+        assert result.layout_type == EXPECTED_LAYOUT_TYPES[name]
+
+    @pytest.mark.parametrize("name", sorted(EXPECTED_LAYOUT_TYPES))
+    def test_serialize_round_trip_restores_the_result_class(self, name):
+        from carto_flow.symbol_cartogram import create_layout
+        from carto_flow.symbol_cartogram.layouts.layout_result import (
+            GridLayoutResult,
+            LayoutResult,
+            MosaicLayoutResult,
+        )
+
+        gdf = make_grid_gdf(rows=3, cols=3)
+        result = create_layout(gdf, "population", layout=name, show_progress=False)
+
+        restored = LayoutResult.from_serialized(result.serialize())
+
+        expected_cls = {"grid": GridLayoutResult, "mosaic": MosaicLayoutResult}.get(
+            EXPECTED_LAYOUT_TYPES[name], LayoutResult
+        )
+        assert type(restored) is expected_cls
+        assert restored.layout_type == EXPECTED_LAYOUT_TYPES[name]
+        np.testing.assert_allclose(restored.positions, result.positions)

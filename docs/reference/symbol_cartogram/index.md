@@ -28,7 +28,7 @@ graph TD
 | Sub-module | Description |
 |------------|-------------|
 | **[API](api.md)** | Main functions: `create_symbol_cartogram`, `create_layout` |
-| **[Layouts](layout.md)** | Layout algorithms: `FlowDensityLayout`, `CirclePhysicsLayout`, `GridBasedLayout`, `MosaicLayout`, etc. |
+| **[Layouts](layout.md)** | Layout algorithms: `CirclePackingLayout`, `FlowDensityLayout`, `GridBasedLayout`, `MosaicLayout`, etc. |
 | **[LayoutResult](layout_result.md)** | Immutable layout output with transforms |
 | **[Result](result.md)** | `SymbolCartogram` result container |
 | **[Styling](styling.md)** | Symbol styling configuration |
@@ -73,7 +73,7 @@ result.save("symbol_cartogram.gpkg")
 from carto_flow.symbol_cartogram import create_layout
 
 # Compute layout once, experiment with different styles
-layout_result = create_layout(gdf, "population", layout="physics")
+layout_result = create_layout(gdf, "population", layout="packing")
 
 circle_result = layout_result.style(symbol="circle", scale=1.0)
 square_result = layout_result.style(symbol="square", scale=0.8)

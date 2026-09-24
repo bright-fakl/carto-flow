@@ -17,7 +17,6 @@ from carto_flow.symbol_cartogram import create_layout
 from carto_flow.symbol_cartogram.layouts import (
     CentroidLayout,
     CirclePackingLayout,
-    CirclePhysicsLayout,
     FlowDensityLayout,
     GridBasedLayout,
     MosaicLayout,
@@ -33,7 +32,7 @@ from carto_flow.symbol_cartogram.presets import (
 )
 
 SUPPORTING = ["centroid", "flow_density", "mosaic", "packing", "topology"]
-NOT_SUPPORTING = ["grid", "physics"]
+NOT_SUPPORTING = ["grid"]
 
 
 def grouped_gdf() -> gpd.GeoDataFrame:
@@ -56,7 +55,7 @@ class TestSupportFlags:
     def test_supporting_layouts_declare_support(self, cls):
         assert cls.supports_group_by is True
 
-    @pytest.mark.parametrize("cls", [GridBasedLayout, CirclePhysicsLayout])
+    @pytest.mark.parametrize("cls", [GridBasedLayout])
     def test_non_supporting_layouts_do_not(self, cls):
         assert cls.supports_group_by is False
 
@@ -68,7 +67,6 @@ class TestSupportFlags:
         names = group_by_layouts()
         assert "mosaic" in names
         assert "grid" not in names
-        assert "physics" not in names
         # "topology" is an alias of "packing" and must not be listed twice
         assert len(names) == len(set(names))
         assert "topology" not in names

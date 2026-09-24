@@ -30,7 +30,7 @@ class AlgorithmMetrics:
     final_overlaps : int or None
         Number of overlapping nearest-neighbor pairs at termination.
     algorithm : Any
-        Algorithm-specific final scalars (PhysicsMetrics, PackingMetrics,
+        Algorithm-specific final scalars (PackingMetrics,
         FlowDensityMetrics, CentroidMetrics, GridMetrics, etc.).
     """
 
@@ -52,8 +52,8 @@ class SimulationHistory:
     overlaps : np.ndarray | None
         Per-iteration overlap count.  Shape: ``(n_iters,)``.
     algorithm : Any
-        Algorithm-specific per-iteration arrays (PhysicsHistory,
-        PackingHistory, or FlowDensityHistory depending on the layout used).
+        Algorithm-specific per-iteration arrays (PackingHistory or
+        FlowDensityHistory depending on the layout used).
     """
 
     positions: list[NDArray[np.floating]] | None = None
@@ -163,13 +163,16 @@ class LayoutResult:
     crs : str | None
         CRS information as WKT string from source GeoDataFrame.
     layout_type : str
-        Identifier for the layout algorithm used (e.g. ``"grid"``, ``"physics"``).
+        Registry key of the layout that produced the result (``"packing"``,
+        ``"flow_density"``, ``"centroid"``, ``"grid"``, ``"mosaic"``). It
+        records which layout ran, and selects the result class to rebuild
+        when a serialized result is read back with :meth:`from_dict`.
     metrics : AlgorithmMetrics | None
         Final scalar summaries (converged, iterations, overlaps, algorithm-specific).
         Populated by all layout types.
     history : SimulationHistory | None
         Per-iteration diagnostics and optional position snapshots.
-        Only populated by iterative layouts (physics, packing, flow).
+        Only populated by iterative layouts (packing, flow density, centroid).
 
     """
 

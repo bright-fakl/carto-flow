@@ -134,8 +134,7 @@ class ScalarEMA:
 class TopologyPreservingSimulator:
     """Two-phase force-based simulator with topology preservation.
 
-    Unlike CirclePhysicsSimulator which uses velocity-based physics,
-    this simulator uses:
+    This simulator uses:
 
     - **Overlap Resolution Phase**: Global expansion + overlap projection
       to reach a non-overlapping state
@@ -328,7 +327,8 @@ class TopologyPreservingSimulator:
         self._rng = np.random.default_rng(42)
 
         # Precomputed data for vectorized force computation
-        self.adj_pairs = np.array(self.adjacency_pairs, dtype=np.intp)  # (m, 2)
+        # reshape keeps the (m, 2) shape when there are no adjacent pairs at all
+        self.adj_pairs = np.array(self.adjacency_pairs, dtype=np.intp).reshape(-1, 2)  # (m, 2)
         self.adj_weights = np.array(self._adj_weight_list, dtype=float)  # (m,)
         self.radii_sum = self.radii[self.adj_pairs[:, 0]] + self.radii[self.adj_pairs[:, 1]]  # (m,)
 
@@ -1069,9 +1069,10 @@ class TopologyPreservingSimulator:
         """
         stage1_info = self.run_overlap_resolution()
 
-        # A zero average radius means every symbol is zero-sized: there is
-        # nothing to pack, so skip straight to the no-op result.
-        if max_iterations == 0 or self.avg_radius <= 0:
+        # A single symbol cannot overlap or drift, and a zero average radius
+        # means every symbol is zero-sized: there is nothing to pack in either
+        # case, so skip straight to the no-op result.
+        if max_iterations == 0 or self.avg_radius <= 0 or self.n < 2:
             final_positions = self.positions * self.scale + self.center
             info = {
                 "iterations": stage1_info["iterations"],

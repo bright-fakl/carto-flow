@@ -68,7 +68,7 @@ The `size_max_value` parameter fixes the reference maximum, enabling consistent 
 
 Under `"max"` the covered fraction follows the skew of the sizing column: a column whose mean is a sixth of its maximum leaves five sixths of the map empty, and a uniform column fills it.
 
-The factor is global, so it never changes the size *ratios* between symbols — only the scale of the whole set. Layouts that place symbols by their radii (circle packing, physics, centroid, flow density) therefore lay out a differently sized set of symbols under each mode. Layouts that place symbols on a calibrated tile lattice react differently: the mosaic layout scales each symbol to its tile and is unaffected, while the grid layout derives its tile size from the largest symbol, so the mode rescales lattice and symbols together and leaves the arrangement alone.
+The factor is global, so it never changes the size *ratios* between symbols — only the scale of the whole set. Layouts that place symbols by their radii (circle packing, centroid, flow density) therefore lay out a differently sized set of symbols under each mode. Layouts that place symbols on a calibrated tile lattice react differently: the mosaic layout scales each symbol to its tile and is unaffected, while the grid layout derives its tile size from the largest symbol, so the mode rescales lattice and symbols together and leaves the arrangement alone.
 
 Because of that, the default is per layout: the grid layout defaults to `"max"`, which keeps the lattice at the scale of the input geometries, and every other layout defaults to `"total"`. Passing `size_normalization` explicitly overrides the layout's default.
 
@@ -154,16 +154,17 @@ class Layout(ABC):
     def compute(self, data: LayoutData, ...) -> LayoutResult: ...
 ```
 
-Four concrete implementations are registered under string keys and can be selected by name:
+Five concrete implementations are registered under string keys and can be selected by name:
 
 | String key | Class | Description |
 |-----------|-------|-------------|
-| `"topology"` | `CirclePackingLayout` | Two-stage physics with contact constraints; good topology preservation |
-| `"physics"` | `CirclePhysicsLayout` | Velocity-based two-phase simulation; general purpose |
+| `"packing"` | `CirclePackingLayout` | Two-stage force-based simulation with contact constraints; good topology preservation. The default. |
 | `"flow_density"` | `FlowDensityLayout` | Gaussian density-field flow advection; covers full domain without background sink |
 | `"grid"` | `GridBasedLayout` | Hungarian assignment to a regular tile grid |
 | `"mosaic"` | `MosaicLayout` | Exact integer tile assignment with optional flow-morphing pre-step |
 | `"centroid"` | `CentroidLayout` | Symbol at centroid; optional local overlap removal |
+
+`"topology"` is a registered alias of `"packing"`.
 
 Algorithm details are in the [Grid Layout Algorithm](symbol-cartogram-grid-layout.md), [Circle Packing Layout Algorithm](symbol-cartogram-circle-packing.md), [Flow Density Layout Algorithm](symbol-cartogram-flow-density-layout.md), and [Mosaic Layout Algorithm](symbol-cartogram-mosaic-layout.md) explanations.
 
@@ -187,9 +188,9 @@ class LayoutResult:
     metrics:          AlgorithmMetrics | None
 ```
 
-`metrics` holds final scalar summaries common to all physics-based layouts (`converged`, `iterations`, `final_overlaps`) plus an algorithm-specific subobject (`PhysicsMetrics`, `PackingMetrics`, or `FlowDensityMetrics`). Convenience properties `result.converged`, `result.iterations`, and `result.overlaps` delegate to `metrics` and `simulation_history` respectively.
+`metrics` holds final scalar summaries common to all force-based layouts (`converged`, `iterations`, `final_overlaps`) plus an algorithm-specific subobject (`PackingMetrics` or `FlowDensityMetrics`). Convenience properties `result.converged`, `result.iterations`, and `result.overlaps` delegate to `metrics` and `simulation_history` respectively.
 
-`simulation_history` holds per-iteration arrays. Its `algorithm` field is a typed subobject: `PhysicsHistory` (velocity per step), `PackingHistory` (drift, jitter, drift_rate), or `FlowDensityHistory` (mean and max NN errors).
+`simulation_history` holds per-iteration arrays. Its `algorithm` field is a typed subobject: `PackingHistory` (drift, jitter, drift_rate) or `FlowDensityHistory` (mean and max NN errors).
 
 Immutability ensures the computed positions are never modified after the layout runs, making it safe to apply multiple styling configurations to the same result.
 

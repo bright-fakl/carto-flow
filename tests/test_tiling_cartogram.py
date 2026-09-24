@@ -195,9 +195,9 @@ class TestTileSymbolDefault:
             n_verts = len(geom.exterior.coords) - 1
             assert n_verts == 32  # circle approximation
 
-    def test_physics_layout_defaults_to_circle(self, gdf):
-        """Physics layout with no symbol arg defaults to circle."""
-        result = create_symbol_cartogram(gdf, "population", layout="physics")
+    def test_packing_layout_defaults_to_circle(self, gdf):
+        """Circle packing layout with no symbol arg defaults to circle."""
+        result = create_symbol_cartogram(gdf, "population", layout="packing")
         for geom in result.symbols.geometry:
             n_verts = len(geom.exterior.coords) - 1
             assert n_verts == 32

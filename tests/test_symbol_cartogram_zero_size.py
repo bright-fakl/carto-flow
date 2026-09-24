@@ -27,7 +27,6 @@ LAYOUT_CASES = [
     ("mosaic", {"morph": True}),
     ("mosaic", {"morph": False}),
     ("packing", {"max_iterations": 200}),
-    ("physics", {"max_iterations": 100}),
 ]
 
 
@@ -179,6 +178,6 @@ def test_tiling_rejects_non_positive_tile_size(tiling_name):
 def test_force_layouts_leave_zero_size_symbols_at_their_centroids(input_name):
     """With nothing to pack, the force-based layouts are a no-op."""
     gdf = ALL_ZERO_INPUTS[input_name]()
-    for layout_name in ("centroid", "flow_density", "packing", "physics"):
+    for layout_name in ("centroid", "flow_density", "packing"):
         data, _, positions = run_layout(gdf, layout_name, {})
         assert positions == pytest.approx(data.positions, abs=1e-9), layout_name

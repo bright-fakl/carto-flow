@@ -14,8 +14,8 @@ Layout-Styling Separation
 -------------------------
 Layout
     Abstract base for layout algorithms.
-PhysicsBasedLayout
-    Layout from physics-based simulation.
+CirclePackingLayout
+    Layout from circle packing simulation.
 GridBasedLayout
     Layout from grid-based assignment.
 CentroidLayout
@@ -31,12 +31,10 @@ prepare_layout_data
 
 Configuration
 -------------
-GridPlacementOptions
+GridBasedLayoutOptions
     Options for grid-based placement.
-PhysicsSimulatorOptions
-    Options for CirclePhysicsSimulator.
-TopologySimulatorOptions
-    Options for TopologyPreservingSimulator.
+CirclePackingLayoutOptions
+    Options for CirclePackingLayout.
 CentroidLayoutOptions
     Options for centroid-based placement.
 SymbolShape
@@ -131,8 +129,6 @@ from .layouts import (
     CirclePackingAdvancedOptions,
     CirclePackingLayout,
     CirclePackingLayoutOptions,
-    CirclePhysicsLayout,
-    CirclePhysicsLayoutOptions,
     FlowDensityLayout,
     FlowDensityLayoutOptions,
     GridBasedLayout,
@@ -221,8 +217,6 @@ __all__ = [
     "CirclePackingAdvancedOptions",
     "CirclePackingLayout",
     "CirclePackingLayoutOptions",
-    "CirclePhysicsLayout",
-    "CirclePhysicsLayoutOptions",
     "CircleSymbol",
     "ComparisonPlotResult",
     "DisplacementPlotResult",
@@ -248,8 +242,6 @@ __all__ = [
     "MosaicMetrics",
     "PackingHistory",
     "PackingMetrics",
-    "PhysicsHistory",
-    "PhysicsMetrics",
     "PrototilePlotResult",
     "QuadrilateralTiling",
     "SimulationHistory",

@@ -240,23 +240,49 @@ class Layout(ABC):
 
 
 # ---------------------------------------------------------------------------
-# Shared result builder for physics-based layouts
+# Shared result builder for the force-based layouts
 # ---------------------------------------------------------------------------
 
 
-def _build_physics_layout_result(
+def _build_force_layout_result(
     positions: NDArray[np.floating],
     info: dict[str, Any],
     history: list[NDArray[np.floating]] | None,
     data: LayoutData,
+    layout_type: str,
     metrics: Any | None = None,
     sim_history: Any | None = None,
 ) -> LayoutResult:
-    """Build LayoutResult from physics simulation output."""
+    """Build LayoutResult from force-based simulation output.
+
+    Parameters
+    ----------
+    positions : NDArray[np.floating]
+        Final symbol positions, shape (n, 2).
+    info : dict
+        Simulation statistics.
+    history : list[NDArray[np.floating]] or None
+        Legacy position snapshots, used when ``sim_history`` is None.
+    data : LayoutData
+        Preprocessed input the layout ran on.
+    layout_type : str
+        Registry key of the layout that produced the result, recorded on
+        the result as provenance.
+    metrics : Any, optional
+        Typed final metrics for the layout.
+    sim_history : Any, optional
+        Typed per-iteration history for the layout.
+
+    Returns
+    -------
+    LayoutResult
+        Immutable result with canonical symbol and transforms.
+
+    """
     # Compute base_size as average size
     base_size = float(np.mean(data.sizes))
 
-    # Create transforms (position + scale, no rotation/reflection for physics)
+    # Create transforms (position + scale, no rotation/reflection)
     transforms = [
         Transform(
             position=(float(positions[i, 0]), float(positions[i, 1])),
@@ -286,7 +312,7 @@ def _build_physics_layout_result(
         adjacency=data.adjacency,
         bounds=data.bounds,
         crs=crs,
-        layout_type="physics",
+        layout_type=layout_type,
         history=sim_history,
         metrics=metrics,
         valid_mask=data.valid_mask,

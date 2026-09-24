@@ -13,7 +13,7 @@ A Python library for creating cartograms from geographic data.
 carto-flow transforms geographic vector data into cartograms — maps where region sizes or symbols are scaled to represent a data variable such as population, GDP, or election results. It supports three cartogram styles:
 
 - **Flow cartograms** — regions are continuously deformed so their areas are proportional to a variable, while preserving shape and topology as much as possible (diffusion-based algorithm).
-- **Symbol cartograms** — regions are replaced by proportional symbols (circles, squares, hexagons, or custom isohedral tiles) arranged using physics-based or grid-based layout.
+- **Symbol cartograms** — regions are replaced by proportional symbols (circles, squares, hexagons, or custom isohedral tiles) arranged using force-based or grid-based layout.
 - **Proportional cartograms** — region polygons are split or shrunk to show sub-group proportions within each geographic unit.
 
 ![Cartogram Gallery](https://github.com/bright-fakl/carto-flow/raw/main/cartogram-example.png)
@@ -22,7 +22,7 @@ carto-flow transforms geographic vector data into cartograms — maps where regi
 
 - Diffusion-based flow cartogram morphing with FFT-accelerated Poisson solver
 - Multi-resolution processing for large datasets
-- Physics-based symbol placement with overlap resolution and topology preservation
+- Force-based symbol placement with overlap resolution and topology preservation
 - Isohedral tile support for custom symbol shapes
 - Split and shrink operations for proportional cartograms
 - Dot density cartogram support

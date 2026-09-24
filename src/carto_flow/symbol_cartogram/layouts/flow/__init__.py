@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from numpy.typing import NDArray
 
-from ..base import Layout, _apply_kwargs_to_options, _build_physics_layout_result
+from ..base import Layout, _apply_kwargs_to_options, _build_force_layout_result
 from ..data_prep import LayoutData
 from ..layout_result import LayoutResult
 
@@ -202,7 +202,7 @@ class FlowDensityLayout(Layout):
 
     Positions circles by building a divergence field from per-pair Gaussian
     blobs placed at predicted contact points and advecting centroids through
-    the resulting velocity field. Unlike physics-based layouts, the field
+    the resulting velocity field. Unlike the other force-based layouts, the field
     covers the full domain so there is no background sink pulling circles
     into empty space.
 
@@ -327,6 +327,6 @@ class FlowDensityLayout(Layout):
                 final_signed_errors=np.array(info.pop("final_signed_errors")),
             ),
         )
-        return _build_physics_layout_result(
-            positions, info, history_arrays, data, metrics=metrics, sim_history=sim_history
+        return _build_force_layout_result(
+            positions, info, history_arrays, data, "flow_density", metrics=metrics, sim_history=sim_history
         )

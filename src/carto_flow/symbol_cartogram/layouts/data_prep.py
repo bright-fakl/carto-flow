@@ -254,7 +254,7 @@ def prepare_layout_data(
         congressional districts clustered around NYC — a simple mean would
         place the NY centroid too far south). At 0.0 (default) geographic
         centroids are used unchanged. ``geometry_positions`` is always left
-        unchanged so that ``origin_weight`` in physics layouts can attract
+        unchanged so that ``origin_weight`` in force-based layouts can attract
         symbols back toward geography. Only has effect when ``group_by`` or
         ``tile_count`` is set. Default: 0.0.
     pre_scale : bool

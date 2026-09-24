@@ -330,12 +330,19 @@ class HungarianOptions:
     Parameters
     ----------
     distance_weight : float
-        Weight on the normalized centroid-distance term.  Fix at 1.0 and
-        tune *outside_penalty* relative to it.
+        Weight on the normalized centroid-distance term.  The cost function
+        is not scale-free in *distance_weight* and *outside_penalty*:
+        *interior_bonus* and the neighbor term are absolute, so scaling both
+        by a common factor changes the result.  Their magnitudes matter, not
+        only their ratio.  Moving *distance_weight* off 1.0 splits regions on
+        finely divided and multi-component inputs more often than not.
+        Default 1.0.
     outside_penalty : float
         Weight on the outside-fraction penalty.  Tiles whose centroid lies
         outside the study union incur cost
-        ``outside_penalty * outside_frac``.
+        ``outside_penalty * outside_frac``.  Every value gives a different
+        placement, and the direction of the effect reverses between inputs,
+        so no single setting is better everywhere.  Default 1.0.
     interior_bonus : float
         Connectivity bonus — subtracted from cost for tiles that are
         well-surrounded by other valid tiles (interior tiles), pushing
@@ -419,20 +426,28 @@ class MosaicLayoutOptions:
     tile_size : float or None
         Explicit tile size; skips calibration if provided.
     spacing : float
-        Gap between symbols as a fraction of tile size (0-1). 0 means symbols
-        touch flat-edge to flat-edge; 0.05 matches GridBasedLayout's default.
-        Default 0.0.
+        Gap between drawn symbols as a fraction of tile size (0-1). Default
+        0.05, matching GridBasedLayout. 0 makes symbols touch flat-edge to
+        flat-edge.  ``spacing`` does not change the assignment: it divides each
+        symbol's ``Transform.scale`` by ``1 + spacing`` and leaves the tile
+        size and ``tiles_gdf`` untouched.
     extra_tile_rings : int
         Number of rings of adjacent tiles to add to each component's pool beyond
         those produced by calibration. Extra tiles are outside the study union
         (high ``outside_frac`` cost) so they act as reserve: selected only when
         interior tiles are exhausted by other cost pressures (e.g. high
-        ``neighbor_weight``). Default 1.
+        ``neighbor_weight``). The effect is not monotone: 0 leaves no reserve
+        and regions go short of tiles, while 2 or more splits regions and
+        raises runtime sharply, since each ring enlarges every component's
+        pool. Default 1.
     min_overlap_frac : float
         Minimum fraction of a tile's area that must intersect the study union
         for the tile to be counted as a core tile during calibration. Values
         below 0.5 capture tiles whose centroid falls outside the geometry
-        (e.g. narrow peninsulas like Florida). Default 0.1.
+        (e.g. narrow peninsulas like Florida). The effect is not monotone in
+        either direction from the default, and the values that best match the
+        map's silhouette also split regions. At 1.0 the layout degenerates.
+        Default 0.1.
     min_one_tile_per_region : bool
         Place a symbol for regions that sit on a land mass too small to win a
         tile of its own.  A region only gets tiles from the pool of its
@@ -455,7 +470,7 @@ class MosaicLayoutOptions:
     morph_options: object = None  # MorphOptions | None — lazy import
     hungarian_options: object = None  # HungarianOptions | None — lazy import
     tile_size: float | None = None
-    spacing: float = 0.0
+    spacing: float = 0.05
     extra_tile_rings: int = 1
     min_overlap_frac: float = 0.1
     min_one_tile_per_region: bool = False

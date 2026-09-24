@@ -241,11 +241,12 @@ off. `swap_repair_passes` defaults to 10; set it to 0 to disable.
 ### How far the swap-back searches
 
 `ring_swapback_max_hops` bounds the BFS the extra-ring swap-back uses to find an unassigned core
-tile to relocate a stranded ring tile into. A larger search radius lets the swap-back close more
-of these holes, since it can reach further to find somewhere to put a stranded tile, but a longer
-relocation path also disturbs more of the existing assignment along the way, which can cost
-compactness. The default is a deliberate balance between the two, not the largest value that
-still terminates in reasonable time.
+tile to relocate a stranded ring tile into. A larger search radius closes more holes, because it
+can reach further to find somewhere to put a stranded tile, but a longer relocation path shifts
+ownership along more tiles and costs compactness. Neither end of the range is safe: small values
+split regions on grouped and multi-component inputs, and values well above the default reintroduce
+splits on inputs where the default has none. See
+[`ring_swapback_max_hops`](#ring_swapback_max_hops) below.
 
 ### What is guaranteed, and what is not
 
@@ -288,41 +289,212 @@ large tile count would otherwise have to borrow tiles from its neighbors' space.
 
 ## Parameter Reference
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `tiling` | `"hexagon"` | Tile shape. Any `Tiling` instance or string shorthand. |
-| `morph` | `True` | Run flow morphing pre-step to pre-distort geometries. |
-| `morph_options` | `None` | `MorphOptions` for the pre-step (default: `n_iter=100`). |
-| `tile_size` | `None` | Explicit tile size; bypasses calibration if provided. |
-| `spacing` | `0.0` | Gap between symbols as a fraction of tile size (0-1). |
-| `extra_tile_rings` | `1` | Rings of adjacent tiles added to each component's pool as reserve. |
-| `min_overlap_frac` | `0.1` | Minimum tile/union overlap for a tile to count as core. |
-| `min_one_tile_per_region` | `False` | Give a component with no tiles of its own the free cells that overlap it most, so its regions are drawn. |
-| `hungarian_options` | `None` | `HungarianOptions` for cost weights; defaults shown below. |
+### `MosaicLayoutOptions`
 
-**`HungarianOptions` defaults**:
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `tiling` | `str` or `Tiling` | `"hexagon"` | Tile shape. Any `Tiling` instance or string shorthand. |
+| `morph` | `bool` | `True` | Run the flow morphing pre-step to pre-distort geometries. |
+| `morph_options` | `MorphOptions` or `None` | `None` | Options for the pre-step; `None` means `MorphOptions(n_iter=100)`. |
+| `hungarian_options` | `HungarianOptions` or `None` | `None` | Cost-function parameters; `None` means `HungarianOptions()`. |
+| `tile_size` | `float` or `None` | `None` | Explicit tile size; bypasses calibration. |
+| `spacing` | `float` | `0.05` | Gap between drawn symbols as a fraction of tile size (0-1). |
+| `extra_tile_rings` | `int` | `1` | Rings of adjacent tiles added to each component's pool as reserve. |
+| `min_overlap_frac` | `float` | `0.1` | Minimum tile/union overlap for a tile to count as core. |
+| `min_one_tile_per_region` | `bool` | `False` | Give a component with no tiles of its own the free cells that overlap it most, so its regions are drawn. |
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `distance_weight` | 1.0 | Centroid distance weight. Fix at 1.0 and tune the others relative to it. |
-| `outside_penalty` | 1.0 | Weight on the outside-fraction penalty. |
-| `interior_bonus` | 2.0 | Connectivity bonus weight (interior-tile preference). |
-| `neighbor_weight` | 0.3 | Weight on the neighbor-proximity term; 0 disables it. |
-| `neighbor_bfs` | `False` | Measure neighbor proximity in tile-graph hops instead of distance. |
-| `max_connectivity_iters` | 5 | Maximum connectivity repair iterations. |
-| `penalize_disconnected` | `True` | Raise the cost of tiles sitting apart from their region's block. |
-| `swap_repair_passes` | 10 | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
-| `ring_swapback_max_hops` | 16 | BFS search radius for the extra-ring swap-back; 0 disables it. |
+### `HungarianOptions`
 
-The connectivity bonus is weighted heavily by default. Because it rewards tiles whose
-neighbors are also in the pool, raising it makes each region claim a tighter, rounder
-block and pushes the leftover surplus out to the periphery. That is what multi-tile
-regions and `group_by` groups need in order to stay in one piece. Two cases pull the
-other way: with one tile per region and `morph=False` there is no block to hold
-together, and a lower weight then places each symbol nearer its geographic neighbors
-and keeps the directions between them truer; and on finely divided inputs a weight well
-above the default starts to break groups apart, because holding one region's tiles
-together can only be paid for out of its neighbors'.
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `distance_weight` | `float` | `1.0` | Weight on the normalized centroid-distance term. |
+| `outside_penalty` | `float` | `1.0` | Weight on the outside-fraction penalty. |
+| `interior_bonus` | `float` | `2.0` | Connectivity bonus weight (interior-tile preference). |
+| `max_connectivity_iters` | `int` | `5` | Cap on connectivity repair re-solve passes. |
+| `penalize_disconnected` | `bool` | `True` | Raise the cost of tiles sitting apart from their region's block. |
+| `neighbor_weight` | `float` | `0.3` | Weight on the neighbor-proximity term; 0 disables it. |
+| `neighbor_bfs` | `bool` | `False` | Measure neighbor proximity in tile-graph hops instead of distance. |
+| `swap_repair_passes` | `int` | `10` | Passes of the post-ring chain-swap contiguity repair; 0 disables it. |
+| `ring_swapback_max_hops` | `int` | `16` | BFS search radius for the extra-ring swap-back; 0 disables it. |
 
 The three cost weights are named `distance_weight`, `outside_penalty` and `interior_bonus`;
 those are the only accepted spellings.
+
+---
+
+## How Each Option Behaves
+
+The defaults above are the only settings validated across the range of inputs the layout is
+meant to handle — one tile per region, many tiles per region, `group_by` groups, and
+multi-component world data at both `morph` settings. Several options do not respond the way
+their name suggests. This section describes what each one does to a result, so a reader can
+tell in advance which knobs are worth turning.
+
+Two properties recur and are worth naming once:
+
+- **Non-monotone**: the metric curve turns more than once across the value range, so a value
+  between two tested points can be worse than either. Interpolating is not safe.
+- **Input-dependent sign**: the direction of the effect reverses between inputs, so no single
+  recommended direction exists.
+
+A further pattern cuts across most of the options: the values that score best on shape fidelity
+are repeatedly the ones that split a region or leave requested tiles unplaced. Fidelity improves
+partly *because* fewer tiles are placed. Read `MosaicMetrics` before accepting an improvement.
+
+### `tiling`
+
+Changes the lattice, so it changes everything downstream. Square tiles lose more of the
+silhouette than hexagons at one tile per region, and on the square tiling the calibrated tile
+set is not fixed at one tile per region — `interior_bonus` moves the footprint there, while on
+hexagons it does not.
+
+### `morph`
+
+`morph` gates other options rather than merely improving the starting point.
+`max_connectivity_iters` and `penalize_disconnected` are inert at `morph=True`: the morph
+removes the disconnections both exist to repair, so the repair loop never fires. Both become
+live at `morph=False`. `swap_repair_passes` and `ring_swapback_max_hops` are live at both
+settings but saturate later at `morph=False`. Most defects on any option appear at
+`morph=False`; a sweep run only at `morph=True` will show a clean result and miss them.
+
+### `tile_size`
+
+Passing exactly the calibrated size reproduces the calibrated run tile for tile, so calibration
+is deterministic and an override is a clean single-variable change. No off-calibration value is
+cleanly better. Larger tiles shrink the pool until it no longer holds the requested counts and
+regions come out short. Smaller tiles split regions and leave core tiles unassigned. The
+direction that helps fidelity reverses between inputs. Every improvement measured came with one
+of those defects.
+
+### `spacing`
+
+`spacing` draws a gap between symbols by shrinking each symbol inside its tile. The lattice is
+calibrated first, without `spacing`; each symbol's `Transform.scale` is then divided by
+`1 + spacing`, so symbol area follows `1 / (1 + spacing)²`. The grid layout applies the same
+treatment.
+
+Because the lattice is calibrated first, `spacing` leaves the assignment, the calibrated tile
+size and `tiles_gdf` unchanged. Which tile a region gets does not depend on the gap drawn
+between symbols. The gap appears only in output drawn through `transforms`. To change the
+layout itself, change `tile_size` or the cost weights.
+
+`CirclePackingLayout` treats `spacing` differently because it has no lattice: there the gap is
+a target separation in the force simulation and does move symbols.
+
+### `extra_tile_rings`
+
+Non-monotone, and the default 1 is the only value that stays clean on every input tested.
+
+At 0 the pool has no reserve and regions go short of tiles — on multi-component world data,
+dozens of requested tiles are never placed. At 2 and above the layout splits regions on every
+input, and runtime grows sharply, because each ring enlarges every component's pool and the
+Hungarian solve is cubic in pool size. Between those ends the fidelity curve turns twice.
+
+### `min_overlap_frac`
+
+Non-monotone in both directions from the default. Raising it several times above the default
+gives the best silhouette overlap measured, and splits regions on the same inputs. Lowering it
+below the default does not extend the trend the default is set for — it also splits regions on
+grouped and world inputs. At 1.0, where only tiles fully covered by land count as core, the
+layout degenerates: calibration returns a tile size far too small and most core tiles go
+unassigned.
+
+`min_overlap_frac` is used only during calibration and pool construction. It is not the same
+quantity as the threshold used when reporting unassigned core tiles.
+
+### `min_one_tile_per_region`
+
+Described under [Groups, islands and pre-scaling](#groups-islands-and-pre-scaling). It changes
+a result only when some component's every tile falls below `min_overlap_frac`; on inputs with no
+such component it does nothing.
+
+### `distance_weight` and `outside_penalty`
+
+**The cost function is not scale-free in these two.** `interior_bonus` and the neighbor term are
+absolute, so multiplying `distance_weight` and `outside_penalty` by a common factor changes their
+balance against the other two terms and produces a different placement. Equal-ratio pairs do not
+agree. Their absolute magnitudes matter, not only their ratio.
+
+`outside_penalty` changes the assignment at every value tested, but its sign is input-dependent:
+disabling it improves both displacement and adjacency on world data while worsening displacement
+on US states. On finely divided grouped inputs at `morph=False`, every value other than the
+default splits a group.
+
+`distance_weight` away from 1.0 splits regions on grouped and world inputs more often than not.
+Leaving it at 1.0 and moving `outside_penalty` is the smaller of the two risks, but not because
+only the ratio matters.
+
+### `interior_bonus`
+
+**Strongly non-monotone.** Across a value range spanning two orders of magnitude the adjacency
+curve runs up, into a deep trough, and back up. A value read off a single curve is fitting noise;
+a value between two tested points can be worse than either.
+
+Most values split a region somewhere. The default 2.0 is one of the few that does not on any
+input tested, and it is the better choice on every multi-tile and `group_by` input under both
+morph settings. It is the worse choice in one case: one tile per region with `morph=False`, on
+both hexagon and square tilings, where a lower weight gives better adjacency and truer directions
+between neighbors. That is the configuration `tile_map_cartogram` and `demers_cartogram` produce,
+so it is the one case where lowering `interior_bonus` is worth trying.
+
+The mechanism behind both halves: the bonus rewards tiles whose neighbors are also in the pool,
+so raising it makes each region claim a tighter, rounder block and pushes surplus to the
+periphery. Multi-tile regions and groups need that to stay in one piece. With one tile per region
+there is no block to hold together, so the pressure only moves symbols away from their geographic
+neighbors. On finely divided inputs a weight well above the default breaks groups apart, because
+holding one region's tiles together can only be paid for out of its neighbors'.
+
+### `neighbor_weight` and `neighbor_bfs`
+
+`neighbor_weight` scales the term that keeps geographically adjacent regions adjacent on the
+tiling; 0 removes it. The term is recomputed from the current assignment after every solve, so
+it interacts with the repair loop rather than acting once. `neighbor_bfs=True` measures that
+proximity in tile-graph hops instead of Euclidean distance, which is more faithful for
+non-convex or tightly packed regions. Switching `neighbor_bfs` on does not close the gap between
+mosaic and the grid layout at one tile per region.
+
+### `max_connectivity_iters`
+
+Inert at `morph=True`: every value gives the same placement on every input, because the
+connectivity repair loop never fires after a morph. At `morph=False` the loop fires and converges
+immediately — the incumbent stops improving within a few passes, so the cap does not bind above
+its default of 5.
+
+Setting it to 0 or 1 is not free. On grouped inputs it splits a group and costs adjacency, and it
+can make the run *slower* than the default, because the work the loop would have done falls to
+the downstream repairs instead.
+
+### `penalize_disconnected`
+
+A switch, not a magnitude. The cost raise applied to a disconnected tile is a multiple of the
+static cost maximum, so any multiple above one removes the tile from contention outright and all
+positive settings behave alike — which is why the option is boolean.
+
+On or off separates results only at `morph=False`, and only on inputs that still have
+disconnections to repair. Turning it off introduced no integrity defect on any input tested.
+
+### `swap_repair_passes`
+
+Affects integrity only. Shape fidelity is essentially unchanged at any value; what moves is the
+number of split regions and groups, and it moves monotonically down to zero as passes are added.
+The repair is applied only when it strictly reduces that count, so more passes can never make a
+result worse.
+
+The saturation point depends on the input: grouped inputs at `morph=True` are done after a couple
+of passes, the same input at `morph=False` needs the full default, and at one tile per region the
+option is inert because there is nothing to repair. Values above the default never differ from
+the default. The cost of the extra passes is small except on large multi-component inputs.
+
+### `ring_swapback_max_hops` {#ring_swapback_max_hops}
+
+Every value produces a distinct result on large inputs, and defects appear at **both** ends of
+the range.
+
+Below the default, shape fidelity is better on one tile per region — displacement and adjacency
+both improve as the reach shrinks, with no integrity cost on that input — while on grouped and
+world inputs the same low values split regions or leave them non-contiguous. Silhouette overlap
+moves the other way on the same input, so the trade is real rather than a free win.
+
+Above the default, a much larger reach reintroduces a split group on a grouped input where the
+default has none, and costs adjacency. "More is safer" does not hold. The default sits between
+the two failure modes; it is not at the fidelity optimum for every input, and no value is.

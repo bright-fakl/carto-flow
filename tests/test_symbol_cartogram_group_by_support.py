@@ -189,3 +189,21 @@ class TestInertGroupingWarning:
     def test_layouts_without_an_inert_option_say_nothing(self):
         for name in ("centroid", "mosaic"):
             assert get_layout(name)._inert_group_by_warning() is None
+
+
+class TestGroupLevelExport:
+    """``to_geodataframe(level="group")`` must describe the group it exports."""
+
+    def test_attributes_come_from_a_member_of_the_group(self):
+        """Each row carries the attributes of a region in that group, not of row `group_index`."""
+        gdf = grouped_gdf()
+        # Blocks of three, so group 1's first member is row 3: a row-indexed
+        # lookup would attach group 0's attributes to group 1.
+        gdf["grp"] = ["a", "a", "a", "b", "b", "b"]
+        gdf["label"] = ["a0", "a1", "a2", "b0", "b1", "b2"]
+
+        result = create_layout(gdf, group_by="grp", layout=MosaicLayout(morph=False), show_progress=False).style()
+        exported = result.to_geodataframe(source_gdf=gdf, level="group")
+
+        assert exported["grp"].tolist() == ["a", "b"]
+        assert exported["label"].tolist() == ["a0", "b0"]

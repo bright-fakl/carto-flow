@@ -28,7 +28,7 @@ def create_symbol_cartogram(
     tile_count: str | None = None,
     group_by: str | None = None,
     # Layout algorithm
-    layout: Layout | str = "physics",
+    layout: Layout | str = "packing",
     # Preprocessing options (passed to create_layout)
     size_scale: Literal["sqrt", "linear", "log"] = "sqrt",
     size_max_value: float | None = None,
@@ -72,7 +72,8 @@ def create_symbol_cartogram(
         with tile_count. Raises ValueError for layouts whose placement
         ignores the grouping (see ``Layout.supports_group_by``).
     layout : Layout or str
-        Layout instance or string shorthand ("physics", "topology", "grid").
+        Layout instance or string shorthand, e.g. "packing", "grid",
+        or "mosaic". Defaults to "packing".
         Pass a Layout instance for full control over algorithm options.
     size_scale : str
         Scaling method for proportional sizing: "sqrt", "linear", or "log".
@@ -195,7 +196,7 @@ def create_layout(
     *,
     tile_count: str | None = None,
     group_by: str | None = None,
-    layout: Layout | str = "physics",
+    layout: Layout | str = "packing",
     # Preprocessing options
     size_scale: Literal["sqrt", "linear", "log"] = "sqrt",
     size_max_value: float | None = None,
@@ -230,7 +231,8 @@ def create_layout(
         Raises ValueError for layouts whose placement ignores the grouping
         (see ``Layout.supports_group_by``).
     layout : Layout or str
-        Layout instance or string shorthand ("physics", "topology", "grid").
+        Layout instance or string shorthand, e.g. "packing", "grid",
+        or "mosaic". Defaults to "packing".
     size_scale : str
         Scaling method for proportional sizing: "sqrt", "linear", or "log".
     size_max_value : float, optional
@@ -278,7 +280,7 @@ def create_layout(
 
     Examples
     --------
-    >>> # Simple usage - default physics layout
+    >>> # Simple usage - default circle packing layout
     >>> result = create_layout(gdf, "population")
 
     >>> # String lookup with preprocessing options

@@ -136,6 +136,18 @@ class TestCurrentAPIContract:
         assert result.status == SymbolCartogramStatus.CONVERGED
         assert result.placement_metrics["displacement_mean"] == 0.0
 
+    def test_no_adjacent_pairs(self):
+        """Input whose regions share no boundary lays out without error."""
+        from carto_flow.symbol_cartogram import create_symbol_cartogram
+
+        gdf = gpd.GeoDataFrame(
+            {"population": [100.0, 200.0, 300.0]},
+            geometry=[box(0, 0, 1, 1), box(10, 0, 11, 1), box(20, 0, 21, 1)],
+        )
+        result = create_symbol_cartogram(gdf, "population", show_progress=False)
+
+        assert len(result.symbols) == 3
+
     def test_null_values_skipped(self):
         """Null values are skipped with warning."""
         from carto_flow.symbol_cartogram import CirclePhysicsLayout, create_symbol_cartogram

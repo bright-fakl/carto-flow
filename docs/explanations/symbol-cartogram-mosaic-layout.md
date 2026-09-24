@@ -19,10 +19,15 @@ Source: [layouts/mosaic/\_\_init\_\_.py](https://github.com/bright-fakl/carto-fl
 
 | | `GridBasedLayout` | `MosaicLayout` |
 |---|---|---|
-| Tiles per region | 1 | `tile_count[g]` (integer) |
+| Tiles per region | 1 per item (`tile_count` splits a region into items) | `tile_count[g]` (integer), as one block |
 | Data encoding | symbol size | tile count |
 | Typical use | Dorling / tile maps | Tilegrams / seat maps |
 | Assignment | per-region (1:1) | slot-expanded (N:M) |
+| `group_by` | not accepted (raises) | honored: a group's tiles form one block |
+| Contiguity of a region's tiles | not constrained | constrained, then repaired |
+
+For a worked comparison of the two on the same input, see the how-to guide
+[Choose Between the Grid and Mosaic Layouts](../how-to/choose-grid-or-mosaic-layout.ipynb).
 
 ---
 

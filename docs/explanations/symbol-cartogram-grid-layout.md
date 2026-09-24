@@ -148,3 +148,19 @@ where the native sizes are computed from the area-equivalent radii divided by th
 | `rotation` | 0.0 | Grid rotation in degrees |
 | `fill_holes` | `True` | Enable interior hole filling |
 | `fix_islands` | `True` | Enable island/connectivity correction |
+
+---
+
+## Relationship to the Mosaic Layout
+
+Both this layout and the [mosaic layout](symbol-cartogram-mosaic-layout.md) place symbols on a tile lattice, but they bind tiles to regions differently.
+
+The assignment here is a bijection from *items* to tiles. With `tile_count`, each requested tile is a separate item, and no term in the cost matrix ties the items of one region together: the neighbor and topology terms act between regions, and the compactness term pulls every item toward the same grid center. A region needing many tiles can therefore end up with tiles sitting apart from its main block. The mosaic layout assigns whole blocks and runs a connectivity repair afterwards, so a region's tiles stay in one piece.
+
+The same difference decides `group_by`. Grouping only constrains placement if the solver can act on it, and nothing in the cost matrix reads the group labels, so this layout does not accept `group_by` — it raises rather than ignoring the grouping silently. The mosaic layout constrains a group's tiles to one block.
+
+Because its cost matrix optimizes per-region relationships directly, this layout keeps more of the input's neighbor pairs adjacent and more of the compass directions between them at one tile per region. What it does not optimize is the outline of the tilegram as a whole, which is where the mosaic layout — whose lattice is calibrated to the area it must cover — produces a footprint closer to the shape of the map.
+
+Its refinement loop rescores every region against every other on each pass, so its cost grows steeply with the number of regions.
+
+For a worked comparison on the same input, see the how-to guide [Choose Between the Grid and Mosaic Layouts](../how-to/choose-grid-or-mosaic-layout.ipynb).

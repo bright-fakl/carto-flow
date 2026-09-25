@@ -38,13 +38,19 @@ publish: ## Publish a release to PyPI.
 .PHONY: build-and-publish
 build-and-publish: build publish ## Build and publish.
 
+# mkdocs-gallery 0.10.4 (latest) imports mkdocs.utils.warning_filter, removed in
+# mkdocs 1.2, and jupyter_core warns unless JUPYTER_PLATFORM_DIRS is set. Both
+# fire at import time, before mkdocs loads docs/hooks/quiet_third_party.py.
+DOCS_ENV = JUPYTER_PLATFORM_DIRS=1 \
+	PYTHONWARNINGS='ignore:warning_filter doesn.t do anything:DeprecationWarning'
+
 .PHONY: docs-test
 docs-test: ## Test if documentation can be built without warnings or errors
-	@uv run mkdocs build -s
+	@$(DOCS_ENV) uv run mkdocs build -s
 
 .PHONY: docs
 docs: ## Build and serve the documentation
-	@uv run mkdocs serve
+	@$(DOCS_ENV) uv run mkdocs serve
 
 .PHONY: bump-version
 bump-version: ## Bump version using script (e.g., make bump-version VERSION=1.0.0)

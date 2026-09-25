@@ -110,8 +110,6 @@ nav:
     - Data (Optional):
         - Overview: reference/data/index.md
         - API: reference/data/api.md
-  - Changelog: changelog.md
-  - Migrating to 2.0: migrating-to-2.0.md
   - Explanations:
     - Overview: explanations/index.md
     - Flow Cartogram:
@@ -132,7 +130,11 @@ nav:
         - Algorithm: explanations/voronoi-cartogram-algorithm.md
         - Geodesic Labeling: explanations/voronoi-cartogram-geodesic-labeling.md
         - Contiguity Repair: explanations/voronoi-cartogram-contiguity.md
+  - Changelog: changelog.md
+  - Migrating to 2.0: migrating-to-2.0.md
+
 hooks:
+  - docs/hooks/quiet_third_party.py
   - docs/hooks/remove_hidden_toc.py
 
 plugins:
@@ -210,7 +212,7 @@ extra:
       link: https://github.com/bright-fakl/carto-flow
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/carto-flow
-  version: 2.0.0
+  version: 1.1.2
 
 extra_css:
   - stylesheets/jupyter.css

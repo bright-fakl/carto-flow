@@ -56,6 +56,18 @@ changelog and the release cannot disagree.
    changelog and migration pages are the ones most likely to be wrong, because
    nothing tests their content.
 
+6. **Publish to TestPyPI first, when the release changes packaging.** Run
+   `pypi-publish.yml` manually with the environment set to `testpypi`, then
+   install from TestPyPI into an empty environment and import the package.
+
+   Do this before releasing, not after: once `release.yml` has tagged and
+   published a GitHub Release, `pypi-publish.yml` uploads to PyPI
+   automatically, and a version number on PyPI cannot be reused.
+
+   Worth doing whenever `pyproject.toml`'s build configuration changed, a
+   bundled data file was added, moved or renamed, or a dependency was added or
+   made required. Skip it for a release that only changes Python source.
+
 ## Releasing
 
     gh workflow run release.yml -f version=X.Y.Z
@@ -72,9 +84,3 @@ section as its body. Publishing that release triggers `pypi-publish.yml`.
 3. **Install the published package in a clean environment** and import it. This
    catches packaging problems that a source checkout hides, such as a data file
    that was never added to the wheel.
-
-## Publishing to TestPyPI first
-
-`pypi-publish.yml` can be run manually with the environment set to `testpypi`.
-Worth doing for a release that changes packaging — a new bundled data file, a
-new dependency, a change to `pyproject.toml`'s build configuration.

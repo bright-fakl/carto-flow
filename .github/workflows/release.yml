@@ -4,12 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'New version number (must follow semver format, e.g., 1.0.0)'
+        description: 'New version (semver, e.g. 2.0.0). CHANGELOG.md must have a matching ## [x.y.z] section; its body becomes the release notes.'
         required: true
-        type: string
-      release_notes:
-        description: 'Release notes (leave empty to auto-generate from commits)'
-        required: false
         type: string
 
 permissions:
@@ -39,6 +35,30 @@ jobs:
       - name: Set up Python environment
         uses: ./.github/actions/setup-python-env
 
+      - name: Read release notes from CHANGELOG.md
+        id: changelog
+        run: |
+          python - <<'PY'
+          import os, re, sys
+          version = "${{ inputs.version }}"
+          text = open("CHANGELOG.md", encoding="utf-8").read()
+          # the section runs from this version's heading to the next version heading
+          match = re.search(
+              rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|^\[[^\]]+\]:\s*http|\Z)",
+              text, re.M | re.S,
+          )
+          if not match:
+              sys.exit(
+                  f"CHANGELOG.md has no '## [{version}]' section. "
+                  "Add the section before releasing; the release notes are read from it."
+              )
+          body = match.group(1).strip()
+          if not body:
+              sys.exit(f"The '## [{version}]' section in CHANGELOG.md is empty.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+              fh.write(f"body<<CHANGELOG_EOF\n{body}\nCHANGELOG_EOF\n")
+          PY
+
       - name: Update version using bump_version.py script
         run: uv run python scripts/bump_version.py ${{ inputs.version }}
 
@@ -50,8 +70,8 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
           git add pyproject.toml mkdocs.yml src/carto_flow/__init__.py uv.lock
-          git commit -m "Bump version to ${{ inputs.version }}"
-          git push
+          git diff --cached --quiet || \
+            (git commit -m "Bump version to ${{ inputs.version }}" && git push)
 
       - name: Create GitHub Release
         id: create_release
@@ -59,8 +79,8 @@ jobs:
         with:
           tag_name: ${{ inputs.version }}
           name: Version ${{ inputs.version }}
-          body: ${{ inputs.release_notes }}
-          generate_release_notes: ${{ inputs.release_notes == '' }}
+          body: ${{ steps.changelog.outputs.body }}
+          generate_release_notes: false
           draft: false
           prerelease: ${{ contains(inputs.version, '-') }}
         env:

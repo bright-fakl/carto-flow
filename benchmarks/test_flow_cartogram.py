@@ -165,7 +165,43 @@ def test_congressional_districts(benchmark, us_congressional_districts_gdf, over
 # Group D: vertex scaling (US states, fixed grid, varying simplification)
 # ---------------------------------------------------------------------------
 
-_SIMPLIFY_TOLERANCES = [None, 100, 500, 1000, 5000, 10_000]  # metres; None = no simplification
+# Vertex-count cases, coarse to fine. The bundled census snapshot is
+# coverage-simplified at 1000 m, so `simplify` below that re-fetches finer
+# geometry from the Census API and needs a key, which CI does not have. Detail
+# above the bundled resolution is produced by densifying instead: segmentizing
+# splits existing edges, so it raises the vertex count the morph has to advect
+# without needing source geometry the package does not ship.
+#
+# ("simplify", tol) drops vertices; ("segmentize", max_len) adds them; None is
+# the bundled geometry. Spans roughly 5k to 240k vertices on contiguous states.
+_VERTEX_CASES = [
+    ("simplify", 10_000),
+    ("simplify", 5_000),
+    None,
+    ("segmentize", 2_000),
+    ("segmentize", 1_000),
+    ("segmentize", 500),
+]
+
+
+def _vertex_case_id(case):
+    return "bundled" if case is None else f"{case[0]}-{case[1]}"
+
+
+def _load_states_at(case):
+    """Contiguous US states at the requested vertex detail."""
+    import shapely
+
+    from carto_flow.data import load_us_census
+
+    if case is not None and case[0] == "simplify":
+        return load_us_census(population=True, contiguous_only=True, simplify=case[1])
+    gdf = load_us_census(population=True, contiguous_only=True)
+    if case is not None:
+        gdf = gdf.copy()
+        gdf["geometry"] = shapely.segmentize(gdf.geometry.values, case[1])
+    return gdf
+
 
 _VERTEX_FIXED = {
     "n_iter": 100,
@@ -179,15 +215,9 @@ _VERTEX_FIXED = {
 
 
 @pytest.mark.parametrize("overrides", _PARALLEL_CASES)
-@pytest.mark.parametrize("simplify_m", _SIMPLIFY_TOLERANCES)
-def test_vertex_scaling(benchmark, simplify_m, overrides):
-    from carto_flow.data import load_us_census
-
-    gdf = load_us_census(
-        population=True,
-        contiguous_only=True,
-        simplify=simplify_m,
-    )
+@pytest.mark.parametrize("vertex_case", _VERTEX_CASES, ids=_vertex_case_id)
+def test_vertex_scaling(benchmark, vertex_case, overrides):
+    gdf = _load_states_at(vertex_case)
     options = MorphOptions(**_VERTEX_FIXED, **overrides)
     runs = BenchmarkRuns()
 

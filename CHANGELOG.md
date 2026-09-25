@@ -191,6 +191,14 @@ code written against an unreleased `main`:
 
 ### Performance
 
+- The flow cartogram morph is substantially faster than 1.1.2. Measured on
+  contiguous US states with identical geometry and options, serial in both
+  versions: 3.5x at a 128-cell grid, 5.3x at the default 256, 10.0x at 512 and
+  11.6x at 1024. Iteration counts are identical at every grid size, so the
+  convergence path is unchanged — the work per iteration got cheaper. The gain
+  is in the density rasterization and FFT solve rather than in vertex
+  advection, so it grows with grid size and shrinks as vertex count rises.
+  ([#11](https://github.com/bright-fakl/carto-flow/pull/11))
 - `repair_contiguity` skips path enumeration for pairs it cannot connect, and
   mosaic calibration skips adjacency computation and vectorizes lattice
   adjacency. ([#36](https://github.com/bright-fakl/carto-flow/pull/36),

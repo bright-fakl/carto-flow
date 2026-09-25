@@ -69,6 +69,13 @@ Full documentation is available at **<https://bright-fakl.github.io/carto-flow/>
 - [Reference](https://bright-fakl.github.io/carto-flow/reference/) — full API reference
 - [Explanations](https://bright-fakl.github.io/carto-flow/explanations/) — background on algorithms and design
 
+## Changelog
+
+[CHANGELOG.md](CHANGELOG.md) lists the changes in each release. Upgrading from
+1.x requires code changes in the symbol cartogram API; the
+[migration guide](https://bright-fakl.github.io/carto-flow/migrating-to-2.0/)
+gives the old and new form of every affected call.
+
 ## License
 
 See [LICENSE](LICENSE).

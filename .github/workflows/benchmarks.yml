@@ -31,6 +31,16 @@ jobs:
             --benchmark-max-time=600 \
             -q
 
+      - name: Add the trailing newline pytest-benchmark omits
+        run: |
+          # pytest-benchmark writes the JSON without a final newline, which the
+          # end-of-file-fixer pre-commit hook then adds on the next local
+          # commit. Adding it here keeps every benchmark run from reintroducing
+          # a one-line diff.
+          file=docs/explanations/benchmark_results.json
+          [ -n "$(tail -c1 "$file")" ] && printf '\n' >> "$file"
+          exit 0
+
       - name: Commit updated benchmark results
         run: |
           git config user.name "GitHub Actions"

@@ -56,9 +56,23 @@ changelog and the release cannot disagree.
    changelog and migration pages are the ones most likely to be wrong, because
    nothing tests their content.
 
-6. **Publish to TestPyPI first, when the release changes packaging.** Run
-   `pypi-publish.yml` manually with the environment set to `testpypi`, then
-   install from TestPyPI into an empty environment and import the package.
+6. **Publish to TestPyPI first, when the release changes packaging.**
+
+       gh workflow run pypi-publish.yml -f environment=testpypi
+
+   Then install it into an empty environment and import it. TestPyPI does not
+   mirror PyPI, so dependencies have to come from the real index:
+
+       uv venv /tmp/tpypi && \
+         VIRTUAL_ENV=/tmp/tpypi uv pip install \
+           --index-url https://test.pypi.org/simple/ \
+           --extra-index-url https://pypi.org/simple/ \
+           carto-flow
+       VIRTUAL_ENV=/tmp/tpypi uv run python -c \
+         "import carto_flow, carto_flow.data as d; print(carto_flow.__version__, len(d.load_world()))"
+
+   Loading a bundled dataset is the point of that import: it is what catches a
+   data file missing from the wheel.
 
    Do this before releasing, not after: once `release.yml` has tagged and
    published a GitHub Release, `pypi-publish.yml` uploads to PyPI
@@ -81,6 +95,12 @@ section as its body. Publishing that release triggers `pypi-publish.yml`.
 1. **Check the PyPI upload.** `pypi-publish.yml` runs on the release being
    published; confirm it succeeded and that the new version is on PyPI.
 2. **Check the documentation site** picked up the new version.
-3. **Install the published package in a clean environment** and import it. This
-   catches packaging problems that a source checkout hides, such as a data file
+3. **Install the published package in a clean environment** and import it:
+
+       uv venv /tmp/pypi && \
+         VIRTUAL_ENV=/tmp/pypi uv pip install carto-flow
+       VIRTUAL_ENV=/tmp/pypi uv run python -c \
+         "import carto_flow, carto_flow.data as d; print(carto_flow.__version__, len(d.load_world()))"
+
+   This catches packaging problems a source checkout hides, such as a data file
    that was never added to the wheel.

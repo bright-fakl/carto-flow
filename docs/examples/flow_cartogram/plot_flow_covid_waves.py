@@ -8,9 +8,10 @@ Keyframes are every second week of 2020.  Each one is a cartogram sized to
 that week's confirmed cases per 100,000 residents, so a state's area is its
 infection intensity, not its population.  Color shows the same week's
 *absolute* case count on a log scale.
-The two encodings disagree on purpose: the largest state in a frame is the one
-with the most intense outbreak per person, while the brightest is the one
-recording the most cases.  A state can be one without being the other.
+The two encodings disagree on purpose: the largest state in a frame has the
+most intense outbreak per person, while the brightest state records the most
+cases.  A state can have the highest case rate without recording the highest
+case count, and the reverse.
 
 Case data: Johns Hopkins University CSSE COVID-19 Data Repository (CC BY 4.0).
 """
@@ -46,7 +47,7 @@ us_states = densify_coverage(us_states, max_segment_length=1000)
 # Pick keyframes and build the two encodings
 # ------------------------------------------
 # The series starts on 2020-03-22, the first week in which every contiguous
-# state had recorded cases, and runs fortnightly to the end of 2020.
+# state had recorded cases, and takes every second week to the end of 2020.
 
 keyframe_weeks = weekly_cases.loc["2020-03-22":"2020-12-27"].index[::2]
 
@@ -78,25 +79,29 @@ for week in keyframe_weeks:
 # %%
 # Animate
 # -------
-# Three waves cross the map.  In late March and April the Northeast swells
-# alone: New York reaches 374 cases per 100k in the week ending 2020-04-05,
-# its highest of the year, with New Jersey, Massachusetts, Rhode Island and
-# Connecticut behind it, while the interior shrinks to slivers.  Through July
-# the Sun Belt takes over as the Northeast collapses — Arizona, Florida,
-# Louisiana and Mississippi all pass 250 per 100k.  From September the Upper
-# Midwest dominates: North Dakota is the largest shape on the map in every
-# keyframe from 2020-10-04 to 2020-11-29, with South Dakota just behind it,
-# and both pass 1,100 per 100k in mid-November despite holding 1.6 million
-# people between them.  Tennessee leads in mid-December and California closes
-# the year.
+# The morph preserves the total area of the map, so every area is relative:
+# a state grows only by taking area from the states with lower case rates
+# that week, and no state is large or small on its own terms.
 #
-# Color separates that from raw caseload.  California and Texas stay near the
-# bright end of the scale all year without growing much, because a large
+# Three waves cross the map.  In late March and April the Northeast swells:
+# New York reaches 374 cases per 100k in the week ending 2020-04-05, its
+# highest of the year, with New Jersey, Massachusetts, Rhode Island and
+# Connecticut behind it.  Through July the Sun Belt takes over as the
+# Northeast recedes — Arizona, Florida, Louisiana and Mississippi all pass
+# 250 per 100k.  From September the Upper Midwest dominates: North Dakota is
+# the largest shape on the map in every keyframe from 2020-10-04 to
+# 2020-11-29, with South Dakota just behind it, and both pass 1,100 per 100k
+# in mid-November despite holding 1.6 million people between them.  Tennessee
+# leads in mid-December and California closes the year.
+#
+# Area tracks the case rate; color tracks the case count, and the two come
+# apart wherever population is large.  California and Texas stay near the
+# bright end of the color scale all year without growing much, because a large
 # population turns a moderate rate into a large count.  In the week ending
 # 2020-11-15 the Dakotas are the two biggest shapes on the map at 1,273 and
 # 1,135 per 100k, yet they recorded 9,682 and 9,977 cases against California's
-# 60,704 — roughly three times their combined total — so they sit well below
-# California in color.
+# 60,704 — roughly three times the Dakotas' combined total — so the Dakotas
+# sit well below California in color.
 
 anim = flow.animation.animate_geometry_keyframes(
     keyframes=cartograms,

@@ -1,4 +1,7 @@
-"""Geometry validity of the bundled datasets, as loaded and after reprojection.
+"""Validity of the bundled datasets, as loaded and after reprojection.
+
+Geometry datasets are checked for self-intersections; tabular datasets are
+checked for the columns, coverage, and value ranges their loaders promise.
 
 A dataset that is valid in its own CRS can still become self-intersecting once
 reprojected, because reprojection maps vertices and leaves the edges between
@@ -63,6 +66,47 @@ def test_bundled_dataset_valid_as_loaded(dataset):
 def test_bundled_dataset_valid_after_equal_area_reprojection(dataset, crs):
     gdf = _load(dataset).to_crs(crs)
     assert _invalid(gdf) == []
+
+
+def test_us_state_population_columns_and_coverage():
+    import carto_flow.data as data
+
+    df = data.load_us_state_population()
+    assert list(df.columns) == ["year", "state_fips", "state_name", "state_abbr", "population"]
+    assert df["population"].gt(0).all()
+    assert not df.duplicated(subset=["year", "state_abbr"]).any()
+
+
+def test_us_covid_weekly_columns_and_coverage():
+    import carto_flow.data as data
+
+    df = data.load_us_covid_weekly()
+    assert list(df.columns) == ["week_ending", "state_name", "new_cases"]
+    assert not df.isna().any().any()
+    assert not df.duplicated(subset=["week_ending", "state_name"]).any()
+
+    # Weekly counts are non-negative new cases, never the cumulative series.
+    assert df["new_cases"].ge(0).all()
+
+    # Every state appears in every week, so a pivot has no gaps.
+    weekly = df.pivot(index="week_ending", columns="state_name", values="new_cases")
+    assert not weekly.isna().any().any()
+
+    # Weeks end on Sunday and stop when JHU stopped collecting.
+    assert set(weekly.index.dayofweek) == {6}
+    assert str(weekly.index.max().date()) == "2023-03-12"
+
+    # The 50 states and DC join the census snapshot on its name column.
+    census_names = set(data.load_us_census(contiguous_only=False)["State Name"])
+    assert census_names - {"Puerto Rico"} <= set(weekly.columns)
+
+
+def test_us_covid_weekly_total_matches_reported_us_total():
+    """The summed series reproduces the ~104 million US confirmed cases JHU reported."""
+    import carto_flow.data as data
+
+    total = data.load_us_covid_weekly()["new_cases"].sum()
+    assert 100e6 < total < 110e6
 
 
 def test_world_union_after_equal_area_reprojection():

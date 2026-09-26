@@ -34,7 +34,7 @@ _ = symbol_carto.plot(
     # shrink the colorbar
     legend_kwds={"shrink": 0.5},
     # label the largest states
-    # we use the State abbreviation look-up table in the censusdis package
+    # the abbreviation column comes from the bundled census snapshot
     label=[
         row["State Abbreviation"] if row["State Abbreviation"] in ["CA", "TX", "FL", "NY"] else ""
         for _, row in us_states.iterrows()

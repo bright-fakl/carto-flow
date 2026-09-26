@@ -21,6 +21,7 @@ import numpy as np
 import carto_flow
 import carto_flow.data as examples
 import carto_flow.flow_cartogram as flow
+from carto_flow.geo_utils import densify_coverage
 
 us_states = examples.load_us_census()
 population = examples.load_us_state_population()
@@ -30,7 +31,15 @@ us_states = us_states.join(
     on="State Abbreviation",
 )
 us_states = us_states[~us_states["State Abbreviation"].isin(("AK", "HI", "PR"))]
+# Simplifying drops vertices along gentle boundaries, which leaves a few very
+# long straight segments - here up to 519 km. A segment with no interior
+# vertices cannot bend during the morph, so the solver warns about it. Densify
+# after simplifying to put the vertices back where they are needed, evenly
+# rather than where the original outline happened to be detailed. The pair is
+# also faster than simplifying alone, because boundaries that can bend
+# converge in fewer iterations.
 us_states = carto_flow.simplify_coverage(us_states, tolerance=5000)
+us_states = densify_coverage(us_states, max_segment_length=2000)
 
 # %%
 # Compute per-state population change relative to national average

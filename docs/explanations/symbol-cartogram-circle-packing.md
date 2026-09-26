@@ -387,7 +387,7 @@ A zero-radius circle still takes part in the force computation. It cannot overla
 **Convergence condition:**
 
 $$
-\text{EMA}(\text{drift_rate} < 0) < 0.5
+\text{EMA}(\text{drift\_rate} < 0) < 0.5
 $$
 
 

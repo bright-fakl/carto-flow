@@ -64,7 +64,7 @@ The velocity field is derived from the density field using the same FFT-based Po
 Centroids are displaced along the velocity field with an adaptive timestep:
 
 $$
-\Delta t = \text{dt_factor} \cdot \frac{\min(\Delta x, \Delta y)}{v_{\max}}
+\Delta t = \text{dt\_factor} \cdot \frac{\min(\Delta x, \Delta y)}{v_{\max}}
 $$
 
 where $\Delta x, \Delta y$ are the grid cell sizes and $v_{\max}$ is the maximum velocity magnitude on the grid.

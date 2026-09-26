@@ -29,6 +29,8 @@ If these dependencies are not installed, functions that require them will raise 
 | **[`load_us_states()`](api.md)** | US states with population and area information |
 | **[`load_sample_cities()`](api.md)** | Sample cities with population information |
 | **[`load_us_census()`](api.md)** | US states/districts with ACS 2020 demographic data (bundled, no network or key needed) |
+| **[`load_us_state_population()`](api.md)** | Annual US state population estimates, 1900-2024 |
+| **[`load_us_covid_weekly()`](api.md)** | Weekly new confirmed COVID-19 cases per US state, 2020-2023 (JHU CSSE, CC BY 4.0) |
 
 ## See Also
 

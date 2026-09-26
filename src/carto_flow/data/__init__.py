@@ -570,6 +570,45 @@ def load_us_state_population() -> "pandas.DataFrame":
     return pd.read_csv(path)
 
 
+def load_us_covid_weekly() -> "pandas.DataFrame":
+    """Load weekly US COVID-19 confirmed cases per state (2020-01 to 2023-03).
+
+    Values are weekly *new* confirmed cases -- counts, not rates -- for all 50
+    states, DC, and five territories, summed from the county-level cumulative
+    series and aggregated into weeks ending Sunday. Divide by a population
+    column to get a rate.
+
+    The data comes from the Johns Hopkins University Center for Systems Science
+    and Engineering (JHU CSSE) COVID-19 Data Repository, licensed CC BY 4.0;
+    attribution to JHU is required wherever the data is shown. Collection ended
+    on 2023-03-09 and the repository was archived, so the series is final.
+
+    ``state_name`` matches the ``State Name`` column of ``load_us_census``
+    for the 50 states and DC.
+
+    To update the data, run ``scripts/download_covid_cases.py``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: ``week_ending`` (datetime64), ``state_name``, ``new_cases``.
+
+    Examples
+    --------
+    >>> from carto_flow.data import load_us_covid_weekly
+    >>> df = load_us_covid_weekly()
+    >>> print(df.shape)
+    (9184, 3)
+    >>> weekly = df.pivot(index="week_ending", columns="state_name", values="new_cases")
+    >>> print(weekly.shape)
+    (164, 56)
+    """
+    import pandas as pd
+
+    path = files("carto_flow.data").joinpath("us_covid_weekly.parquet")
+    return pd.read_parquet(path)
+
+
 __all__ = [
     "DIVISION_NAMES",
     "REGION_DIVISIONS",
@@ -578,6 +617,7 @@ __all__ = [
     "STATE_REGIONS",
     "load_sample_cities",
     "load_us_census",
+    "load_us_covid_weekly",
     "load_us_state_population",
     "load_us_states",
     "load_world",

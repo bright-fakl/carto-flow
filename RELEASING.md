@@ -93,7 +93,7 @@ dated section per candidate.
 
        cd /tmp && \
        uv venv /tmp/tpypi && \
-         VIRTUAL_ENV=/tmp/tpypi uv pip install \
+         VIRTUAL_ENV=/tmp/tpypi uv pip install --refresh-package carto-flow \
            --index-strategy unsafe-best-match \
            --index-url https://test.pypi.org/simple/ \
            --extra-index-url https://pypi.org/simple/ \
@@ -119,6 +119,18 @@ dated section per candidate.
      `uv run` picks up the repository's own environment and `import carto_flow`
      resolves against local source rather than the installed wheel, so the
      check passes without testing the artifact at all.
+   - **`--refresh-package carto-flow`** when the version was just published.
+     uv caches the package index, so a version uploaded minutes earlier can be
+     missing from a cached listing. The error names the version rather than the
+     cache:
+
+         Because there is no version of carto-flow==X.Y.ZrcN and you require
+         carto-flow==X.Y.ZrcN, we can conclude that your requirements are
+         unsatisfiable.
+
+     That message invites the conclusion that the upload failed. Check
+     `https://test.pypi.org/simple/carto-flow/` before re-publishing: if the
+     files are listed there, the index is fine and the cache is stale.
 
    If this fails, cut `X.Y.Z-rc2` (bump the rc number, do not delete the tag)
    and repeat. This is the reason to use a release candidate at all: a failed

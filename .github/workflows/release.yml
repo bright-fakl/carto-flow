@@ -41,20 +41,35 @@ jobs:
           python - <<'PY'
           import os, re, sys
           version = "${{ inputs.version }}"
+          base_version = version.split("-", 1)[0]
+          # A pre-release (e.g. 2.0.0-rc1) ships the same intended content as
+          # the final version it leads to, so it shares that version's
+          # CHANGELOG entry. Try the exact version first, then fall back to
+          # the base version with the pre-release suffix stripped.
+          candidates = [version] if version == base_version else [version, base_version]
           text = open("CHANGELOG.md", encoding="utf-8").read()
           # the section runs from this version's heading to the next version heading
-          match = re.search(
-              rf"^## \[{re.escape(version)}\].*?$(.*?)(?=^## \[|^\[[^\]]+\]:\s*http|\Z)",
-              text, re.M | re.S,
-          )
-          if not match:
+          match = None
+          used_version = None
+          for candidate in candidates:
+              found = re.search(
+                  rf"^## \[{re.escape(candidate)}\].*?$(.*?)(?=^## \[|^\[[^\]]+\]:\s*http|\Z)",
+                  text, re.M | re.S,
+              )
+              if found:
+                  match = found
+                  used_version = candidate
+                  break
+          if match is None:
+              tried = " nor ".join(f"'## [{c}]'" for c in candidates)
               sys.exit(
-                  f"CHANGELOG.md has no '## [{version}]' section. "
-                  "Add the section before releasing; the release notes are read from it."
+                  f"CHANGELOG.md has neither {tried} section. "
+                  "Add one of them before releasing; the release notes are read from it."
               )
           body = match.group(1).strip()
           if not body:
-              sys.exit(f"The '## [{version}]' section in CHANGELOG.md is empty.")
+              sys.exit(f"The '## [{used_version}]' section in CHANGELOG.md is empty.")
+          print(f"Using CHANGELOG.md section '## [{used_version}]' for release notes.")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
               fh.write(f"body<<CHANGELOG_EOF\n{body}\nCHANGELOG_EOF\n")
           PY

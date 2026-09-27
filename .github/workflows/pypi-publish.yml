@@ -19,9 +19,54 @@ permissions:
   id-token: write  # OIDC for trusted publishing
 
 jobs:
-  build-and-publish:
+  determine-target:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment == 'testpypi' && 'testpypi' || 'pypi' }}
+    outputs:
+      environment: ${{ steps.target.outputs.environment }}
+      publish_url: ${{ steps.target.outputs.publish_url }}
+    steps:
+      # Compute the target once, here, rather than repeating the same
+      # release/prerelease/dispatch ternary in every downstream field.
+      #
+      # - workflow_dispatch: honor the `environment` input exactly as before.
+      # - release, prerelease == true (e.g. an -rc tag): TestPyPI. A
+      #   prerelease is published automatically by GitHub firing
+      #   `release: published`, and TestPyPI is the only safe automatic
+      #   target since a real PyPI upload of a given version can never be
+      #   replaced.
+      # - release, prerelease == false: real PyPI, as today.
+      - name: Determine publish target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # Tested against "false" rather than "true" so that the default is
+            # TestPyPI. Anything unexpected - a missing or renamed payload
+            # field, an empty expansion - then routes to TestPyPI, where a
+            # wrong upload is recoverable. The reverse default would send a
+            # release candidate to real PyPI, where a version can never be
+            # replaced, which is the failure this job exists to prevent.
+            if [ "${{ github.event.release.prerelease }}" = "false" ]; then
+              environment=pypi
+            else
+              environment=testpypi
+            fi
+          else
+            environment="${{ inputs.environment }}"
+          fi
+
+          if [ "$environment" = "testpypi" ]; then
+            publish_url=https://test.pypi.org/legacy/
+          else
+            publish_url=https://upload.pypi.org/legacy/
+          fi
+
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "publish_url=$publish_url" >> "$GITHUB_OUTPUT"
+
+  build-and-publish:
+    needs: determine-target
+    runs-on: ubuntu-latest
+    environment: ${{ needs.determine-target.outputs.environment }}
 
     steps:
       - name: Checkout repository
@@ -41,14 +86,7 @@ jobs:
       - name: Build package
         run: uv build
 
-      - name: Publish to PyPI
-        if: inputs.environment == 'pypi' || github.event_name == 'release'
+      - name: Publish package
         env:
-          UV_PUBLISH_URL: ${{ inputs.environment == 'testpypi' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
-        run: uv publish --trusted-publishing always
-
-      - name: Publish to TestPyPI
-        if: inputs.environment == 'testpypi' && github.event_name == 'workflow_dispatch'
-        env:
-          UV_PUBLISH_URL: https://test.pypi.org/legacy/
+          UV_PUBLISH_URL: ${{ needs.determine-target.outputs.publish_url }}
         run: uv publish --trusted-publishing always

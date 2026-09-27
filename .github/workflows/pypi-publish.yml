@@ -39,13 +39,19 @@ jobs:
         id: target
         run: |
           if [ "${{ github.event_name }}" = "release" ]; then
-            if [ "${{ github.event.release.prerelease }}" = "true" ]; then
-              environment=testpypi
-            else
+            # Tested against "false" rather than "true" so that the default is
+            # TestPyPI. Anything unexpected - a missing or renamed payload
+            # field, an empty expansion - then routes to TestPyPI, where a
+            # wrong upload is recoverable. The reverse default would send a
+            # release candidate to real PyPI, where a version can never be
+            # replaced, which is the failure this job exists to prevent.
+            if [ "${{ github.event.release.prerelease }}" = "false" ]; then
               environment=pypi
+            else
+              environment=testpypi
             fi
           else
-            environment=${{ inputs.environment }}
+            environment="${{ inputs.environment }}"
           fi
 
           if [ "$environment" = "testpypi" ]; then

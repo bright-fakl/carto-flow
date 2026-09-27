@@ -27,7 +27,7 @@ jobs:
         run: uv run python -m ipykernel install --user --name carto-flow
 
       - name: Build documentation
-        run: uv run mkdocs build -d site
+        run: uv run mkdocs build -s -d site
 
       - name: Upload documentation artifact
         uses: actions/upload-pages-artifact@v3

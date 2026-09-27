@@ -101,8 +101,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
 
+      # The documentation executes notebooks, which need the project kernel
+      # registered first. The same step appears in main.yml's check-docs job
+      # and in deploy-docs.yml; without it the build fails with
+      # "No such kernel named carto-flow".
+      - name: Install Jupyter kernel
+        run: uv run python -m ipykernel install --user --name carto-flow
+
+      # Built with -s so the release gate matches check-docs, which runs -s on
+      # every pull request. Without it the release build accepts warnings that
+      # the pull request that produced the commit would have rejected.
       - name: Build documentation
-        run: uv run mkdocs build -d site
+        run: uv run mkdocs build -s -d site
 
       - name: Upload documentation artifact
         uses: actions/upload-pages-artifact@v3

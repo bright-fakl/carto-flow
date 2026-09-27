@@ -55,6 +55,82 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  wheel-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: "3.10"
+
+      - name: Build the wheel
+        run: uv build -o dist
+
+      - name: Verify the wheel is pure Python
+        run: |
+          WHEEL=$(ls dist/carto_flow-*-py3-none-any.whl)
+          echo "Wheel: $WHEEL"
+          uv run python -m zipfile -e "$WHEEL" /tmp/wheel-metadata
+          WHEEL_METADATA=$(find /tmp/wheel-metadata -path '*.dist-info/WHEEL')
+          cat "$WHEEL_METADATA"
+          grep -q '^Tag: py3-none-any$' "$WHEEL_METADATA"
+          grep -q '^Root-Is-Purelib: true$' "$WHEEL_METADATA"
+
+      - name: Verify the bundled data files are in the wheel
+        run: |
+          WHEEL=$(ls dist/carto_flow-*-py3-none-any.whl)
+          LISTING=$(uv run python -m zipfile -l "$WHEEL")
+          for FILE in \
+            cities.parquet \
+            us_census_2020_state.parquet \
+            us_census_2020_congressional_district.parquet \
+            us_covid_weekly.parquet \
+            us_state_population.csv \
+            us_states.parquet \
+            world.parquet; do
+            echo "$LISTING" | grep -q "carto_flow/data/$FILE" || {
+              echo "MISSING from wheel: carto_flow/data/$FILE"
+              exit 1
+            }
+          done
+
+      - name: Install the wheel into a clean venv
+        run: |
+          WHEEL=$(ls dist/carto_flow-*-py3-none-any.whl)
+          uv venv /tmp/smokevenv --python 3.10
+          VIRTUAL_ENV=/tmp/smokevenv uv pip install "$WHEEL"
+
+      - name: Import and load bundled datasets from a neutral directory
+        run: |
+          mkdir -p /tmp/smoke-neutral
+          cd /tmp/smoke-neutral
+          VIRTUAL_ENV=/tmp/smokevenv uv run --no-project python -c "
+          import carto_flow
+          import carto_flow.flow_cartogram
+          from carto_flow.data import load_world, load_us_census, load_us_covid_weekly, load_sample_cities
+
+          assert not carto_flow.__file__.startswith('${{ github.workspace }}'), (
+              f'carto_flow resolved to the repo checkout, not the installed wheel: {carto_flow.__file__}'
+          )
+
+          world = load_world()
+          assert len(world) == 177, f'load_world: expected 177 rows, got {len(world)}'
+
+          census = load_us_census()
+          assert len(census) == 49, f'load_us_census: expected 49 rows, got {len(census)}'
+
+          covid = load_us_covid_weekly()
+          assert covid.shape == (9184, 3), f'load_us_covid_weekly: expected shape (9184, 3), got {covid.shape}'
+
+          cities = load_sample_cities()
+          assert len(cities) == 243, f'load_sample_cities: expected 243 rows, got {len(cities)}'
+
+          print('wheel smoke test passed:', carto_flow.__file__)
+          "
+
   check-docs:
     runs-on: ubuntu-latest
     steps:

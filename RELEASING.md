@@ -94,14 +94,31 @@ dated section per candidate.
        cd /tmp && \
        uv venv /tmp/tpypi && \
          VIRTUAL_ENV=/tmp/tpypi uv pip install \
+           --index-strategy unsafe-best-match \
            --index-url https://test.pypi.org/simple/ \
            --extra-index-url https://pypi.org/simple/ \
-           carto-flow
-       VIRTUAL_ENV=/tmp/tpypi uv run python -c \
+           "carto-flow==X.Y.ZrcN"
+       VIRTUAL_ENV=/tmp/tpypi uv run --no-project python -c \
          "import carto_flow, carto_flow.data as d; print(carto_flow.__version__, len(d.load_world()))"
 
    Loading a bundled dataset is the point of that import: it is what catches a
    data file missing from the wheel.
+
+   Three details in that command are load-bearing, each of which silently
+   breaks the check if dropped:
+
+   - **Pin the exact version**, written PEP 440 style: the tag `2.0.0-rc1`
+     normalizes to the version `2.0.0rc1`. TestPyPI still carries older stable
+     releases, so an unpinned install resolves to one of those and verifies the
+     previous release while appearing to pass.
+   - **`--index-strategy unsafe-best-match`** is required. By default uv takes
+     every version of a package from the first index that offers it, so
+     dependency resolution fails once TestPyPI and PyPI both carry part of the
+     dependency tree.
+   - **`--no-project`**, together with the leading `cd /tmp`. Without both,
+     `uv run` picks up the repository's own environment and `import carto_flow`
+     resolves against local source rather than the installed wheel, so the
+     check passes without testing the artifact at all.
 
    If this fails, cut `X.Y.Z-rc2` (bump the rc number, do not delete the tag)
    and repeat. This is the reason to use a release candidate at all: a failed

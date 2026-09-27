@@ -55,6 +55,114 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
+  wheel-smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v6
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: "3.10"
+
+      - name: Build the wheel
+        run: uv build -o dist
+
+      - name: Verify the wheel is pure Python
+        run: |
+          WHEEL=$(ls dist/carto_flow-*-py3-none-any.whl)
+          echo "Wheel: $WHEEL"
+          uv run python -m zipfile -e "$WHEEL" /tmp/wheel-metadata
+          WHEEL_METADATA=$(find /tmp/wheel-metadata -path '*.dist-info/WHEEL')
+          cat "$WHEEL_METADATA"
+          grep -q '^Tag: py3-none-any$' "$WHEEL_METADATA"
+          grep -q '^Root-Is-Purelib: true$' "$WHEEL_METADATA"
+
+      # The expected set is read from the source tree, never hardcoded here.
+      # A hardcoded list would have to be edited by whoever adds a data file,
+      # which is the same person who would forget - and it could only catch a
+      # file being dropped, never a newly added file that fails to be
+      # packaged, which is the failure worth catching.
+      - name: Verify every source data file is in the wheel
+        run: |
+          WHEEL=$(ls dist/carto_flow-*-py3-none-any.whl)
+          uv run python - "$WHEEL" <<'PY'
+          import pathlib, sys, zipfile
+
+          source_dir = pathlib.Path("src/carto_flow/data")
+          expected = {
+              p.name
+              for p in source_dir.iterdir()
+              if p.is_file() and p.suffix != ".py"
+          }
+          if not expected:
+              sys.exit(f"No data files found in {source_dir}; the check would be vacuous.")
+
+          with zipfile.ZipFile(sys.argv[1]) as zf:
+              packaged = {
+                  pathlib.PurePosixPath(n).name
+                  for n in zf.namelist()
+                  if n.startswith("carto_flow/data/")
+              }
+
+          missing = sorted(expected - packaged)
+          if missing:
+              sys.exit(
+                  "Data files present in the source tree but absent from the wheel:\n  "
+                  + "\n  ".join(missing)
+                  + "\nCheck the packaging configuration in pyproject.toml."
+              )
+          for name in sorted(expected):
+              print(f"  packaged: {name}")
+          print(f"{len(expected)} data file(s) verified.")
+          PY
+
+      - name: Install the wheel into a clean venv
+        run: |
+          WHEEL=$(ls dist/carto_flow-*-py3-none-any.whl)
+          uv venv /tmp/smokevenv --python 3.10
+          VIRTUAL_ENV=/tmp/smokevenv uv pip install "$WHEEL"
+
+      # Every public loader is exercised, discovered from carto_flow.data's
+      # __all__ rather than listed here, so a loader added later is covered
+      # without touching this workflow. Row counts are deliberately not
+      # asserted: dataset contents are covered by tests/test_data_validity.py,
+      # and the question here is only whether the packaged wheel can load
+      # them at all.
+      - name: Import and load every bundled dataset from a neutral directory
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          mkdir -p /tmp/smoke-neutral
+          cd /tmp/smoke-neutral
+          VIRTUAL_ENV=/tmp/smokevenv uv run --no-project python - <<'PY'
+          import os
+
+          import carto_flow
+          import carto_flow.data as data
+          import carto_flow.flow_cartogram  # noqa: F401  - import must not raise
+
+          workspace = os.environ["WORKSPACE"]
+          if carto_flow.__file__.startswith(workspace):
+              raise SystemExit(
+                  "carto_flow resolved to the repo checkout rather than the "
+                  f"installed wheel: {carto_flow.__file__}"
+              )
+
+          loaders = sorted(n for n in data.__all__ if n.startswith("load_"))
+          if not loaders:
+              raise SystemExit("No load_* functions found in carto_flow.data.__all__.")
+
+          for name in loaders:
+              loaded = getattr(data, name)()
+              if len(loaded) == 0:
+                  raise SystemExit(f"{name}() returned an empty result.")
+              print(f"  {name}: {len(loaded)} rows")
+
+          print(f"{len(loaders)} loader(s) verified from {carto_flow.__file__}")
+          PY
+
   check-docs:
     runs-on: ubuntu-latest
     steps:

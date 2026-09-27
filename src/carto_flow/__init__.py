@@ -126,7 +126,7 @@ from .symbol_cartogram import (
 # Public API Definition
 # ============================================================================
 
-__version__ = "2.0.0-rc1"
+__version__ = "2.0.0-rc2"
 
 __all__ = [
     # Symbol cartogram

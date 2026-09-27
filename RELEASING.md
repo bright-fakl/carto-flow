@@ -8,7 +8,7 @@ releases on a merge to `main`.
 | Workflow | Trigger | Effect |
 | --- | --- | --- |
 | `release.yml` | manual, takes a version | bumps the version, commits, tags, creates the GitHub Release |
-| `pypi-publish.yml` | a GitHub Release being published | builds and uploads to PyPI |
+| `pypi-publish.yml` | a GitHub Release being published | builds and uploads to PyPI, or to TestPyPI if the release is a pre-release |
 | `deploy-docs.yml` | push to `main`, or manual | publishes the documentation site |
 | `benchmarks.yml` | manual only | runs the flow-cartogram benchmarks and commits the results file |
 
@@ -18,7 +18,11 @@ workflow and it writes all three through `scripts/bump_version.py`.
 
 `release.yml` reads the release notes out of `CHANGELOG.md`. It looks for a
 `## [<version>]` section and fails if that section is missing or empty, so the
-changelog and the release cannot disagree.
+changelog and the release cannot disagree. For a pre-release version such as
+`2.0.0-rc1`, it first looks for `## [2.0.0-rc1]`, and if that is absent falls
+back to `## [2.0.0]` — an rc and the final version it leads to ship the same
+intended content, so they share one CHANGELOG entry instead of requiring a
+dated section per candidate.
 
 ## Before releasing
 
@@ -56,13 +60,38 @@ changelog and the release cannot disagree.
    changelog and migration pages are the ones most likely to be wrong, because
    nothing tests their content.
 
-6. **Publish to TestPyPI first, when the release changes packaging.**
+6. **When the release changes packaging, cut a release candidate first**
+   instead of publishing to TestPyPI directly. A direct TestPyPI publish
+   before releasing cannot work: the version only becomes `X.Y.Z` inside
+   `release.yml` (it bumps `pyproject.toml`, `mkdocs.yml` and
+   `src/carto_flow/__init__.py` itself), so anything published beforehand
+   still carries the old version and, if that version already exists on
+   TestPyPI, fails with "file already exists".
 
-       gh workflow run pypi-publish.yml -f environment=testpypi
+   Worth doing whenever `pyproject.toml`'s build configuration changed, a
+   bundled data file was added, moved or renamed, or a dependency was added or
+   made required. Skip it for a release that only changes Python source — go
+   straight to [Releasing](#releasing).
 
-   Then install it into an empty environment and import it. TestPyPI does not
-   mirror PyPI, so dependencies have to come from the real index:
+## Releasing
 
+### Release candidate (packaging changes only)
+
+1. **Cut the candidate:**
+
+       gh workflow run release.yml -f version=X.Y.Z-rc1
+
+   This bumps the three version files, commits, tags `X.Y.Z-rc1`, and creates
+   a GitHub Release marked as a pre-release — which skips the documentation
+   deploy and makes `pypi-publish.yml` upload to TestPyPI instead of PyPI.
+
+2. **Verify by hand.** Install from TestPyPI into a clean venv, then import the
+   package and load a bundled dataset. TestPyPI does not mirror PyPI, so
+   dependencies have to come from the real index. Run this from a directory
+   that is *not* the repo root — from inside the repo, the import can resolve
+   to the local source tree instead of the installed wheel:
+
+       cd /tmp && \
        uv venv /tmp/tpypi && \
          VIRTUAL_ENV=/tmp/tpypi uv pip install \
            --index-url https://test.pypi.org/simple/ \
@@ -74,21 +103,23 @@ changelog and the release cannot disagree.
    Loading a bundled dataset is the point of that import: it is what catches a
    data file missing from the wheel.
 
-   Do this before releasing, not after: once `release.yml` has tagged and
-   published a GitHub Release, `pypi-publish.yml` uploads to PyPI
-   automatically, and a version number on PyPI cannot be reused.
+   If this fails, cut `X.Y.Z-rc2` (bump the rc number, do not delete the tag)
+   and repeat. This is the reason to use a release candidate at all: a failed
+   verification costs an rc number, never the final version, and never
+   touches real PyPI.
 
-   Worth doing whenever `pyproject.toml`'s build configuration changed, a
-   bundled data file was added, moved or renamed, or a dependency was added or
-   made required. Skip it for a release that only changes Python source.
+3. **Release for real** once verification passes — see below.
 
-## Releasing
+### Final release
 
     gh workflow run release.yml -f version=X.Y.Z
 
 The version must be semver. The workflow bumps the three version files, commits
-and pushes, tags `X.Y.Z`, and creates the GitHub Release with the changelog
-section as its body. Publishing that release triggers `pypi-publish.yml`.
+and pushes, tags `X.Y.Z`, and creates the GitHub Release with the `## [X.Y.Z]`
+changelog section as its body — the same section any of its rcs already fell
+back to (see "What the automation does" above). Publishing that release
+triggers `pypi-publish.yml`, which uploads to real PyPI since the release is
+not a pre-release, and deploys the documentation site.
 
 ## After releasing
 
@@ -97,6 +128,7 @@ section as its body. Publishing that release triggers `pypi-publish.yml`.
 2. **Check the documentation site** picked up the new version.
 3. **Install the published package in a clean environment** and import it:
 
+       cd /tmp && \
        uv venv /tmp/pypi && \
          VIRTUAL_ENV=/tmp/pypi uv pip install carto-flow
        VIRTUAL_ENV=/tmp/pypi uv run python -c \

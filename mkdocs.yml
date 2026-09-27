@@ -212,7 +212,7 @@ extra:
       link: https://github.com/bright-fakl/carto-flow
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/carto-flow
-  version: 2.0.0-rc2
+  version: 2.0.0
 
 extra_css:
   - stylesheets/jupyter.css

@@ -1,6 +1,7 @@
 """Tests for flow cartogram module."""
 
 import warnings
+from itertools import pairwise
 
 import geopandas as gpd
 import numpy as np
@@ -149,3 +150,49 @@ class TestZeroValueGeometry:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestSnapshotCoords:
+    """Each snapshot owns the displaced coordinates of its own iteration."""
+
+    @staticmethod
+    def _inputs(fmt):
+        gx = np.linspace(-0.5, 3.5, 5)
+        gy = np.linspace(-0.5, 3.5, 4)
+        X, Y = np.meshgrid(gx, gy)
+        if fmt == "grid":
+            return (X, Y)
+        pts = np.column_stack([X.ravel(), Y.ravel()])
+        return pts if fmt == "points" else pts.reshape((*X.shape, 2))
+
+    @staticmethod
+    def _as_tuple(coords):
+        if isinstance(coords, tuple):
+            return coords
+        return (coords,)
+
+    @pytest.mark.parametrize("fmt", ["grid", "points", "mesh"])
+    def test_snapshots_hold_per_iteration_coords(self, gdf, fmt):
+        cart = morph_gdf(
+            gdf,
+            "population",
+            displacement_coords=self._inputs(fmt),
+            options=MorphOptions(n_iter=30, snapshot_every=5, show_progress=False),
+        )
+        assert len(cart.snapshots) > 2
+        first = self._as_tuple(cart.snapshots[0].coords)
+        last = self._as_tuple(cart.snapshots[len(cart.snapshots) - 1].coords)
+        assert any(not np.array_equal(a, b) for a, b in zip(first, last, strict=True))
+        for a, b in zip(self._as_tuple(cart.get_coords()), last, strict=True):
+            np.testing.assert_array_equal(a, b)
+
+        # Successive snapshots differ from one another.
+        flat = [np.concatenate([np.ravel(c) for c in self._as_tuple(s.coords)]) for s in cart.snapshots]
+        for prev, nxt in pairwise(flat):
+            assert not np.array_equal(prev, nxt)
+
+        # No snapshot shares memory with another.
+        for i, si in enumerate(cart.snapshots):
+            for sj in list(cart.snapshots)[i + 1 :]:
+                for a, b in zip(self._as_tuple(si.coords), self._as_tuple(sj.coords), strict=True):
+                    assert not np.shares_memory(a, b)

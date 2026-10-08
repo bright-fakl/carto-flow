@@ -862,6 +862,16 @@ def _split_cmap(
     return fallback, None
 
 
+def _is_numeric_values(values: Any) -> bool:
+    """Return True for numeric (non-boolean) values, including pandas extension dtypes."""
+    import pandas as pd
+
+    dtype = getattr(values, "dtype", None)
+    if dtype is None:
+        dtype = np.asarray(values).dtype
+    return bool(pd.api.types.is_numeric_dtype(dtype) and not pd.api.types.is_bool_dtype(dtype))
+
+
 def _apply_color_mapping(
     col_vals: NDArray,
     cmap: str | dict,
@@ -879,7 +889,7 @@ def _apply_color_mapping(
     import matplotlib.pyplot as plt
 
     cmap_str, color_map = _split_cmap(cmap)
-    is_numeric = np.issubdtype(col_vals.dtype, np.number)
+    is_numeric = _is_numeric_values(col_vals)
 
     if is_numeric:
         return _apply_cmap(col_vals.astype(float), cmap_str, norm, vmin, vmax)
@@ -1090,7 +1100,7 @@ def _add_legend(
     import matplotlib.pyplot as plt
 
     cmap_str, color_map = _split_cmap(cmap)
-    is_numeric = np.issubdtype(np.asarray(col_values).dtype, np.number)
+    is_numeric = _is_numeric_values(col_values)
 
     if is_numeric:
         cm = plt.get_cmap(cmap_str)

@@ -13,7 +13,7 @@ start with a fenced metadata block, parsed as simple ``key: value`` lines
     url: https://github.com/bright-fakl/carto-flow/pull/27
     branch: fix/voronoi-smoothing-tolerance
     base: fix/voronoi-cell-extraction
-    date: 2026-09-18
+    date: 2026-09-18 14:30
     before: origin/fix/voronoi-cell-extraction
     after: fix/voronoi-smoothing-tolerance @ <sha>
     inputs: districts (bundled, simplify 5000 m, min_island 50000), states (bundled)
@@ -199,7 +199,7 @@ investigation workspace is easy to miss.
    url: https://github.com/bright-fakl/carto-flow/pull/27
    branch: fix/voronoi-smoothing-tolerance
    base: fix/voronoi-cell-extraction
-   date: 2026-09-18
+   date: 2026-09-18 14:30
    before: origin/fix/voronoi-cell-extraction
    after: fix/voronoi-smoothing-tolerance @ <sha>
    inputs: districts (bundled, simplify 5000 m, min_island 50000), states (bundled)
@@ -209,7 +209,9 @@ investigation workspace is easy to miss.
    `title` and `description` are required; `pr`, `url`, `status`, `branch`,
    `base`, `date`, `before`, `after`, and `inputs` are optional and rendered
    in a definition list on the page.  Pages are listed newest first, by `date`
-   where given and by directory mtime otherwise.
+   where given and by directory mtime otherwise.  Write `date` as
+   `YYYY-MM-DD HH:MM` (local time): without the time, pages from the same day
+   sort by PR number and the index shows no time.
 
    Review status is taken from the PR's GitHub state unless `status:` says
    otherwise. Values: `needs review`, `deferred`, `reviewed`, `merged`,

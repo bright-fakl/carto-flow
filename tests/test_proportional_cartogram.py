@@ -1,5 +1,7 @@
 """Tests for proportional cartogram module."""
 
+import math
+
 import geopandas as gpd
 import numpy as np
 import pytest
@@ -120,3 +122,72 @@ class TestShrinkAreaTolerance:
         square = box(0, 0, 10, 10)
         core = shrink(square, 1e-6, tol=1e-3)[0]
         assert abs(core.area / (1e-6 * square.area) - 1) < 1e-3
+
+
+class TestShrinkIsotropic:
+    """`isotropic=True` keeps the proportions of an elongated geometry."""
+
+    @staticmethod
+    def _extent(geom):
+        xmin, ymin, xmax, ymax = geom.bounds
+        return xmax - xmin, ymax - ymin
+
+    def test_rectangle_keeps_its_proportions(self):
+        from shapely.geometry import box
+
+        rectangle = box(0, 0, 10, 1)
+        plain = shrink(rectangle, 0.2)[0]
+        isotropic = shrink(rectangle, 0.2, isotropic=True)[0]
+
+        width, height = self._extent(isotropic)
+        assert width / height == pytest.approx(10.0, rel=0.05)
+        assert self._extent(plain)[0] / self._extent(plain)[1] > 30
+        assert isotropic.area == pytest.approx(2.0, rel=0.01)
+
+    def test_rotated_rectangle(self):
+        from shapely import affinity
+        from shapely.geometry import box
+
+        rectangle = affinity.rotate(box(0, 0, 10, 1), 30, origin=(0, 0))
+        core = shrink(rectangle, 0.2, isotropic=True)[0]
+        corners = list(core.minimum_rotated_rectangle.exterior.coords)
+        sides = sorted(math.dist(corners[i], corners[i + 1]) for i in range(2))
+        assert sides[1] / sides[0] == pytest.approx(10.0, rel=0.05)
+        assert rectangle.buffer(1e-9).contains(core)
+
+    def test_outer_boundary_is_unchanged(self):
+        from shapely.geometry import Polygon
+
+        polygon = Polygon([(0, 0), (12, 0), (12, 2), (7, 3), (0, 2)])
+        core, shell = shrink(polygon, 0.3, isotropic=True)
+        assert polygon.buffer(1e-9).contains(core)
+        assert shell.union(core).symmetric_difference(polygon).area < 1e-9 * polygon.area
+        assert core.area / polygon.area == pytest.approx(0.3, abs=0.01 * 0.3)
+
+    def test_states_stay_inside_with_target_area(self):
+        from carto_flow.data import load_us_census
+
+        states = load_us_census(population=True).set_index("State Abbreviation").geometry
+        for state in ("WY", "TN", "OK", "FL"):
+            geom = states[state]
+            core = shrink(geom, 0.05, isotropic=True)[0]
+            assert abs(core.area / (0.05 * geom.area) - 1) < 0.01
+            assert geom.buffer(1e-6 * geom.length).contains(core)
+
+    def test_multiple_shells(self):
+        from shapely.geometry import box
+
+        parts = shrink(box(0, 0, 10, 1), [0.25, 0.25, 0.5], isotropic=True)
+        assert [round(p.area, 1) for p in parts] == [2.5, 2.5, 5.0]
+
+    def test_default_is_unchanged(self):
+        from shapely.geometry import box
+
+        rectangle = box(0, 0, 10, 1)
+        assert shrink(rectangle, 0.2)[0].equals(shrink(rectangle, 0.2, isotropic=False)[0])
+
+    def test_degenerate_geometry_falls_back(self):
+        from shapely.geometry import Polygon
+
+        sliver = Polygon([(0, 0), (1000, 0), (1000, 1e-9), (0, 1e-9)])
+        assert shrink(sliver, 0.5, isotropic=True)[0].area >= 0.0

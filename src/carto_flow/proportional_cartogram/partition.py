@@ -34,7 +34,7 @@ def _process_single_geometry(
     # shrink params
     simplify: float | None,
     mode: Literal["area", "shell"],
-    tol: float,
+    tol: float | None,
     # split params
     direction: Literal["vertical", "horizontal"],
     alternate: bool,
@@ -58,7 +58,7 @@ def _process_single_geometry(
                 full_fractions,
                 simplify=simplify,
                 mode=mode,
-                tol=tol,
+                **({} if tol is None else {"tol": tol}),
             )
         else:  # method == "split"
             parts = split(
@@ -67,7 +67,7 @@ def _process_single_geometry(
                 direction=direction,
                 alternate=alternate,
                 strategy=strategy,
-                tol=tol,
+                tol=0.05 if tol is None else tol,
                 treemap_reference=treemap_reference,
             )
     except Exception:
@@ -88,7 +88,7 @@ def partition_geometries(
     normalization: Literal["sum", "maximum", "row", None] = None,
     simplify: float | None = None,
     mode: Literal["area", "shell"] = "area",
-    tol: float = 0.05,
+    tol: float | None = None,
     direction: Literal["vertical", "horizontal"] = "vertical",
     alternate: bool = True,
     strategy: Literal["sequential", "treemap"] = "sequential",
@@ -144,8 +144,10 @@ def partition_geometries(
 
         - **'area'**: Fractions represent direct area ratios
         - **'shell'**: Fractions represent shell thickness ratios (squared for area)
-    tol : float, default=0.05
-        Tolerance for root finding (shrink) or area matching (split).
+    tol : float, optional
+        Tolerance passed to the method. For 'shrink', the relative error of
+        each part's area (default 1e-3, see :func:`shrink`). For 'split', the
+        absolute tolerance on the cut position (default 0.05).
     direction : {'vertical', 'horizontal'}, default='vertical'
         Initial direction for splitting (only used with 'split' method).
     alternate : bool, default=True

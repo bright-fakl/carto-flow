@@ -75,3 +75,47 @@ class TestProportionalCartogram:
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestShrinkAreaTolerance:
+    """`tol` bounds the relative area error of the shrunken part."""
+
+    @pytest.fixture(scope="class")
+    def states(self):
+        from carto_flow.data import load_us_census
+
+        gdf = load_us_census(population=True)
+        return gdf.set_index("State Abbreviation").geometry
+
+    @pytest.mark.parametrize(
+        ("state", "fraction"),
+        [("SD", 0.01), ("MT", 0.0063), ("ID", 0.018), ("NM", 0.015), ("OH", 0.25)],
+    )
+    def test_area_error_below_tol(self, states, state, fraction):
+        geom = states[state]
+        tol = 1e-3
+        core, shell = shrink(geom, fraction)
+        assert abs(core.area / (fraction * geom.area) - 1) < tol
+        assert core.area + shell.area == pytest.approx(geom.area, rel=1e-6)
+
+    def test_default_tol_is_tight_for_small_fraction(self, states):
+        geom = states["MT"]
+        core = shrink(geom, 0.0063)[0]
+        assert abs(core.area / (0.0063 * geom.area) - 1) < 1e-3
+
+    def test_multipolygon_with_hole(self):
+        geom = box(0, 0, 10, 10).difference(box(4, 4, 6, 6)).union(box(20, 0, 24, 4))
+        core = shrink(geom, 0.02, tol=1e-4)[0]
+        assert abs(core.area / (0.02 * geom.area) - 1) < 1e-4
+
+    def test_fraction_bounds(self):
+        square = box(0, 0, 10, 10)
+        assert shrink(square, 1.0)[0].equals(square)
+        assert shrink(square, 0.0)[0].is_empty
+        with pytest.raises(ValueError, match="fraction"):
+            shrink(square, 1.5)
+
+    def test_tiny_fraction(self):
+        square = box(0, 0, 10, 10)
+        core = shrink(square, 1e-6, tol=1e-3)[0]
+        assert abs(core.area / (1e-6 * square.area) - 1) < 1e-3

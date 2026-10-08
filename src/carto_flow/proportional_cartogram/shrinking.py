@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
 
 import shapely
-from scipy.optimize import root_scalar
+from scipy.optimize import brentq
 
 if TYPE_CHECKING:
     from shapely.geometry.base import BaseGeometry
@@ -21,9 +21,9 @@ if TYPE_CHECKING:
 __all__ = ["shrink"]
 
 
-def _shrunken_area(buffer: float, geom: BaseGeometry, target_area: float) -> float:
-    """Compute difference between buffered area and target area."""
-    return geom.buffer(buffer).area - target_area
+def _area_residual(buffer: float, geom: BaseGeometry, target_area: float) -> float:
+    """Relative difference between the buffered area and the target area."""
+    return geom.buffer(buffer).area / target_area - 1.0
 
 
 def _shrink_single(
@@ -31,7 +31,7 @@ def _shrink_single(
     fraction: float,
     simplify: float | None = None,
     mode: Literal["area", "shell"] = "area",
-    tol: float = 0.05,
+    tol: float = 1e-3,
 ) -> tuple[BaseGeometry, BaseGeometry]:
     """
     Internal: Shrink a geometry to a specified area fraction.
@@ -50,7 +50,7 @@ def _shrink_single(
     mode : {'area', 'shell'}
         'area' for direct fraction, 'shell' squares the fraction.
     tol : float
-        Root finding tolerance.
+        Relative tolerance on the area of the shrunken geometry.
 
     Returns
     -------
@@ -99,58 +99,31 @@ def _shrink_single(
     # Compute target area
     target_area = fraction * working_geom.area
 
-    # Improved buffer range and starting point
+    # Erosion by half the shortest bounding-box side removes the whole geometry
     xmin, ymin, xmax, ymax = working_geom.bounds
-    width = xmax - xmin
-    height = ymax - ymin
-    shortest_edge = min(width, height)
+    shortest_edge = min(xmax - xmin, ymax - ymin)
 
-    # Conservative bracket: from 0 to -shortest_edge/2
-    # This ensures we don't shrink more than half the shortest dimension
-    bracket_left = -shortest_edge / 2.0
-    bracket_right = 0.0
-
-    # Better starting point: use a fraction of the expected buffer distance
-    # For area reduction, buffer distance is typically negative and proportional to sqrt(area_ratio)
-    expected_buffer_magnitude = shortest_edge * (1.0 - (fraction**0.5)) * 0.5
-    x0 = -expected_buffer_magnitude  # Start with negative buffer
-
-    try:
-        result = root_scalar(
-            _shrunken_area,
-            args=(working_geom, target_area),
-            x0=x0,
-            bracket=(bracket_left, bracket_right),
-            rtol=tol,
-        )
-    except ValueError as e:
-        # Handle root finding failures
-        if "bracket" in str(e).lower():
+    # Bracketed solve on the relative area residual. The residual is -1 for a
+    # collapsed geometry and 1/fraction - 1 > 0 at zero buffer. The distance
+    # tolerance is tightened until the area residual is below tol.
+    xtol = shortest_edge * 1e-5
+    while True:
+        root = brentq(_area_residual, -shortest_edge / 2.0, 0.0, args=(working_geom, target_area), xtol=xtol)
+        residual = _area_residual(root, working_geom, target_area)
+        if abs(residual) < tol:
+            break
+        if xtol < shortest_edge * 1e-12:
             warnings.warn(
-                f"Could not find valid bracket for root finding. Using fallback buffer distance. Error: {e}",
+                f"shrink reached area error {residual:+.2e} for fraction {fraction}, above tol={tol}.",
                 UserWarning,
-                stacklevel=2,
+                stacklevel=3,
             )
-            # Fallback: use estimated buffer distance
-            fallback_buffer = -shortest_edge * (1.0 - fraction**0.5) * 0.3
-            shrunken_geom = working_geom.buffer(fallback_buffer)
-            shell_geom = working_geom.difference(shrunken_geom)
-            return shrunken_geom, shell_geom
-        else:
-            raise
-    else:
-        # Validate result
-        if not result.converged:
-            warnings.warn(
-                f"Root finding did not converge. Final area may not match target exactly. "
-                f"Convergence flag: {result.flag}",
-                UserWarning,
-                stacklevel=2,
-            )
+            break
+        xtol /= 10.0
 
-        shrunken_geom = working_geom.buffer(result.root)
-        shell_geom = working_geom.difference(shrunken_geom)
-        return shrunken_geom, shell_geom
+    shrunken_geom = working_geom.buffer(root)
+    shell_geom = working_geom.difference(shrunken_geom)
+    return shrunken_geom, shell_geom
 
 
 def shrink(
@@ -158,7 +131,7 @@ def shrink(
     fractions: float | Sequence[float],
     simplify: float | None = None,
     mode: Literal["area", "shell"] = "area",
-    tol: float = 0.05,
+    tol: float = 1e-3,
 ) -> list[BaseGeometry]:
     """
     Shrink a geometry to create concentric shells with specified area fractions.
@@ -190,8 +163,10 @@ def shrink(
 
         - **'area'**: Fractions represent direct area ratios
         - **'shell'**: Fractions represent shell thickness ratios (squared for area)
-    tol : float, default=0.05
-        Relative tolerance for the root finding algorithm.
+    tol : float, default=1e-3
+        Relative tolerance on the area of each shrunken part: the buffer
+        distance is refined until ``abs(area / target_area - 1) < tol``.
+        A warning is issued if the tolerance cannot be reached.
 
     Returns
     -------

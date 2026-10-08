@@ -98,6 +98,12 @@ class TestShrinkAreaTolerance:
         assert abs(core.area / (fraction * geom.area) - 1) < tol
         assert core.area + shell.area == pytest.approx(geom.area, rel=1e-6)
 
+    @pytest.mark.parametrize("tol", [0.05, 0.01, 1e-4])
+    def test_tol_sets_the_achieved_error(self, states, tol):
+        geom = states["SD"]
+        core = shrink(geom, 0.01, tol=tol)[0]
+        assert abs(core.area / (0.01 * geom.area) - 1) < tol
+
     def test_default_tol_is_tight_for_small_fraction(self, states):
         geom = states["MT"]
         core = shrink(geom, 0.0063)[0]

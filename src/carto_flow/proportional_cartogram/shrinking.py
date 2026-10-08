@@ -21,11 +21,6 @@ if TYPE_CHECKING:
 __all__ = ["shrink"]
 
 
-def _area_residual(buffer: float, geom: BaseGeometry, target_area: float) -> float:
-    """Relative difference between the buffered area and the target area."""
-    return geom.buffer(buffer).area / target_area - 1.0
-
-
 def _shrink_single(
     geom: BaseGeometry,
     fraction: float,
@@ -103,25 +98,29 @@ def _shrink_single(
     xmin, ymin, xmax, ymax = working_geom.bounds
     shortest_edge = min(xmax - xmin, ymax - ymin)
 
-    # Bracketed solve on the relative area residual. The residual is -1 for a
-    # collapsed geometry and 1/fraction - 1 > 0 at zero buffer. The distance
-    # tolerance is tightened until the area residual is below tol.
-    xtol = shortest_edge * 1e-5
-    while True:
-        root = brentq(_area_residual, -shortest_edge / 2.0, 0.0, args=(working_geom, target_area), xtol=xtol)
-        residual = _area_residual(root, working_geom, target_area)
-        if abs(residual) < tol:
-            break
-        if xtol < shortest_edge * 1e-12:
-            warnings.warn(
-                f"shrink reached area error {residual:+.2e} for fraction {fraction}, above tol={tol}.",
-                UserWarning,
-                stacklevel=3,
-            )
-            break
-        xtol /= 10.0
+    # Bracketed solve on the relative area residual, which is -1 for a collapsed
+    # geometry and 1/fraction - 1 > 0 at zero buffer. The residual is reported
+    # as 0 once it is below tol, which ends the solve at that buffer distance.
+    best_residual = float("inf")
+    best_geom = working_geom
 
-    shrunken_geom = working_geom.buffer(root)
+    def residual(buffer: float) -> float:
+        nonlocal best_residual, best_geom
+        candidate = working_geom.buffer(buffer)
+        value = candidate.area / target_area - 1.0
+        if abs(value) < abs(best_residual):
+            best_residual, best_geom = value, candidate
+        return 0.0 if abs(value) < tol else value
+
+    brentq(residual, -shortest_edge / 2.0, 0.0, xtol=shortest_edge * 1e-12)
+    if abs(best_residual) >= tol:
+        warnings.warn(
+            f"shrink reached area error {best_residual:+.2e} for fraction {fraction}, above tol={tol}.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    shrunken_geom = best_geom
     shell_geom = working_geom.difference(shrunken_geom)
     return shrunken_geom, shell_geom
 

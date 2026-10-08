@@ -629,7 +629,7 @@ def morph_geometries(
                 iteration=step + 1,
                 geometry=reconstruct_geometries(flat_geoms),
                 landmarks=reconstruct_geometries(flat_landmarks_geoms) if flat_landmarks_geoms is not None else None,
-                coords=_convert_coords_to_input_format(flat_coords, coords_format, coords_sz)
+                coords=_convert_coords_to_input_format(flat_coords.copy(), coords_format, coords_sz)
                 if flat_coords is not None
                 else None,
                 errors=error_metrics,

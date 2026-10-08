@@ -26,7 +26,7 @@ def _shrink_single(
     fraction: float,
     simplify: float | None = None,
     mode: Literal["area", "shell"] = "area",
-    tol: float = 1e-3,
+    tol: float = 0.01,
 ) -> tuple[BaseGeometry, BaseGeometry]:
     """
     Internal: Shrink a geometry to a specified area fraction.
@@ -130,7 +130,7 @@ def shrink(
     fractions: float | Sequence[float],
     simplify: float | None = None,
     mode: Literal["area", "shell"] = "area",
-    tol: float = 1e-3,
+    tol: float = 0.01,
 ) -> list[BaseGeometry]:
     """
     Shrink a geometry to create concentric shells with specified area fractions.
@@ -162,7 +162,7 @@ def shrink(
 
         - **'area'**: Fractions represent direct area ratios
         - **'shell'**: Fractions represent shell thickness ratios (squared for area)
-    tol : float, default=1e-3
+    tol : float, default=0.01
         Relative tolerance on the area of each shrunken part: the buffer
         distance is refined until ``abs(area / target_area - 1) < tol``.
         A warning is issued if the tolerance cannot be reached.

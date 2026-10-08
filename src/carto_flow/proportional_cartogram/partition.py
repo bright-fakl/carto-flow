@@ -146,7 +146,7 @@ def partition_geometries(
         - **'shell'**: Fractions represent shell thickness ratios (squared for area)
     tol : float, optional
         Tolerance passed to the method. For 'shrink', the relative error of
-        each part's area (default 1e-3, see :func:`shrink`). For 'split', the
+        each part's area (default 0.01, see :func:`shrink`). For 'split', the
         absolute tolerance on the cut position (default 0.05).
     direction : {'vertical', 'horizontal'}, default='vertical'
         Initial direction for splitting (only used with 'split' method).

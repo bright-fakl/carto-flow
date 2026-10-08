@@ -132,7 +132,7 @@ The `simplify` parameter applies `shapely.coverage_simplify` (Visvalingam-Whyatt
 | `fractions` | required | Area fractions; a single float gives `[core, shell]`; a list gives N parts core-first |
 | `simplify` | `None` | Visvalingam-Whyatt tolerance applied before shrinking; `None` = no simplification |
 | `mode` | `'area'` | `'area'` for direct area fractions; `'shell'` to square fractions |
-| `tol` | `1e-3` | Relative tolerance on each part's area |
+| `tol` | `0.01` | Relative tolerance on each part's area |
 
 ### Limitations
 

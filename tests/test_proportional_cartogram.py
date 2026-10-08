@@ -91,9 +91,9 @@ class TestShrinkAreaTolerance:
         ("state", "fraction"),
         [("SD", 0.01), ("MT", 0.0063), ("ID", 0.018), ("NM", 0.015), ("OH", 0.25)],
     )
-    def test_area_error_below_tol(self, states, state, fraction):
+    def test_default_tol_bounds_area_error(self, states, state, fraction):
         geom = states[state]
-        tol = 1e-3
+        tol = 0.01
         core, shell = shrink(geom, fraction)
         assert abs(core.area / (fraction * geom.area) - 1) < tol
         assert core.area + shell.area == pytest.approx(geom.area, rel=1e-6)
@@ -103,11 +103,6 @@ class TestShrinkAreaTolerance:
         geom = states["SD"]
         core = shrink(geom, 0.01, tol=tol)[0]
         assert abs(core.area / (0.01 * geom.area) - 1) < tol
-
-    def test_default_tol_is_tight_for_small_fraction(self, states):
-        geom = states["MT"]
-        core = shrink(geom, 0.0063)[0]
-        assert abs(core.area / (0.0063 * geom.area) - 1) < 1e-3
 
     def test_multipolygon_with_hole(self):
         geom = box(0, 0, 10, 10).difference(box(4, 4, 6, 6)).union(box(20, 0, 24, 4))

@@ -125,6 +125,11 @@ Before you submit a pull request, check that it meets these guidelines:
 2. If the pull request adds functionality, the docs should be updated.
    Put your new functionality into a function with a docstring, and add the feature to the list in `README.md`.
 
+3. If the change can alter cartogram output, or otherwise needs a visual review, add a report page to the
+   [carto-flow-dev](https://github.com/bright-fakl/carto-flow-dev) repository (published at
+   <https://bright-fakl.github.io/carto-flow-dev/>) and link it from the pull request.
+   Its README describes the page format and how to build the index with `scripts/build_visual_checks_index.py`.
+
 # Releasing
 
 Maintainers: see [RELEASING.md](RELEASING.md). The version is owned by the

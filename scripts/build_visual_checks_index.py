@@ -61,10 +61,15 @@ This script builds:
 
 Only stdlib is used - no markdown library, no third-party dependencies.
 
+The root directory is the first of: ``--root``, ``VISUAL_CHECKS_ROOT`` in the
+environment, ``VISUAL_CHECKS_ROOT`` in a ``.env`` file at the repository root,
+and the sibling checkout ``../carto-flow-dev``.  Directories whose names start
+with ``.`` are ignored.  PR states are read from ``--repo`` (default
+``bright-fakl/carto-flow``).
+
 Usage:
     uv run python scripts/build_visual_checks_index.py
-    uv run python scripts/build_visual_checks_index.py --root visual_checks
-    uv run python scripts/build_visual_checks_index.py --root /path/to/visual_checks
+    uv run python scripts/build_visual_checks_index.py --root /path/to/carto-flow-dev
 """
 
 from __future__ import annotations
@@ -72,6 +77,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -148,12 +154,40 @@ DARK_STYLE = """
 README_TEXT = """# Visual checks
 
 Before/after visual review pages for PRs, built by
-`scripts/build_visual_checks_index.py`. This directory is gitignored - it is
-a local review workspace, not part of the repo.
+`scripts/build_visual_checks_index.py` in the carto-flow repository. This
+repository holds the pages and is published with GitHub Pages at
+https://bright-fakl.github.io/carto-flow-dev/. Pages are plain static files,
+so a local clone can be opened directly in a browser without a server.
+
+## Every PR needs a page
+
+Each PR gets its own page, `pr<N>-<slug>/summary.md`, whether or not the
+change produces figures. Review happens from the generated index, not from
+the PR description, so evidence kept only in the description or inside an
+investigation workspace is easy to miss.
+
+- For a PR page, set `pr`, `title`, `description` and `url` in the header
+  (the builder itself only requires `title` and `description`).
+- A change that can alter cartogram output (algorithm, solver, repair,
+  option defaults, data resolution) needs side-by-side before/after figures
+  on the standard inputs (US states, congressional districts), so the
+  reviewer can judge the result.
+- A change with nothing to show (bit-identical output, housekeeping, error
+  messages) still gets a page. It says so and gives the written evidence,
+  for example the test results or the checked outputs that are unchanged.
+- Investigation workspaces (directories without a `pr`) may hold the
+  underlying figures. The PR page then points at the panels that justify it.
+- Do not write `status: needs review` in a new page. That is already the
+  default, and an explicit `status:` overrides the PR's GitHub state, so the
+  page would stay "needs review" after the PR merges. Set `status:` only to
+  override: `deferred` for parked work, or `reviewed` for an investigation
+  workspace that belongs to no PR.
 
 ## Adding a check
 
-1. Create a subdirectory (any name, e.g. `pr27-voronoi-smoothing-tolerance`).
+1. Create a subdirectory named `pr<N>-<slug>`, e.g.
+   `pr27-voronoi-smoothing-tolerance`. Investigation workspaces use a plain
+   descriptive name.
 2. Drop PNGs and a `summary.md` in it. `summary.md` must start with a fenced
    metadata header:
 
@@ -197,10 +231,17 @@ a local review workspace, not part of the repo.
 ## Rebuilding
 
 ```
-uv run python scripts/build_visual_checks_index.py --root /path/to/visual_checks
+uv run python scripts/build_visual_checks_index.py --root /path/to/carto-flow-dev
 ```
 
 Regenerates `index.html` and every `<subdir>/index.html`, plus this file.
+
+## Publishing
+
+Commit the page directory together with the regenerated `index.html` files
+and push to `main`. GitHub Pages serves the repository as it is; there is no
+build step. Create a page before the PR exists, then rename the directory and
+fill in `pr` and `url` once the PR is open.
 """
 
 
@@ -454,20 +495,41 @@ def status_class(status: str) -> str:
     return "todo"
 
 
+DEFAULT_REPO = "bright-fakl/carto-flow"
+ROOT_VARIABLE = "VISUAL_CHECKS_ROOT"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def default_root() -> Path:
+    """Root directory when ``--root`` is not given.
+
+    ``VISUAL_CHECKS_ROOT`` from the environment, else from ``.env`` at the
+    repository root (``KEY=value`` lines), else the sibling ``../carto-flow-dev``.
+    """
+    value = os.environ.get(ROOT_VARIABLE, "")
+    env_file = REPO_ROOT / ".env"
+    if not value and env_file.is_file():
+        for line in env_file.read_text(encoding="utf-8").splitlines():
+            key, _, rest = line.partition("=")
+            if key.strip() == ROOT_VARIABLE:
+                value = rest.strip().strip("\"'")
+    return Path(value).expanduser() if value else REPO_ROOT.parent / "carto-flow-dev"
+
+
 # PR state -> status label, used when `summary.md` does not set one.
 _PR_STATE_STATUS = {"MERGED": "merged", "CLOSED": "closed", "OPEN": "needs review"}
 
 
-def fetch_pr_states(timeout: float = 20.0) -> dict[int, str]:
-    """Map PR number -> GitHub state, via one `gh` call.
+def fetch_pr_states(repo: str = DEFAULT_REPO, timeout: float = 20.0) -> dict[int, str]:
+    """Map PR number -> GitHub state of ``repo``, via one `gh` call.
 
     Returns an empty map when `gh` is missing, unauthenticated or offline; the
     caller then falls back to whatever `summary.md` declares.  One batched call
     rather than one per directory.
     """
     try:
-        proc = subprocess.run(
-            ["gh", "pr", "list", "--state", "all", "--limit", "200", "--json", "number,state"],  # noqa: S607
+        proc = subprocess.run(  # noqa: S603
+            ["gh", "pr", "list", "--repo", repo, "--state", "all", "--limit", "500", "--json", "number,state"],  # noqa: S607
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -700,11 +762,16 @@ def list_status(pr_dirs: list[PrDir], statuses: dict[Path, str]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Regenerate visual_checks/index.html and per-PR pages.")
+    parser = argparse.ArgumentParser(description="Regenerate the visual checks index and per-PR pages.")
     parser.add_argument(
         "--root",
-        default="visual_checks",
-        help="Root directory containing per-PR subdirectories (default: visual_checks, relative to cwd).",
+        default=None,
+        help=f"Root directory containing per-PR subdirectories (default: ${ROOT_VARIABLE}, else ../carto-flow-dev).",
+    )
+    parser.add_argument(
+        "--repo",
+        default=DEFAULT_REPO,
+        help=f"GitHub repository whose PR states set the review status (default: {DEFAULT_REPO}).",
     )
     parser.add_argument(
         "--set-status",
@@ -724,7 +791,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    root = Path(args.root)
+    root = Path(args.root) if args.root else default_root()
     if not root.is_dir():
         raise SystemExit(f"Root directory not found: {root}")
 
@@ -732,11 +799,11 @@ def main() -> None:
         name, status = args.set_status
         set_status(root / name, status)
 
-    pr_dirs = [scan_pr_dir(p) for p in root.iterdir() if p.is_dir()]
+    pr_dirs = [scan_pr_dir(p) for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")]
 
     pr_dirs.sort(key=_sort_key)
 
-    pr_states = {} if args.offline else fetch_pr_states()
+    pr_states = {} if args.offline else fetch_pr_states(args.repo)
     statuses = {pr.path: resolve_status(pr, pr_states) for pr in pr_dirs}
     if not pr_states and not args.offline and any(pr.pr is not None for pr in pr_dirs):
         print("note: could not read PR state from gh; using declared status only", file=sys.stderr)

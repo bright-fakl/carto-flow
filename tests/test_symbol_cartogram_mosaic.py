@@ -23,13 +23,19 @@ from collections import deque
 import geopandas as gpd
 import numpy as np
 import pytest
+import shapely
 from shapely.geometry import box
 
 from carto_flow.geo_utils import find_adjacent_pairs
 from carto_flow.symbol_cartogram import (
+    HexagonTiling,
     HungarianOptions,
+    IsohedralTiling,
     MosaicLayout,
     MosaicLayoutOptions,
+    QuadrilateralTiling,
+    SquareTiling,
+    TriangleTiling,
     create_layout,
     create_symbol_cartogram,
 )
@@ -1471,3 +1477,64 @@ class TestMinOneTilePerRegion:
         plain = create_layout(gdf, layout=MosaicLayout(morph=False), **kw)
         seeded = create_layout(gdf, layout=MosaicLayout(morph=False, min_one_tile_per_region=True), **kw)
         assert plain.assignments.tolist() == seeded.assignments.tolist()
+
+
+# ---------------------------------------------------------------------------
+# Drawn symbols stay within their tiles for every tiling
+# ---------------------------------------------------------------------------
+
+_TILINGS = {
+    "hexagon": lambda: HexagonTiling(),
+    "square": lambda: SquareTiling(),
+    "triangle": lambda: TriangleTiling.equilateral(),
+    "rhombus": lambda: QuadrilateralTiling.rhombus(),
+    "iso_hexagon": lambda: IsohedralTiling.from_preset("regular_hexagon"),
+    "iso_scalloped_hexagon": lambda: IsohedralTiling.from_preset("scalloped_hexagon"),
+    "iso_wavy_square": lambda: IsohedralTiling.from_preset("wavy_square"),
+}
+
+
+def _max_pair_overlap(symbols: gpd.GeoDataFrame) -> float:
+    """Largest pairwise intersection area, relative to the mean symbol area."""
+    geoms = np.asarray(symbols.geometry)
+    tree = shapely.STRtree(geoms)
+    left, right = tree.query(geoms, predicate="intersects")
+    keep = left < right
+    if not keep.any():
+        return 0.0
+    areas = shapely.area(shapely.intersection(geoms[left[keep]], geoms[right[keep]]))
+    return float(areas.max() / shapely.area(geoms).mean())
+
+
+class TestSymbolsFillTilesWithoutOverlap:
+    @pytest.mark.parametrize("name", list(_TILINGS))
+    @pytest.mark.parametrize("mode", ["one_tile", "tile_count", "group_by"])
+    def test_no_overlap(self, name, mode):
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        gdf["grp"] = ["A", "A", "B", "B", "B", "C", "C", "A", "C"]
+        kwargs = {
+            "one_tile": {},
+            "tile_count": {"tile_count": "tiles"},
+            "group_by": {"group_by": "grp"},
+        }[mode]
+        cart = create_symbol_cartogram(
+            gdf,
+            layout=MosaicLayout(tiling=_TILINGS[name](), spacing=0.0, morph=False),
+            show_progress=False,
+            **kwargs,
+        )
+        assert _max_pair_overlap(cart.to_geodataframe()) < 1e-3
+
+    @pytest.mark.parametrize("name", list(_TILINGS))
+    def test_symbols_match_tile_area(self, name):
+        """Without spacing each drawn symbol has the area of its tile."""
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        cart = create_symbol_cartogram(
+            gdf,
+            tile_count="tiles",
+            layout=MosaicLayout(tiling=_TILINGS[name](), spacing=0.0, morph=False),
+            show_progress=False,
+        )
+        symbol_area = np.median(shapely.area(np.asarray(cart.to_geodataframe().geometry)))
+        tile_area = np.median(shapely.area(np.asarray(cart.layout_result.tiles_gdf.geometry)))
+        assert symbol_area == pytest.approx(tile_area, rel=1e-6)

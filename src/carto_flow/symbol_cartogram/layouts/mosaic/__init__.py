@@ -908,7 +908,7 @@ class MosaicLayout(Layout):
         return MosaicLayoutResult(
             canonical_symbol=canonical,
             transforms=transforms,
-            base_size=float(tiling_result.tile_size),
+            base_size=float(tiling_obj.symbol_size_for_tile_size(tiling_result.tile_size)),
             positions=geom_positions,
             sizes=data.sizes,
             adjacency=data.adjacency,

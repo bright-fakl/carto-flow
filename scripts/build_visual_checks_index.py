@@ -180,6 +180,13 @@ investigation workspace is easy to miss.
 - A change with nothing to show (bit-identical output, housekeeping, error
   messages) still gets a page. It says so and gives the written evidence,
   for example the test results or the checked outputs that are unchanged.
+- A page with figures also contains the script that produced them,
+  `make_figures.py`, so the figures can be regenerated and checked against
+  later code. It runs from a carto-flow checkout with
+  `uv run python make_figures.py`, uses bundled data only, writes the PNGs next
+  to itself and starts with a comment saying what it produces. Name the
+  commit it ran against in `after` (`branch @ <sha>`). Do not commit caches or
+  downloaded data; the page says how to get them instead.
 - Investigation workspaces (directories without a `pr`) may hold the
   underlying figures. The PR page then points at the panels that justify it.
 - Do not write `status: needs review` in a new page. That is already the

@@ -133,6 +133,9 @@ The `simplify` parameter applies `shapely.coverage_simplify` (Visvalingam-Whyatt
 | `simplify` | `None` | Visvalingam-Whyatt tolerance applied before shrinking; `None` = no simplification |
 | `mode` | `'area'` | `'area'` for direct area fractions; `'shell'` to square fractions |
 | `tol` | `0.01` | Relative tolerance on each part's area |
+| `isotropic` | `False` | Erode in a frame where the geometry has equal spread in all directions, so elongated shapes keep their proportions instead of shrinking to a strip |
+
+With `isotropic=True`, the geometry is mapped by the inverse square root of its area covariance about its centroid, eroded there, and mapped back. The shell is still the original geometry minus the core, so the outer boundary is unchanged. A 10 x 1 rectangle shrunk to 20% becomes a 4.47 x 0.45 core instead of 9.22 x 0.22. Shapes with strongly curved or concave boundaries can still produce thin cores.
 
 ### Limitations
 

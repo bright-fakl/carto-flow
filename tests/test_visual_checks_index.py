@@ -290,3 +290,15 @@ class TestDefaultRoot:
         mod.main()
         assert not (tmp_path / ".git" / "index.html").exists()
         assert ".git" not in (tmp_path / "index.html").read_text(encoding="utf-8")
+
+
+class TestIssueField:
+    def test_issue_numbers_accept_lists_and_hashes(self, mod):
+        assert mod._issue_numbers("74") == [74]
+        assert mod._issue_numbers("#74, 75") == [74, 75]
+        assert mod._issue_numbers("none") == []
+
+    def test_page_links_the_issue(self, mod, tmp_path):
+        d = _write(tmp_path, "a", pr=1, title="a", description="d", issue="74")
+        page = mod.build_pr_page(mod.scan_pr_dir(d), "merged")
+        assert "https://github.com/bright-fakl/carto-flow/issues/74" in page

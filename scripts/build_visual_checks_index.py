@@ -10,6 +10,7 @@ start with a fenced metadata block, parsed as simple ``key: value`` lines
     pr: 27
     title: Fix coverage_simplify tolerance units in raster Voronoi cells
     description: One-line what changed and what to look for in the figures.
+    issue: 26
     url: https://github.com/bright-fakl/carto-flow/pull/27
     branch: fix/voronoi-smoothing-tolerance
     base: fix/voronoi-cell-extraction
@@ -20,7 +21,7 @@ start with a fenced metadata block, parsed as simple ``key: value`` lines
     ---
 
 ``title`` and ``description`` are required - a missing one prints a warning
-naming the directory and falls back to the directory name. ``pr``, ``url``,
+naming the directory and falls back to the directory name. ``pr``, ``issue``, ``url``,
 ``status``, ``branch``, ``base``, ``date``, ``before``, ``after`` and
 ``inputs`` are optional and, when present, are rendered in the page's
 definition list.  ``pr`` and ``url`` are optional because several directories
@@ -167,7 +168,11 @@ the PR description, so evidence kept only in the description or inside an
 investigation workspace is easy to miss.
 
 - For a PR page, set `pr`, `title`, `description` and `url` in the header
-  (the builder itself only requires `title` and `description`).
+  (the builder itself only requires `title` and `description`), and `issue`
+  when the PR addresses a GitHub issue.
+- Before the PR exists, leave out `pr` and `url` (do not write `TBD`; it
+  warns) and set `branch`. Add both and rename the directory to
+  `pr<N>-<slug>` once the PR is open.
 - A change that can alter cartogram output (algorithm, solver, repair,
   option defaults, data resolution) needs side-by-side before/after figures
   on the standard inputs (US states, congressional districts), so the
@@ -196,6 +201,7 @@ investigation workspace is easy to miss.
    pr: 27
    title: Fix coverage_simplify tolerance units in raster Voronoi cells
    description: One-line what changed and what to look for in the figures.
+   issue: 26
    url: https://github.com/bright-fakl/carto-flow/pull/27
    branch: fix/voronoi-smoothing-tolerance
    base: fix/voronoi-cell-extraction
@@ -206,7 +212,8 @@ investigation workspace is easy to miss.
    ---
    ```
 
-   `title` and `description` are required; `pr`, `url`, `status`, `branch`,
+   `title` and `description` are required; `pr`, `issue` (the GitHub issue the
+   change addresses, e.g. `74` or `74, 75`), `url`, `status`, `branch`,
    `base`, `date`, `before`, `after`, and `inputs` are optional and rendered
    in a definition list on the page.  Pages are listed newest first, by `date`
    where given and by directory mtime otherwise.  Write `date` as
@@ -403,7 +410,7 @@ def render_markdown(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 REQUIRED_META_KEYS = ("title", "description")
-OPTIONAL_META_KEYS = ("pr", "url", "status", "branch", "base", "date", "before", "after", "inputs")
+OPTIONAL_META_KEYS = ("pr", "issue", "url", "status", "branch", "base", "date", "before", "after", "inputs")
 META_LABELS = {
     "url": "URL",
     "branch": "Branch",
@@ -607,6 +614,10 @@ def scan_pr_dir(directory: Path) -> PrDir:
         except ValueError:
             warnings.append(f"visual_checks/{directory.name}: metadata 'pr' is not an integer ({pr_raw!r})")
 
+    issue_raw = (meta.get("issue") or "").strip()
+    if issue_raw and not _issue_numbers(issue_raw):
+        warnings.append(f"visual_checks/{directory.name}: metadata 'issue' has no issue number ({issue_raw!r})")
+
     title = meta.get("title") or directory.name
     description = meta.get("description") or ""
     url = meta.get("url") or None
@@ -630,6 +641,11 @@ def scan_pr_dir(directory: Path) -> PrDir:
     )
 
 
+def _issue_numbers(raw: str) -> list[int]:
+    """Issue numbers from a comma- or space-separated ``issue`` value; others are ignored."""
+    return [int(part.lstrip("#")) for part in raw.replace(",", " ").split() if part.lstrip("#").isdigit()]
+
+
 def build_pr_page(pr: PrDir, status: str = "needs review") -> str:
     captions = _parse_figure_captions(pr.body_text)
 
@@ -639,6 +655,10 @@ def build_pr_page(pr: PrDir, status: str = "needs review") -> str:
         dl_items.append(("URL", f'<a href="{html.escape(pr.url)}">{html.escape(pr.url)}</a>'))
     else:
         dl_items.append(("URL", "(missing)"))
+    issues = _issue_numbers(pr.meta.get("issue", ""))
+    if issues:
+        links = ", ".join(f'<a href="https://github.com/{DEFAULT_REPO}/issues/{n}">#{n}</a>' for n in issues)
+        dl_items.append(("Issue", links))
     for key in ("branch", "base", "date", "before", "after", "inputs"):
         value = pr.meta.get(key)
         if value:

@@ -22,7 +22,7 @@ start with a fenced metadata block, parsed as simple ``key: value`` lines
 
 ``title`` and ``description`` are required - a missing one prints a warning
 naming the directory and falls back to the directory name. ``pr``, ``issue``, ``url``,
-``status``, ``branch``, ``base``, ``date``, ``before``, ``after`` and
+``status``, ``branch``, ``base``, ``date``, ``updated``, ``before``, ``after`` and
 ``inputs`` are optional and, when present, are rendered in the page's
 definition list.  ``pr`` and ``url`` are optional because several directories
 are investigation workspaces that belong to no single PR.
@@ -221,11 +221,13 @@ investigation workspace is easy to miss.
 
    `title` and `description` are required; `pr`, `issue` (the GitHub issue the
    change addresses, e.g. `74` or `74, 75`), `url`, `status`, `branch`,
-   `base`, `date`, `before`, `after`, and `inputs` are optional and rendered
+   `base`, `date`, `updated`, `before`, `after`, and `inputs` are optional and rendered
    in a definition list on the page.  Pages are listed newest first, by `date`
-   where given and by directory mtime otherwise.  Write `date` as
-   `YYYY-MM-DD HH:MM` (local time): without the time, pages from the same day
-   sort by PR number and the index shows no time.
+   where given and by directory mtime otherwise.  Write `date`
+   (the creation time) and `updated` (the last time the figures were
+   regenerated) as `YYYY-MM-DD HH:MM`, local time: without the time, pages from
+   the same day sort by PR number. The closed time is not written by hand; it
+   is the merge or close time of the PR on GitHub.
 
    Review status is taken from the PR's GitHub state unless `status:` says
    otherwise. Values: `needs review`, `deferred`, `reviewed`, `merged`,
@@ -270,7 +272,7 @@ SORT_SCRIPT = """
   var state = {};
   // First click sorts the way that column is actually useful: newest dates,
   // highest PR, most figures, but outstanding statuses first.
-  var FIRST_ASC = [true, false, true, true, false, false];
+  var FIRST_ASC = [true, false, true, true, false, false, false];
   // Status sorts by how much attention an item still needs, not alphabetically:
   // "needs review" before "deferred" before anything finished.
   var STATUS_RANK = {
@@ -288,7 +290,7 @@ SORT_SCRIPT = """
       return rank === undefined ? -1 : rank;                        // unknown first
     }
     if (i === 1) return parseInt(text.replace("#", ""), 10) || -1;  // PR
-    if (i === 5) return parseInt(text, 10) || 0;                    // Figures
+    if (i === 6) return parseInt(text, 10) || 0;                    // Figures
     return text.toLowerCase();
   }
   table.querySelectorAll("th[data-col]").forEach(function (th) {
@@ -417,12 +419,14 @@ def render_markdown(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 REQUIRED_META_KEYS = ("title", "description")
-OPTIONAL_META_KEYS = ("pr", "issue", "url", "status", "branch", "base", "date", "before", "after", "inputs")
+OPTIONAL_META_KEYS = ("pr", "issue", "url", "status", "branch", "base", "date", "updated", "before", "after", "inputs")
 META_LABELS = {
     "url": "URL",
     "branch": "Branch",
     "base": "Base",
-    "date": "Date",
+    "date": "Created",
+    "updated": "Updated",
+    "closed": "Closed",
     "status": "Status",
     "before": "Before",
     "after": "After",
@@ -536,29 +540,67 @@ def default_root() -> Path:
 _PR_STATE_STATUS = {"MERGED": "merged", "CLOSED": "closed", "OPEN": "needs review"}
 
 
-def fetch_pr_states(repo: str = DEFAULT_REPO, timeout: float = 20.0) -> dict[int, str]:
-    """Map PR number -> GitHub state of ``repo``, via one `gh` call.
+def fetch_pr_rows(repo: str = DEFAULT_REPO, timeout: float = 20.0) -> list[dict]:
+    """PRs of ``repo`` (number, state, closedAt, mergedAt), via one `gh` call.
 
-    Returns an empty map when `gh` is missing, unauthenticated or offline; the
+    Returns an empty list when `gh` is missing, unauthenticated or offline; the
     caller then falls back to whatever `summary.md` declares.  One batched call
     rather than one per directory.
     """
     try:
         proc = subprocess.run(  # noqa: S603
-            ["gh", "pr", "list", "--repo", repo, "--state", "all", "--limit", "500", "--json", "number,state"],  # noqa: S607
+            [  # noqa: S607
+                "gh",
+                "pr",
+                "list",
+                "--repo",
+                repo,
+                "--state",
+                "all",
+                "--limit",
+                "500",
+                "--json",
+                "number,state,closedAt,mergedAt",
+            ],
             capture_output=True,
             text=True,
             timeout=timeout,
             check=False,
         )
     except (OSError, subprocess.SubprocessError):
-        return {}
+        return []
     if proc.returncode != 0:
-        return {}
+        return []
     try:
-        return {int(row["number"]): str(row["state"]) for row in json.loads(proc.stdout or "[]")}
-    except (ValueError, KeyError, TypeError):
-        return {}
+        rows = json.loads(proc.stdout or "[]")
+    except ValueError:
+        return []
+    return [row for row in rows if isinstance(row, dict) and "number" in row]
+
+
+def pr_states_from_rows(rows: list[dict]) -> dict[int, str]:
+    """Map PR number -> GitHub state."""
+    return {int(row["number"]): str(row.get("state", "")) for row in rows}
+
+
+def pr_closed_from_rows(rows: list[dict]) -> dict[int, str]:
+    """Map PR number -> merge or close time as local ``YYYY-MM-DD HH:MM``, for closed PRs."""
+    closed = {}
+    for row in rows:
+        raw = row.get("mergedAt") or row.get("closedAt")
+        if not raw:
+            continue
+        try:
+            moment = datetime.fromisoformat(str(raw).replace("Z", "+00:00")).astimezone()
+        except ValueError:
+            continue
+        closed[int(row["number"])] = moment.strftime("%Y-%m-%d %H:%M")
+    return closed
+
+
+def fetch_pr_states(repo: str = DEFAULT_REPO, timeout: float = 20.0) -> dict[int, str]:
+    """Map PR number -> GitHub state of ``repo``."""
+    return pr_states_from_rows(fetch_pr_rows(repo, timeout))
 
 
 def resolve_status(pr: PrDir, pr_states: dict[int, str]) -> str:
@@ -653,7 +695,7 @@ def _issue_numbers(raw: str) -> list[int]:
     return [int(part.lstrip("#")) for part in raw.replace(",", " ").split() if part.lstrip("#").isdigit()]
 
 
-def build_pr_page(pr: PrDir, status: str = "needs review") -> str:
+def build_pr_page(pr: PrDir, status: str = "needs review", closed: str | None = None) -> str:
     captions = _parse_figure_captions(pr.body_text)
 
     dl_items: list[tuple[str, str]] = []
@@ -666,8 +708,8 @@ def build_pr_page(pr: PrDir, status: str = "needs review") -> str:
     if issues:
         links = ", ".join(f'<a href="https://github.com/{DEFAULT_REPO}/issues/{n}">#{n}</a>' for n in issues)
         dl_items.append(("Issue", links))
-    for key in ("branch", "base", "date", "before", "after", "inputs"):
-        value = pr.meta.get(key)
+    for key in ("branch", "base", "date", "updated", "closed", "before", "after", "inputs"):
+        value = closed if key == "closed" else pr.meta.get(key)
         if value:
             dl_items.append((META_LABELS[key], _render_inline(value)))
     dl_html = (
@@ -705,8 +747,11 @@ def build_pr_page(pr: PrDir, status: str = "needs review") -> str:
     return _page_shell(heading, body)
 
 
-def build_index_page(pr_dirs: list[PrDir], statuses: dict[Path, str] | None = None) -> str:
+def build_index_page(
+    pr_dirs: list[PrDir], statuses: dict[Path, str] | None = None, closed: dict[int, str] | None = None
+) -> str:
     statuses = statuses or {}
+    closed = closed or {}
     rows = []
     for pr in pr_dirs:
         status = statuses.get(pr.path, "needs review")
@@ -721,6 +766,7 @@ def build_index_page(pr_dirs: list[PrDir], statuses: dict[Path, str] | None = No
         title_cell = f'<a href="{html.escape(pr.path.name)}/index.html">{html.escape(pr.title)}</a>'
         desc_cell = html.escape(pr.description)
         date_cell = html.escape(pr.meta.get("date", ""))
+        closed_cell = html.escape(closed.get(pr.pr, "") if pr.pr is not None else "")
         rows.append(
             f'<tr{row_class} data-ord="{len(rows)}">'
             f"<td>{status_cell}</td>"
@@ -728,11 +774,12 @@ def build_index_page(pr_dirs: list[PrDir], statuses: dict[Path, str] | None = No
             f"<td>{title_cell}</td>"
             f"<td>{desc_cell}</td>"
             f"<td>{date_cell}</td>"
+            f"<td>{closed_cell}</td>"
             f"<td>{pr.figure_count}</td>"
             "</tr>"
         )
 
-    headers = ("Status", "PR", "Title", "Description", "Date", "Figures")
+    headers = ("Status", "PR", "Title", "Description", "Created", "Closed", "Figures")
     header_row = "".join(f'<th data-col="{i}" title="Sort by {h}">{h}</th>' for i, h in enumerate(headers))
     table = (
         f'<table id="toc">\n<thead><tr>{header_row}</tr></thead>\n<tbody>\n' + "\n".join(rows) + "\n</tbody>\n</table>"
@@ -832,7 +879,9 @@ def main() -> None:
 
     pr_dirs.sort(key=_sort_key)
 
-    pr_states = {} if args.offline else fetch_pr_states(args.repo)
+    pr_rows = [] if args.offline else fetch_pr_rows(args.repo)
+    pr_states = pr_states_from_rows(pr_rows)
+    pr_closed = pr_closed_from_rows(pr_rows)
     statuses = {pr.path: resolve_status(pr, pr_states) for pr in pr_dirs}
     if not pr_states and not args.offline and any(pr.pr is not None for pr in pr_dirs):
         print("note: could not read PR state from gh; using declared status only", file=sys.stderr)
@@ -842,9 +891,11 @@ def main() -> None:
         return
 
     for pr in pr_dirs:
-        (pr.path / "index.html").write_text(build_pr_page(pr, statuses[pr.path]), encoding="utf-8")
+        (pr.path / "index.html").write_text(
+            build_pr_page(pr, statuses[pr.path], pr_closed.get(pr.pr) if pr.pr is not None else None), encoding="utf-8"
+        )
 
-    (root / "index.html").write_text(build_index_page(pr_dirs, statuses), encoding="utf-8")
+    (root / "index.html").write_text(build_index_page(pr_dirs, statuses, pr_closed), encoding="utf-8")
     (root / "README.md").write_text(README_TEXT, encoding="utf-8")
 
     total_warnings = sum(len(pr.warnings) for pr in pr_dirs)

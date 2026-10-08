@@ -35,6 +35,7 @@ def _process_single_geometry(
     simplify: float | None,
     mode: Literal["area", "shell"],
     tol: float | None,
+    isotropic: bool,
     # split params
     direction: Literal["vertical", "horizontal"],
     alternate: bool,
@@ -58,6 +59,7 @@ def _process_single_geometry(
                 full_fractions,
                 simplify=simplify,
                 mode=mode,
+                isotropic=isotropic,
                 **({} if tol is None else {"tol": tol}),
             )
         else:  # method == "split"
@@ -97,6 +99,7 @@ def partition_geometries(
     copy: bool = True,
     n_jobs: int = 1,
     progress: bool = False,
+    isotropic: bool = False,
 ) -> gpd.GeoDataFrame:
     """
     Process geometries in a GeoDataFrame using either shrinking or splitting methods.
@@ -188,6 +191,9 @@ def partition_geometries(
     progress : bool, default=False
         Whether to display a progress bar during processing.
         Requires tqdm package when enabled.
+    isotropic : bool, default=False
+        Erode in a frame where each geometry has equal spread in all
+        directions (only used with 'shrink' method, see :func:`shrink`).
 
     Returns
     -------
@@ -426,6 +432,7 @@ def partition_geometries(
             simplify=simplify,
             mode=mode,
             tol=tol,
+            isotropic=isotropic,
             direction=direction,
             alternate=alternate,
             strategy=strategy,

@@ -191,3 +191,28 @@ class TestShrinkIsotropic:
 
         sliver = Polygon([(0, 0), (1000, 0), (1000, 1e-9), (0, 1e-9)])
         assert shrink(sliver, 0.5, isotropic=True)[0].area >= 0.0
+
+
+class TestPartitionIsotropic:
+    def _frame(self):
+        return gpd.GeoDataFrame({"share": [0.2, 0.2]}, geometry=[box(0, 0, 10, 1), box(0, 5, 10, 6)])
+
+    def test_isotropic_is_passed_to_shrink(self):
+        gdf = self._frame()
+        plain = partition_geometries(gdf, "share", method="shrink")
+        isotropic = partition_geometries(gdf, "share", method="shrink", isotropic=True)
+
+        def aspect(geom):
+            xmin, ymin, xmax, ymax = geom.bounds
+            return (xmax - xmin) / (ymax - ymin)
+
+        assert aspect(plain["geometry_share"].iloc[0]) > 30
+        assert aspect(isotropic["geometry_share"].iloc[0]) == pytest.approx(10.0, rel=0.05)
+        expected = shrink(box(0, 0, 10, 1), 0.2, isotropic=True)[0]
+        assert isotropic["geometry_share"].iloc[0].equals_exact(expected, 1e-9)
+
+    def test_split_ignores_isotropic(self):
+        gdf = self._frame()
+        a = partition_geometries(gdf, "share", method="split")
+        b = partition_geometries(gdf, "share", method="split", isotropic=True)
+        assert a["geometry_share"].iloc[0].equals(b["geometry_share"].iloc[0])

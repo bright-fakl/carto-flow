@@ -170,6 +170,8 @@ When the row fractions sum to less than 1.0, the remainder is exposed as a `geom
 
 `n_jobs` controls parallelization via joblib: `1` = sequential, `-1` = all available cores.
 
+`isotropic` is passed to `shrink` and ignored by `split`.
+
 ---
 
 ## Splitting vs. Shrinking

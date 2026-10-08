@@ -535,6 +535,25 @@ class Tiling(ABC):
         # (correct for SquareTiling, wrong for others)
         return 2 * symbol_size * (1 + spacing)
 
+    def symbol_size_for_tile_size(self, tile_size: float) -> float:
+        """Return the native symbol size whose symbol exactly fills a tile.
+
+        Inverse of :meth:`tile_size_for_symbol_size` with ``spacing=0``.
+
+        Parameters
+        ----------
+        tile_size : float
+            The ``tile_size`` of a generated tiling.
+
+        Returns
+        -------
+        float
+            The symbol size (as used for ``LayoutResult.base_size``) at which
+            the canonical symbol coincides with a tile of this size.
+
+        """
+        return tile_size / self.tile_size_for_symbol_size(1.0)
+
     @classmethod
     @abstractmethod
     def from_polygon(cls, polygon: Polygon) -> Self:

@@ -1,0 +1,26 @@
+name: Notify visual checks
+
+# Tell carto-flow-dev to refresh the review status of its pages when a PR is
+# merged or closed. Without the secret the step is skipped, and the hourly
+# rebuild in carto-flow-dev picks the change up instead.
+on:
+  # pull_request_target also runs for PRs from forks; nothing from the PR is checked out.
+  pull_request_target:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    env:
+      DISPATCH_TOKEN: ${{ secrets.CARTO_FLOW_DEV_DISPATCH_TOKEN }}
+    steps:
+      - name: Send pr-closed to carto-flow-dev
+        if: ${{ env.DISPATCH_TOKEN != '' }}
+        env:
+          GH_TOKEN: ${{ env.DISPATCH_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh api -X POST repos/bright-fakl/carto-flow-dev/dispatches \
+            -f event_type=pr-closed -F "client_payload[pr]=$PR_NUMBER"

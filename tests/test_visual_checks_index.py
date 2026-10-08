@@ -227,18 +227,19 @@ class TestStatusSortOrder:
 
 class TestClickSortDirection:
     def test_first_click_is_useful_per_column(self, mod):
-        """Clicking Date once must show newest first, not oldest."""
+        """Clicking Created or Closed once must show newest first, not oldest."""
         import re
 
         match = re.search(r"FIRST_ASC = \[([^\]]+)\]", mod.SORT_SCRIPT)
         assert match
         first_asc = [v.strip() == "true" for v in match.group(1).split(",")]
 
-        assert len(first_asc) == 6
+        assert len(first_asc) == 7
         assert first_asc[0] is True, "Status: outstanding first"
         assert first_asc[1] is False, "PR: highest first"
-        assert first_asc[4] is False, "Date: newest first"
-        assert first_asc[5] is False, "Figures: most first"
+        assert first_asc[4] is False, "Created: newest first"
+        assert first_asc[5] is False, "Closed: newest first"
+        assert first_asc[6] is False, "Figures: most first"
 
 
 class TestTieBreaking:
@@ -302,3 +303,34 @@ class TestIssueField:
         d = _write(tmp_path, "a", pr=1, title="a", description="d", issue="74")
         page = mod.build_pr_page(mod.scan_pr_dir(d), "merged")
         assert "https://github.com/bright-fakl/carto-flow/issues/74" in page
+
+
+class TestClosedAndUpdatedDates:
+    def test_closed_time_prefers_merge_time(self, mod):
+        rows = [
+            {"number": 1, "state": "MERGED", "mergedAt": "2026-10-08T15:05:00Z", "closedAt": "2026-10-08T15:06:00Z"},
+            {"number": 2, "state": "CLOSED", "mergedAt": None, "closedAt": "2026-10-09T08:00:00Z"},
+            {"number": 3, "state": "OPEN", "mergedAt": None, "closedAt": None},
+        ]
+        closed = mod.pr_closed_from_rows(rows)
+        assert set(closed) == {1, 2}
+        assert len(closed[1]) == len("2026-10-08 15:05")
+        assert closed[1] < closed[1][:11] + "99:99"  # parseable, local time
+        assert mod.pr_states_from_rows(rows) == {1: "MERGED", 2: "CLOSED", 3: "OPEN"}
+
+    def test_page_shows_created_updated_and_closed(self, mod, tmp_path):
+        d = _write(tmp_path, "a", pr=1, title="a", description="d", date="2026-10-01 09:00", updated="2026-10-02 10:00")
+        page = mod.build_pr_page(mod.scan_pr_dir(d), "merged", "2026-10-03 11:00")
+        for label, value in (
+            ("Created", "2026-10-01 09:00"),
+            ("Updated", "2026-10-02 10:00"),
+            ("Closed", "2026-10-03 11:00"),
+        ):
+            assert f"<dt>{label}</dt><dd>{value}</dd>" in page
+
+    def test_index_has_closed_column(self, mod, tmp_path):
+        d = _write(tmp_path, "a", pr=1, title="a", description="d", date="2026-10-01 09:00")
+        pr = mod.scan_pr_dir(d)
+        page = mod.build_index_page([pr], {pr.path: "merged"}, {1: "2026-10-03 11:00"})
+        assert '<th data-col="5" title="Sort by Closed">Closed</th>' in page
+        assert "<td>2026-10-03 11:00</td>" in page

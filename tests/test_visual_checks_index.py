@@ -263,3 +263,30 @@ class TestTieBreaking:
         assert 'data-ord="0"' in page
         assert 'data-ord="1"' in page
         assert "a.dataset.ord" in mod.SORT_SCRIPT
+
+
+class TestDefaultRoot:
+    def test_environment_variable_wins(self, mod, monkeypatch, tmp_path):
+        monkeypatch.setenv("VISUAL_CHECKS_ROOT", str(tmp_path))
+        assert mod.default_root() == tmp_path
+
+    def test_env_file_is_read(self, mod, monkeypatch, tmp_path):
+        monkeypatch.delenv("VISUAL_CHECKS_ROOT", raising=False)
+        monkeypatch.setattr(mod, "REPO_ROOT", tmp_path)
+        (tmp_path / ".env").write_text('OTHER=1\nVISUAL_CHECKS_ROOT="/data/checks"\n', encoding="utf-8")
+        assert mod.default_root() == Path("/data/checks")
+
+    def test_falls_back_to_sibling_checkout(self, mod, monkeypatch, tmp_path):
+        monkeypatch.delenv("VISUAL_CHECKS_ROOT", raising=False)
+        repo = tmp_path / "carto-flow"
+        repo.mkdir()
+        monkeypatch.setattr(mod, "REPO_ROOT", repo)
+        assert mod.default_root() == tmp_path / "carto-flow-dev"
+
+    def test_hidden_directories_are_not_pages(self, mod, monkeypatch, tmp_path):
+        _write(tmp_path, "pr1-a", pr=1, title="a", description="d")
+        (tmp_path / ".git").mkdir()
+        monkeypatch.setattr(sys, "argv", ["prog", "--root", str(tmp_path), "--offline"])
+        mod.main()
+        assert not (tmp_path / ".git" / "index.html").exists()
+        assert ".git" not in (tmp_path / "index.html").read_text(encoding="utf-8")

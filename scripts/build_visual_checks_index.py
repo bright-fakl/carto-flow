@@ -151,9 +151,35 @@ Before/after visual review pages for PRs, built by
 `scripts/build_visual_checks_index.py`. This directory is gitignored - it is
 a local review workspace, not part of the repo.
 
+## Every PR needs a page
+
+Each PR gets its own page, `pr<N>-<slug>/summary.md`, whether or not the
+change produces figures. Review happens from the generated index, not from
+the PR description, so evidence kept only in the description or inside an
+investigation workspace is easy to miss.
+
+- For a PR page, set `pr`, `title`, `description` and `url` in the header
+  (the builder itself only requires `title` and `description`).
+- A change that can alter cartogram output (algorithm, solver, repair,
+  option defaults, data resolution) needs side-by-side before/after figures
+  on the standard inputs (US states, congressional districts), so the
+  reviewer can judge the result.
+- A change with nothing to show (bit-identical output, housekeeping, error
+  messages) still gets a page. It says so and gives the written evidence,
+  for example the test results or the checked outputs that are unchanged.
+- Investigation workspaces (directories without a `pr`) may hold the
+  underlying figures. The PR page then points at the panels that justify it.
+- Do not write `status: needs review` in a new page. That is already the
+  default, and an explicit `status:` overrides the PR's GitHub state, so the
+  page would stay "needs review" after the PR merges. Set `status:` only to
+  override: `deferred` for parked work, or `reviewed` for an investigation
+  workspace that belongs to no PR.
+
 ## Adding a check
 
-1. Create a subdirectory (any name, e.g. `pr27-voronoi-smoothing-tolerance`).
+1. Create a subdirectory named `pr<N>-<slug>`, e.g.
+   `pr27-voronoi-smoothing-tolerance`. Investigation workspaces use a plain
+   descriptive name.
 2. Drop PNGs and a `summary.md` in it. `summary.md` must start with a fenced
    metadata header:
 

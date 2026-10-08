@@ -148,8 +148,10 @@ DARK_STYLE = """
 README_TEXT = """# Visual checks
 
 Before/after visual review pages for PRs, built by
-`scripts/build_visual_checks_index.py`. This directory is gitignored - it is
-a local review workspace, not part of the repo.
+`scripts/build_visual_checks_index.py` in the carto-flow repository. This
+repository holds the pages and is published with GitHub Pages at
+https://bright-fakl.github.io/carto-flow-dev/. Pages are plain static files,
+so a local clone can be opened directly in a browser without a server.
 
 ## Every PR needs a page
 
@@ -223,10 +225,17 @@ investigation workspace is easy to miss.
 ## Rebuilding
 
 ```
-uv run python scripts/build_visual_checks_index.py --root /path/to/visual_checks
+uv run python scripts/build_visual_checks_index.py --root /path/to/carto-flow-dev
 ```
 
 Regenerates `index.html` and every `<subdir>/index.html`, plus this file.
+
+## Publishing
+
+Commit the page directory together with the regenerated `index.html` files
+and push to `main`. GitHub Pages serves the repository as it is; there is no
+build step. Create a page before the PR exists, then rename the directory and
+fill in `pr` and `url` once the PR is open.
 """
 
 

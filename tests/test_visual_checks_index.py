@@ -348,3 +348,15 @@ class TestDisplayTimezone:
         monkeypatch.setenv("VISUAL_CHECKS_TZ", "Not/AZone")
         assert mod.display_timezone() is None
         assert "unknown time zone" in capsys.readouterr().err
+
+
+class TestStableOrder:
+    def test_pages_with_equal_dates_are_ordered_by_name(self, mod, monkeypatch, tmp_path):
+        import re
+
+        for name in ("zeta", "alpha", "mid"):
+            _write(tmp_path, name, title=name, description="d", date="2026-06-01")
+        monkeypatch.setattr(sys, "argv", ["prog", "--root", str(tmp_path), "--offline"])
+        mod.main()
+        page = (tmp_path / "index.html").read_text(encoding="utf-8")
+        assert re.findall(r'href="(\w+)/index.html"', page) == ["alpha", "mid", "zeta"]

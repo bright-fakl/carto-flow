@@ -900,7 +900,7 @@ def main() -> None:
         name, status = args.set_status
         set_status(root / name, status)
 
-    pr_dirs = [scan_pr_dir(p) for p in root.iterdir() if p.is_dir() and not p.name.startswith(".")]
+    pr_dirs = [scan_pr_dir(p) for p in sorted(root.iterdir()) if p.is_dir() and not p.name.startswith(".")]
 
     pr_dirs.sort(key=_sort_key)
 

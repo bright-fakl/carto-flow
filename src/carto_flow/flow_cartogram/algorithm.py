@@ -43,6 +43,7 @@ from .history import (
     History,
 )
 from .options import MorphOptions, MorphStatus, StopReason
+from .stall import StallMonitor, cycle_length
 from .velocity import VelocityComputerFFTW
 
 __all__ = [
@@ -451,6 +452,9 @@ def morph_geometries(
     best_score = np.inf
     best_step = 0
     best_state: tuple | None = None
+    stall_monitor = StallMonitor(
+        options.stall_patience, options.stall_min_improvement, cycle_length(options.recompute_every)
+    )
     stop_reason = StopReason.ITERATION_LIMIT
     n_done = 0
 
@@ -635,7 +639,7 @@ def morph_geometries(
                 current_areas.copy(),
                 error_metrics,
             )
-        stalled = options.stall_patience is not None and step - best_step > options.stall_patience
+        stalled = stall_monitor.update(step, mean_error / log2_mean_tol, max_error / log2_max_tol)
         n_done = step + 1
 
         stop_reason = (

@@ -53,8 +53,8 @@ class MorphStatus(str, Enum):
     CONVERGED : str
         Algorithm converged within tolerance thresholds
     STALLED : str
-        Algorithm stopped because more than ``stall_patience`` consecutive
-        iterations did not improve the best score
+        Algorithm stopped because ``stall_patience`` consecutive field-refresh
+        cycles made no progress
     COMPLETED : str
         Algorithm completed all iterations without converging
     RUNNING : str
@@ -82,8 +82,7 @@ class StopReason(str, Enum):
     CONVERGED : str
         Both ``mean_tol`` and ``max_tol`` were met.
     STALL_PATIENCE : str
-        More than ``stall_patience`` consecutive iterations did not improve
-        the best score.
+        ``stall_patience`` consecutive field-refresh cycles made no progress.
     ITERATION_LIMIT : str
         ``n_iter`` iterations were run without another rule firing.
     """
@@ -224,23 +223,32 @@ class MorphOptions:
     """
 
     # Stall detection
-    stall_patience: int | None = 150
-    """Number of consecutive iterations without a new best score that is tolerated before stopping.
+    stall_patience: int | None = 4
+    """Number of consecutive cycles without progress that ends the run as stalled.
 
-    The score of an iteration is ``max(mean_error / mean_tol, max_error / max_tol)`` on the log2
-    errors, the same quantity as the convergence test (below 1 means converged). The run stops with
-    status ``STALLED`` when more than ``stall_patience`` consecutive iterations have not lowered the
-    best score seen so far. Increases of the error are tolerated as long as a new best is reached
-    within that window, and a plateau of the score (for example a maximum error that stays fixed
-    while the mean error falls) counts as no improvement. Because the count starts at the best
-    iteration, the earliest possible stop is at iteration ``stall_patience + 2``. The error is
-    usually not monotone in the first tens of iterations, which the large default allows for.
+    The velocity field is refreshed every ``recompute_every`` iterations and reused in between, so
+    the error follows a sawtooth. Stall detection therefore judges whole cycles: a cycle is the span
+    between two refreshes, but at least 10 iterations (with ``recompute_every`` below 10, or None,
+    a cycle is 10 iterations). For each completed cycle the minimum of the mean-error ratio
+    ``mean_error / mean_tol`` and the minimum of the max-error ratio ``max_error / max_tol`` (log2
+    errors, as in the convergence test) are compared with the best of the earlier cycles. The cycle
+    is progress if either minimum is lower by at least the fraction ``stall_min_improvement``;
+    a max error that stays fixed while the mean error falls is progress. The run stops with status
+    ``STALLED`` after ``stall_patience`` consecutive cycles without progress, so a stall is
+    detected after at least ``stall_patience`` cycles of ``max(recompute_every, 10)`` iterations,
+    and an incomplete last cycle is not judged.
 
     When the run does not converge, the returned state is the best iterate (see
     ``Cartogram.best_iteration``).
 
     If None, stall detection is disabled and the algorithm runs until convergence or ``n_iter``.
-    If 0, the run stops at the first iteration that does not improve on the best score.
+    """
+
+    stall_min_improvement: float = 0.02
+    """Relative improvement of a cycle minimum that counts as progress (see ``stall_patience``).
+
+    A cycle minimum must be below the best earlier minimum by at least this fraction of it, for
+    example 0.02 for 2%. Smaller decreases do not reset the stall count.
     """
 
     def get_grid(self, bounds: tuple[float, float, float, float]) -> "Grid":
@@ -376,6 +384,7 @@ class MorphOptions:
             "benchmark",
             "prescale_components",
             "stall_patience",
+            "stall_min_improvement",
             "parallel_fft",
             "parallel_density",
         ]
@@ -476,6 +485,10 @@ class MorphOptions:
                     return "stall_patience must be an integer or None"
                 elif value < 0:
                     return "stall_patience must be a non-negative integer or None"
+
+        elif field_name == "stall_min_improvement":
+            if not isinstance(value, int | float) or isinstance(value, bool) or not 0 <= value < 1:
+                return "stall_min_improvement must be a number in [0, 1)"
 
         # Outer-boundary distortion reduction options
         elif field_name == "prescale_components" and not isinstance(value, bool):

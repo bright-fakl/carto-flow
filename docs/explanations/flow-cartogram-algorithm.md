@@ -139,7 +139,7 @@ The `coords` parameter supports three formats—$(N, 2)$ point arrays, $(X, Y)$ 
 After displacement, polygon areas are recomputed from the deformed vertices and per-geometry log₂ errors $e_i$ are calculated. The algorithm terminates when:
 
 - **Convergence**: $\bar{e} < \log_2(1 + \tau_{\text{mean}})$ and $\max e_i < \log_2(1 + \tau_{\text{max}})$, where $\tau_{\text{mean}}$ and $\tau_{\text{max}}$ are the `mean_tol` and `max_tol` parameters (expressed as fractions, e.g. 0.05 for 5%).
-- **Stall**: More than `stall_patience` consecutive iterations pass without lowering the best score, `max(mean error / mean_tol, max error / max_tol)` on the log₂ errors (the convergence test is score < 1). A run that ends without converging returns its best iterate; `Cartogram.best_iteration` and `Cartogram.stop_reason` report which iterate and which rule.
+- **Stall**: Judged per field-refresh cycle (the span between two refreshes of the velocity field, at least 10 iterations). A cycle is progress if the minimum of its mean-error ratio (`mean error / mean_tol`) or of its max-error ratio (`max error / max_tol`) is lower than the best so far by at least `stall_min_improvement`. The run stops after `stall_patience` consecutive cycles without progress. A run that ends without converging returns its best iterate (lowest `max(mean ratio, max ratio)`); `Cartogram.best_iteration` and `Cartogram.stop_reason` report which iterate and which rule.
 - **Iteration limit**: `n_iter` iterations have been completed.
 
 Scalar error metrics are recorded in `ConvergenceHistory` at every iteration. Full `CartogramSnapshot` objects (including geometries) are saved at every `snapshot_every` iterations, and always at the final iteration regardless of the termination reason.
@@ -190,7 +190,8 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `snapshot_every` | `None` | Save full snapshot every N iterations; `None` = final only |
 | `mean_tol` | 0.05 | Convergence threshold for mean area error (fraction) |
 | `max_tol` | 0.1 | Convergence threshold for max area error (fraction) |
-| `stall_patience` | 150 | Stall after more than N consecutive iterations without a new best score; `None` = disabled |
+| `stall_patience` | 4 | Stall after N consecutive field-refresh cycles without progress; `None` = disabled |
+| `stall_min_improvement` | 0.02 | Relative improvement of a cycle minimum that counts as progress |
 | `grid` | `None` | Pre-constructed `Grid`; takes precedence over size/margin/square |
 | `grid_size` | 100 | Grid points on longest axis |
 | `grid_margin` | 0.5 | Fractional padding around input bounds |

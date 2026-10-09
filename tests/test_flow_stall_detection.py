@@ -8,6 +8,7 @@ import pytest
 import carto_flow.data as data
 from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, StopReason, morph_gdf
 from carto_flow.flow_cartogram.anisotropy import DirectionalTensor
+from carto_flow.flow_cartogram.stall import MIN_CYCLE_LENGTH, StallMonitor, cycle_length
 
 
 @pytest.fixture(scope="module")
@@ -150,20 +151,84 @@ class TestWorkflowContinuation:
         )
 
 
+def _run_monitor(monitor, mean, mx):
+    """Feed per-iteration ratios; return the 1-based iteration at which the monitor stalls, or None."""
+    for i, (m, x) in enumerate(zip(mean, mx, strict=True)):
+        if monitor.update(i, m, x):
+            return i + 1
+    return None
+
+
+class TestStallMonitor:
+    """The cycle-level stall decision, on synthetic score traces."""
+
+    @staticmethod
+    def _sawtooth(minima, cycle=10, amplitude=3.0):
+        """Per-iteration ratios: each cycle starts at its minimum and rises toward the next refresh."""
+        trace = []
+        for low in minima:
+            trace.extend(low + amplitude * np.linspace(0.0, 1.0, cycle))
+        return np.array(trace)
+
+    def test_cycle_length_has_a_minimum(self):
+        assert cycle_length(10) == 10
+        assert cycle_length(25) == 25
+        assert cycle_length(1) == MIN_CYCLE_LENGTH
+        assert cycle_length(None) == MIN_CYCLE_LENGTH
+
+    def test_sawtooth_with_falling_minima_is_progress(self):
+        trace = self._sawtooth([20, 15, 11, 8, 6, 4.5, 3.4, 2.5])
+        assert _run_monitor(StallMonitor(2, 0.02, 10), trace, trace) is None
+
+    def test_creeping_minima_stall(self):
+        # Each cycle minimum is 0.5% below the previous one: below the 2% threshold.
+        minima = [10.0 * 0.995**k for k in range(10)]
+        trace = self._sawtooth(minima)
+        assert _run_monitor(StallMonitor(3, 0.02, 10), trace, trace) == 40  # 1 progress cycle + 3 without
+
+    def test_creeping_minima_count_as_progress_without_threshold(self):
+        minima = [10.0 * 0.995**k for k in range(10)]
+        trace = self._sawtooth(minima)
+        assert _run_monitor(StallMonitor(3, 0.0, 10), trace, trace) is None
+
+    def test_flat_max_with_falling_mean_is_progress(self):
+        mean = self._sawtooth([20, 15, 11, 8, 6, 4.5, 3.4, 2.5])
+        flat_max = np.full_like(mean, 28.0)
+        assert _run_monitor(StallMonitor(2, 0.02, 10), mean, flat_max) is None
+
+    def test_flat_everything_stalls_after_patience_cycles(self):
+        flat = np.full(100, 5.0)
+        assert _run_monitor(StallMonitor(4, 0.02, 10), flat, flat) == 50
+
+    def test_incomplete_cycle_is_not_judged(self):
+        flat = np.full(49, 5.0)
+        assert _run_monitor(StallMonitor(4, 0.02, 10), flat, flat) is None
+
+    def test_none_disables(self):
+        flat = np.full(200, 5.0)
+        assert _run_monitor(StallMonitor(None, 0.02, 10), flat, flat) is None
+
+    def test_a_rise_within_a_cycle_does_not_count(self):
+        # The score rises in the second half of every cycle but the minima fall.
+        trace = self._sawtooth([20, 16, 12, 9, 7, 5], amplitude=10.0)
+        assert _run_monitor(StallMonitor(1, 0.02, 10), trace, trace) is None
+
+
 class TestStallPatience:
     OPTIONS: ClassVar[dict] = {"show_progress": False, "n_iter": 60, "dt": 0.6, "mean_tol": 0.001, "max_tol": 0.002}
 
-    @pytest.mark.parametrize("patience", [0, 3, 8])
-    def test_stops_after_patience_iterations_without_a_new_best(self, states, patience):
-        options = MorphOptions(**self.OPTIONS, stall_patience=patience)
+    def test_preset_balanced_stalls_on_a_diverging_step(self, states):
+        options = MorphOptions.preset_balanced().copy_with(dt=0.6, show_progress=False)
         result = morph_gdf(states, "Population", options=options)
         score = _score(result.convergence, options)
 
         assert result.status == MorphStatus.STALLED
         assert result.stop_reason == StopReason.STALL_PATIENCE
-        assert result.niterations < 60
+        assert result.niterations < options.n_iter
+        # Stops at the end of a cycle, and returns the best iterate.
+        assert result.niterations % options.recompute_every == 0
         assert result.best_iteration == int(np.argmin(score)) + 1
-        assert result.niterations - result.best_iteration == patience + 1
+        assert result.best_iteration < result.niterations
         assert result.latest.iteration == result.best_iteration
 
     def test_none_disables_stall_detection(self, states):
@@ -172,6 +237,19 @@ class TestStallPatience:
         assert result.niterations == 60
         assert result.stop_reason == StopReason.ITERATION_LIMIT
 
+    @pytest.mark.parametrize("recompute_every", [1, 2, 5, 10])
+    def test_horizontal_anisotropy_converges_for_any_refresh_interval(self, states, recompute_every):
+        options = _strong_anisotropy_options(DirectionalTensor(theta=0, Dpar=4, Dperp=0.3)).copy_with(
+            recompute_every=recompute_every
+        )
+        result = morph_gdf(states, "Population", options=options)
+        assert result.status == MorphStatus.CONVERGED
+
     def test_negative_patience_is_rejected(self):
         with pytest.raises(ValueError, match="stall_patience"):
             MorphOptions(stall_patience=-1)
+
+    @pytest.mark.parametrize("value", [-0.1, 1.0, "x"])
+    def test_invalid_min_improvement_is_rejected(self, value):
+        with pytest.raises(ValueError, match="stall_min_improvement"):
+            MorphOptions(stall_min_improvement=value)

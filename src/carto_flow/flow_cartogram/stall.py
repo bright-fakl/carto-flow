@@ -1,4 +1,4 @@
-"""Stall detection at the granularity of velocity-field refresh cycles."""
+"""Stall detection on windows of iterations, judged by their minima."""
 
 __all__ = ["MIN_CYCLE_LENGTH", "StallMonitor", "cycle_length"]
 
@@ -9,10 +9,11 @@ MIN_CYCLE_LENGTH = 10
 def cycle_length(recompute_every: int | None) -> int:
     """Number of iterations in one stall-detection cycle.
 
-    A cycle is the span between two field refreshes, but never shorter than
-    ``MIN_CYCLE_LENGTH`` iterations, so that frequent refreshes do not make a
-    cycle a single noisy iteration. Without refreshes (``None``) cycles have
-    the minimum length.
+    A cycle is a window of ``recompute_every`` iterations, counted from the first
+    iteration, but never shorter than ``MIN_CYCLE_LENGTH`` iterations, so that
+    frequent refreshes do not make a cycle a single noisy iteration. Without a
+    refresh interval (``None``) cycles have the minimum length. Cycles do not
+    depend on when refreshes actually happen.
     """
     return max(recompute_every or 0, MIN_CYCLE_LENGTH)
 

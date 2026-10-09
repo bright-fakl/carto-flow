@@ -8,6 +8,7 @@ import pytest
 import carto_flow.data as data
 from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, StopReason, morph_gdf
 from carto_flow.flow_cartogram.anisotropy import DirectionalTensor
+from carto_flow.flow_cartogram.refresh import score_rose, should_refresh
 from carto_flow.flow_cartogram.stall import MIN_CYCLE_LENGTH, StallMonitor, cycle_length
 
 
@@ -253,3 +254,61 @@ class TestStallPatience:
     def test_invalid_min_improvement_is_rejected(self, value):
         with pytest.raises(ValueError, match="stall_min_improvement"):
             MorphOptions(stall_min_improvement=value)
+
+
+class TestRefreshOnRise:
+    def test_score_rose_uses_relative_tolerance(self):
+        assert score_rose(10.5, 10.0, 0.0)
+        assert not score_rose(10.0, 10.0, 0.0)
+        assert score_rose(10.2, 10.0, 0.01)
+        assert not score_rose(10.05, 10.0, 0.01)
+        assert not score_rose(100.0, 10.0, None)
+
+    def test_fixed_schedule_without_refresh_on_rise(self):
+        refreshes = [i for i in range(25) if should_refresh(i, i % 10, True, 10, None)]
+        assert refreshes == [0, 10, 20]
+        assert not should_refresh(5, 5, True, None, None)
+
+    def test_refreshes_after_a_rise(self):
+        assert should_refresh(0, 0, False, 10, 0.0)
+        assert should_refresh(4, 3, True, 10, 0.0)
+        assert not should_refresh(4, 3, False, 10, 0.0)
+
+    def test_field_is_used_at_least_one_iteration(self):
+        assert not should_refresh(4, 0, True, 10, 0.0)
+
+    def test_maximum_interval_is_respected(self):
+        assert should_refresh(14, 10, False, 10, 0.0)
+        assert not should_refresh(14, 9, False, 10, 0.0)
+        # Without a maximum interval only rises refresh.
+        assert not should_refresh(300, 299, False, None, 0.0)
+        assert should_refresh(300, 299, True, None, 0.0)
+
+    def test_stall_window_does_not_depend_on_refresh_times(self):
+        # The monitor judges fixed windows from iteration 1, whatever the refresh times.
+        flat = np.full(100, 5.0)
+        monitor = StallMonitor(4, 0.02, cycle_length(10))
+        assert _run_monitor(monitor, flat, flat) == 50
+
+    def test_fewer_rises_than_the_fixed_schedule(self, states):
+        options = _strong_anisotropy_options(DirectionalTensor(theta=0, Dpar=4, Dperp=0.3)).copy_with(benchmark=True)
+
+        def rises(result):
+            s = _score(result.convergence, options)
+            return int(np.sum((s[1:] > s[:-1]) & (s[:-1] < 20)))
+
+        off = morph_gdf(states, "Population", options=options)
+        on = morph_gdf(states, "Population", options=options.copy_with(refresh_on_rise=0.01))
+        assert off.status == on.status == MorphStatus.CONVERGED
+        assert rises(on) < rises(off)
+        assert on.benchmark.density_calls != off.benchmark.density_calls
+
+    def test_no_change_when_the_score_never_rises(self, states):
+        off = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
+        on = morph_gdf(states, "Population", options=MorphOptions(show_progress=False, refresh_on_rise=0.01))
+        assert on.niterations == off.niterations == 113
+
+    @pytest.mark.parametrize("value", [-0.1, "x", True])
+    def test_invalid_value_is_rejected(self, value):
+        with pytest.raises(ValueError, match="refresh_on_rise"):
+            MorphOptions(refresh_on_rise=value)

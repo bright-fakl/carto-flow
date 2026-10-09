@@ -53,8 +53,8 @@ class MorphStatus(str, Enum):
     CONVERGED : str
         Algorithm converged within tolerance thresholds
     STALLED : str
-        Algorithm stopped because ``stall_patience`` consecutive field-refresh
-        cycles made no progress
+        Algorithm stopped because ``stall_patience`` consecutive cycles
+        (windows of ``max(recompute_every, 10)`` iterations) made no progress
     COMPLETED : str
         Algorithm completed all iterations without converging
     RUNNING : str
@@ -82,7 +82,7 @@ class StopReason(str, Enum):
     CONVERGED : str
         Both ``mean_tol`` and ``max_tol`` were met.
     STALL_PATIENCE : str
-        ``stall_patience`` consecutive field-refresh cycles made no progress.
+        ``stall_patience`` consecutive cycles (windows of ``max(recompute_every, 10)`` iterations) made no progress.
     ITERATION_LIMIT : str
         ``n_iter`` iterations were run without another rule firing.
     """
@@ -158,6 +158,17 @@ class MorphOptions:
     dt: float = 0.2
     n_iter: int = 500
     recompute_every: int | None = 10
+    """Maximum number of iterations a computed velocity field is reused (None: never refreshed on the clock)."""
+    refresh_on_rise: float | None = None
+    """Relative rise of the score that triggers an early refresh of the velocity field.
+
+    If None, the field is refreshed only every ``recompute_every`` iterations. Otherwise it is also
+    refreshed before the next iteration whenever the score ``max(mean_error / mean_tol,
+    max_error / max_tol)`` (log2 errors) rose by more than this fraction (0.0 for any rise, 0.01 for
+    1%) compared with the previous iteration, provided the field has been used for at least one
+    iteration. ``recompute_every`` stays the maximum interval between refreshes. The window used for
+    stall detection does not depend on when refreshes happen.
+    """
     snapshot_every: int | None = None
     mean_tol: float = 0.05  # Percentage tolerance, e.g., 0.05 = 5%
     max_tol: float = 0.10  # Percentage tolerance, e.g., 0.10 = 10%
@@ -226,17 +237,17 @@ class MorphOptions:
     stall_patience: int | None = 4
     """Number of consecutive cycles without progress that ends the run as stalled.
 
-    The velocity field is refreshed every ``recompute_every`` iterations and reused in between, so
-    the error follows a sawtooth. Stall detection therefore judges whole cycles: a cycle is the span
-    between two refreshes, but at least 10 iterations (with ``recompute_every`` below 10, or None,
-    a cycle is 10 iterations). For each completed cycle the minimum of the mean-error ratio
-    ``mean_error / mean_tol`` and the minimum of the max-error ratio ``max_error / max_tol`` (log2
-    errors, as in the convergence test) are compared with the best of the earlier cycles. The cycle
-    is progress if either minimum is lower by at least the fraction ``stall_min_improvement``;
-    a max error that stays fixed while the mean error falls is progress. The run stops with status
-    ``STALLED`` after ``stall_patience`` consecutive cycles without progress, so a stall is
-    detected after at least ``stall_patience`` cycles of ``max(recompute_every, 10)`` iterations,
-    and an incomplete last cycle is not judged.
+    The velocity field is reused between refreshes, so the error follows a sawtooth. Stall
+    detection therefore judges windows of ``max(recompute_every, 10)`` iterations ("cycles",
+    10 iterations if ``recompute_every`` is below 10 or None), counted from the first iteration
+    and independent of when refreshes actually happen (also with ``refresh_on_rise``). For each
+    completed window the minimum of the mean-error ratio ``mean_error / mean_tol`` and the minimum
+    of the max-error ratio ``max_error / max_tol`` (log2 errors, as in the convergence test) are
+    compared with the best of the earlier windows. The window is progress if either minimum is
+    lower by at least the fraction ``stall_min_improvement``; a max error that stays fixed while
+    the mean error falls is progress. The run stops with status ``STALLED`` after ``stall_patience``
+    consecutive windows without progress, so a stall is detected after at least ``stall_patience``
+    windows, and an incomplete last window is not judged.
 
     When the run does not converge, the returned state is the best iterate (see
     ``Cartogram.best_iteration``).
@@ -385,6 +396,7 @@ class MorphOptions:
             "prescale_components",
             "stall_patience",
             "stall_min_improvement",
+            "refresh_on_rise",
             "parallel_fft",
             "parallel_density",
         ]
@@ -486,6 +498,9 @@ class MorphOptions:
                 elif value < 0:
                     return "stall_patience must be a non-negative integer or None"
 
+        elif field_name == "refresh_on_rise":
+            if value is not None and (not isinstance(value, int | float) or isinstance(value, bool) or value < 0):
+                return "refresh_on_rise must be a non-negative number or None"
         elif field_name == "stall_min_improvement":
             if not isinstance(value, int | float) or isinstance(value, bool) or not 0 <= value < 1:
                 return "stall_min_improvement must be a number in [0, 1)"

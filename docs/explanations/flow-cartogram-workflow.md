@@ -111,7 +111,7 @@ Source references (`_source_gdf`, `_value_column`) are stored as private attribu
 |---|---|
 | `ORIGINAL` | Unmorphed placeholder; no algorithm was run |
 | `CONVERGED` | Both `mean_tol` and `max_tol` thresholds were met |
-| `STALLED` | `stall_patience` consecutive field-refresh cycles made no progress |
+| `STALLED` | `stall_patience` consecutive cycles (windows of `max(recompute_every, 10)` iterations) made no progress |
 | `COMPLETED` | `n_iter` iterations reached without converging |
 | `FAILED` | An exception occurred during morphing |
 

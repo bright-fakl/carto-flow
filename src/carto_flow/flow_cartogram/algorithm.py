@@ -43,6 +43,7 @@ from .history import (
     History,
 )
 from .options import MorphOptions, MorphStatus, StopReason
+from .refresh import score_rose, should_refresh
 from .stall import StallMonitor, cycle_length
 from .velocity import VelocityComputerFFTW
 
@@ -449,6 +450,9 @@ def morph_geometries(
     # Best iterate so far, by the same combined score as the convergence test
     # (below 1 means converged). Its state is kept to restore it if the run
     # ends without converging.
+    since_refresh = 0  # iterations since the velocity field was refreshed
+    rose = False  # the score rose in the last iteration (see refresh_on_rise)
+    prev_score = np.inf
     best_score = np.inf
     best_step = 0
     best_state: tuple | None = None
@@ -478,7 +482,8 @@ def morph_geometries(
 
     for step in pbar:
         # 1. Compute density field
-        if (options.recompute_every is not None and step % options.recompute_every == 0) or step == 0:
+        if should_refresh(step, since_refresh, rose, options.recompute_every, options.refresh_on_rise):
+            since_refresh = 0
             # 1a. Reconstruct Shapely geometries from the current displaced
             # coordinates and compute the density field.
             # from_ragged_array rebuilds all geometries in a single C-level
@@ -558,6 +563,7 @@ def morph_geometries(
             _t0 = _time.perf_counter()
         max_v = max(max_abs_velocity(vx, vy), 1e-8)
         dt_prime = options.dt * min(grid.dx, grid.dy) / max_v
+        since_refresh += 1
 
         # 2a. Displace geometry coordinates using the velocity field
         flat_geoms.coords = displace_coords_numba(
@@ -629,6 +635,8 @@ def morph_geometries(
         # Check convergence using log2-converted thresholds
         converged = mean_error < log2_mean_tol and max_error < log2_max_tol
         score = max(mean_error / log2_mean_tol, max_error / log2_max_tol)
+        rose = score_rose(score, prev_score, options.refresh_on_rise)
+        prev_score = score
         if score < best_score:
             best_score = score
             best_step = step

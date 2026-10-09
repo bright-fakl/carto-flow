@@ -57,7 +57,7 @@ VARIABLES = {
     "B03002_003E": "White",
     "B03002_004E": "Black or African American",
     "B03002_006E": "Asian",
-    "B03002_013E": "Hispanic or Latino",
+    "B03002_012E": "Hispanic or Latino",
 }
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "src" / "carto_flow" / "data"

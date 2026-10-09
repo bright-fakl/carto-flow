@@ -142,3 +142,27 @@ def test_load_sample_cities():
         pytest.skip(f"Optional dependencies not installed: {e}")
     except Exception as e:
         pytest.fail(f"Unexpected error: {e}")
+
+
+@pytest.mark.parametrize("level", ["state", "congressional_district"])
+def test_load_us_census_race_groups_do_not_exceed_total(level):
+    """The four race/ethnicity groups are disjoint, so they sum to at most Total Race."""
+    import carto_flow.data
+
+    gdf = carto_flow.data.load_us_census(race=True, level=level, contiguous_only=False)
+    groups = gdf[["White", "Black or African American", "Asian", "Hispanic or Latino"]].sum(axis=1)
+    assert (groups <= gdf["Total Race"]).all()
+
+
+def test_load_us_census_hispanic_or_latino_is_total():
+    """Hispanic or Latino holds ACS B03002_012E (all races), not the White-alone subset."""
+    import carto_flow.data
+
+    gdf = carto_flow.data.load_us_census(race=True, contiguous_only=False).set_index("State Name")
+    # ACS 2020 5-year, B03002_012E
+    assert gdf.loc["California", "Hispanic or Latino"] == pytest.approx(15_380_929, rel=0.005)
+    assert gdf.loc["Texas", "Hispanic or Latino"] == pytest.approx(11_294_257, rel=0.005)
+
+    states = gdf.drop(index="Puerto Rico")
+    share = states["Hispanic or Latino"].sum() / states["Total Race"].sum()
+    assert share == pytest.approx(0.18, abs=0.01)

@@ -85,7 +85,7 @@ Each polygon is rasterized onto the grid: cells whose centers fall inside polygo
 
 Rasterization uses `shapely.contains_xy()` for vectorized point-in-polygon tests. The resulting field can be transformed by a `DensityModulator` before the velocity solve (see [Modulators](#density-and-velocity-modulators) below).
 
-By default, the density field is recomputed every `recompute_every` iterations (default: 10). Between recomputations the same field is reused, which is valid because the velocity pattern changes slowly near convergence. With `refresh_on_rise` set (default `None`), the field is also recomputed before the next iteration whenever the convergence score `max(mean error / mean_tol, max error / max_tol)` rose by more than that relative amount in the last iteration; `recompute_every` then is the maximum interval between recomputations.
+By default, the density field is recomputed every `recompute_every` iterations (default: 10). Between recomputations the same field is reused, which is valid because the velocity pattern changes slowly near convergence. With `refresh_on_rise` set (default 0.01; `None` disables it), the field is also recomputed before the next iteration whenever the convergence score `max(mean error / mean_tol, max error / max_tol)` rose by more than that relative amount in the last iteration; `recompute_every` then is the maximum interval between recomputations.
 
 #### 2. Velocity Field
 
@@ -187,7 +187,7 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `dt` | 1.0 | Time step scalar controlling displacement magnitude per iteration |
 | `n_iter` | 500 | Maximum iterations |
 | `recompute_every` | 10 | Recompute density/velocity every N iterations (maximum interval with `refresh_on_rise`) |
-| `refresh_on_rise` | `None` | Relative score rise that triggers an early recompute; `None` = fixed schedule only |
+| `refresh_on_rise` | 0.01 | Relative score rise that triggers an early recompute; `None` = fixed schedule only |
 | `snapshot_every` | `None` | Save full snapshot every N iterations; `None` = final only |
 | `mean_tol` | 0.05 | Convergence threshold for mean area error (fraction) |
 | `max_tol` | 0.1 | Convergence threshold for max area error (fraction) |

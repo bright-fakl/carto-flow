@@ -159,10 +159,10 @@ class MorphOptions:
     n_iter: int = 500
     recompute_every: int | None = 10
     """Maximum number of iterations a computed velocity field is reused (None: never refreshed on the clock)."""
-    refresh_on_rise: float | None = None
+    refresh_on_rise: float | None = 0.01
     """Relative rise of the score that triggers an early refresh of the velocity field.
 
-    If None, the field is refreshed only every ``recompute_every`` iterations. Otherwise it is also
+    If None, the field is refreshed only every ``recompute_every`` iterations. Otherwise (default 0.01) it is also
     refreshed before the next iteration whenever the score ``max(mean_error / mean_tol,
     max_error / max_tol)`` (log2 errors) rose by more than this fraction (0.0 for any rise, 0.01 for
     1%) compared with the previous iteration, provided the field has been used for at least one

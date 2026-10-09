@@ -246,7 +246,7 @@ class TestStallPatience:
     OPTIONS: ClassVar[dict] = {"show_progress": False, "n_iter": 60, "dt": 0.6, "mean_tol": 0.001, "max_tol": 0.002}
 
     def test_preset_balanced_stalls_on_a_diverging_step(self, states):
-        options = MorphOptions.preset_balanced().copy_with(dt=0.6, show_progress=False)
+        options = MorphOptions.preset_balanced().copy_with(dt=0.6, show_progress=False, refresh_on_rise=None)
         result = morph_gdf(states, "Population", options=options)
         score = _score(result.convergence, options)
 
@@ -324,16 +324,19 @@ class TestRefreshOnRise:
             s = _score(result.convergence, options)
             return int(np.sum((s[1:] > s[:-1]) & (s[:-1] < 20)))
 
-        off = morph_gdf(states, "Population", options=options)
+        off = morph_gdf(states, "Population", options=options.copy_with(refresh_on_rise=None))
         on = morph_gdf(states, "Population", options=options.copy_with(refresh_on_rise=0.01))
         assert off.status == on.status == MorphStatus.CONVERGED
         assert rises(on) < rises(off)
         assert on.benchmark.density_calls != off.benchmark.density_calls
 
     def test_no_change_when_the_score_never_rises(self, states):
-        off = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
-        on = morph_gdf(states, "Population", options=MorphOptions(show_progress=False, refresh_on_rise=0.01))
+        off = morph_gdf(states, "Population", options=MorphOptions(show_progress=False, refresh_on_rise=None))
+        on = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
         assert on.niterations == off.niterations == 113
+
+    def test_default_is_one_percent(self):
+        assert MorphOptions().refresh_on_rise == 0.01
 
     @pytest.mark.parametrize("value", [-0.1, "x", True])
     def test_invalid_value_is_rejected(self, value):

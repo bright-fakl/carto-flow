@@ -296,7 +296,7 @@ def _census_variables(level: str, population: bool, poverty: bool, race: bool) -
             "B03002_003E": "White",
             "B03002_004E": "Black or African American",
             "B03002_006E": "Asian",
-            "B03002_013E": "Hispanic or Latino",
+            "B03002_012E": "Hispanic or Latino",
         }
     return variables
 
@@ -473,9 +473,19 @@ def load_us_census(
         Include total population. Adds columns:
         - ``Population``, ``Population (Millions)``, ``Population Density``
     race : bool, default False
-        Include race/ethnicity breakdown. Adds columns:
-        - ``Total Race``, ``White``, ``Black or African American``, ``Asian``,
-          ``Hispanic or Latino``, and corresponding ``<group> %`` columns.
+        Include race/ethnicity breakdown from ACS table B03002. Adds columns:
+        - ``Total Race`` (``B03002_001E``, total population)
+        - ``White`` (``B03002_003E``), ``Black or African American``
+          (``B03002_004E``) and ``Asian`` (``B03002_006E``): residents who
+          are not Hispanic or Latino and report that race alone
+        - ``Hispanic or Latino`` (``B03002_012E``): all Hispanic or Latino
+          residents, of any race
+        - ``<group> %`` columns: each of the four groups divided by
+          ``Total Race``
+
+        The four groups do not overlap, so their sum is at most ``Total Race``;
+        non-Hispanic residents of other races or of two or more races are in
+        none of them.
     poverty : bool, default False
         Include poverty status. Adds columns:
         - ``Total Poverty``, ``Below Poverty Level``, ``Above Poverty Level``,

@@ -309,14 +309,30 @@ class RasterField(BaseField):
         self._mass_xy = xy
         self._mass_density = mass
 
-    def _mass_density_grid(self, target_density: float) -> np.ndarray:
-        """Histogram of the particle densities on the grid; mean density outside the boundary."""
+    def _mass_density_grid(self) -> np.ndarray:
+        """Histogram of the particle densities on the grid; the initial mean density outside the boundary.
+
+        Inside the boundary the histogram is scaled so that it holds the total
+        weight, as the cell-based density does: particles that drift just
+        outside the (vertex-sampled) boundary do not drain mass from it.  The
+        interior mean density is then the total weight over the current
+        boundary area, while the exterior keeps the mean over the initial
+        area, so a shrinking boundary is pushed back out and vice versa.
+        """
         nx, ny = self._grid_nx, self._grid_ny
         xy = cast(np.ndarray, self._mass_xy)
         ix = np.clip(np.rint((xy[:, 0] - self._grid_x_coords[0]) / self._grid_dx).astype(np.intp), 0, nx - 1)
         iy = np.clip(np.rint((xy[:, 1] - self._grid_y_coords[0]) / self._grid_dy).astype(np.intp), 0, ny - 1)
         rho = np.bincount(iy * nx + ix, weights=self._mass_density, minlength=nx * ny)
-        rho[~self._elastic_active_mask] = target_density
+        active = self._elastic_active_mask
+        total = float(cast(np.ndarray, self._weights).sum())
+        inside_mass = float(rho[active].sum()) * self._pixel_area
+        if inside_mass > 0.0:
+            rho[active] *= total / inside_mass
+        # Exterior reference: the mean over the initial active pixels (one
+        # particle each), so that the pixel-count area, not the polygon area,
+        # is what returns to its initial value.
+        rho[~active] = total / (len(xy) * self._pixel_area)
         return rho.reshape(ny, nx)
 
     # -- Boundary deformation -----------------------------------------------
@@ -416,7 +432,7 @@ class RasterField(BaseField):
         valid_pix = labels_2d_true >= 0
         rho_2d[valid_pix] = density[labels_2d_true[valid_pix]]
         if self._mass_xy is not None:
-            rho_2d = self._mass_density_grid(target_density)
+            rho_2d = self._mass_density_grid()
 
         if self._density_smooth:
             from scipy.ndimage import gaussian_filter
@@ -503,12 +519,10 @@ class RasterField(BaseField):
             # Slow path: fix self-intersections introduced by displacement.
             valid_parts: list = []
             for p in new_polys:
-                vp = sh.make_valid(p)
-                if vp.geom_type == "Polygon":
-                    valid_parts.append(vp)
-                else:
-                    polys = [g for g in getattr(vp, "geoms", [vp]) if g.geom_type == "Polygon"]
-                    valid_parts.extend(polys)
+                # make_valid can return a GeometryCollection that nests the
+                # polygonal result in a MultiPolygon; keep all polygonal parts.
+                vp = _keep_polygonal(sh.make_valid(p))
+                valid_parts.extend(g for g in getattr(vp, "geoms", [vp]) if not g.is_empty)
             new_geom = unary_union(valid_parts) if valid_parts else self._current_boundary
         self._current_boundary = drop_sliver_holes(new_geom)
         sh.prepare(self._current_boundary)

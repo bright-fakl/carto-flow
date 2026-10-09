@@ -284,8 +284,10 @@ carries the density of the input region it lies in (weight divided by region
 area), and these values move with the same flow as the boundary. The boundary
 therefore moves outward next to regions whose weight share exceeds their area
 share (for population, the dense northeastern states) and inward next to
-sparse ones, until the carried density evens out. The cells inside still match
-the weights exactly.
+sparse ones, until the carried density evens out. Inside the boundary the
+carried density is scaled to hold the total weight, and outside it keeps the
+initial mean, so the boundary changes shape but keeps its initial area. The
+cells inside still match the weights exactly.
 `min_boundary_points` densifies simple shapes (e.g. `"bbox"`) for smoother
 deformation; `adhesion_strength` combines elastic deformation with centroid
 adhesion in a single pass (equivalent to `AdhesiveBoundary` but with the snap

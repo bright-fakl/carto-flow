@@ -894,6 +894,8 @@ class TestWeightedPowerCells:
         coastal = shapely.intersects(shapely.boundary(field._original_boundary), shapely.buffer(geoms, 1000))
         assert spearmanr(np.log(density[coastal]), outward[coastal]).correlation > 0.5
         assert result.metrics["mean_area_error_pct"] <= 1.0
+        # The boundary changes shape, not overall size.
+        assert field._current_boundary.area == pytest.approx(field._original_boundary.area, rel=0.02)
 
     def test_weights_spanning_three_orders_of_magnitude(self, us_states):
         w = np.exp(np.random.default_rng(1).normal(0.0, 1.5, len(us_states)))

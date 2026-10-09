@@ -334,3 +334,17 @@ class TestClosedAndUpdatedDates:
         page = mod.build_index_page([pr], {pr.path: "merged"}, {1: "2026-10-03 11:00"})
         assert '<th data-col="5" title="Sort by Closed">Closed</th>' in page
         assert "<td>2026-10-03 11:00</td>" in page
+
+
+class TestDisplayTimezone:
+    def test_closed_time_follows_the_configured_zone(self, mod, monkeypatch):
+        rows = [{"number": 1, "state": "MERGED", "mergedAt": "2026-10-08T19:26:00Z", "closedAt": None}]
+        monkeypatch.setenv("VISUAL_CHECKS_TZ", "America/New_York")
+        assert mod.pr_closed_from_rows(rows) == {1: "2026-10-08 15:26"}
+        monkeypatch.setenv("VISUAL_CHECKS_TZ", "UTC")
+        assert mod.pr_closed_from_rows(rows) == {1: "2026-10-08 19:26"}
+
+    def test_unknown_zone_falls_back(self, mod, monkeypatch, capsys):
+        monkeypatch.setenv("VISUAL_CHECKS_TZ", "Not/AZone")
+        assert mod.display_timezone() is None
+        assert "unknown time zone" in capsys.readouterr().err

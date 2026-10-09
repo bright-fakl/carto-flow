@@ -64,7 +64,10 @@ Only stdlib is used - no markdown library, no third-party dependencies.
 
 The root directory is the first of: ``--root``, ``VISUAL_CHECKS_ROOT`` in the
 environment, ``VISUAL_CHECKS_ROOT`` in a ``.env`` file at the repository root,
-and the sibling checkout ``../carto-flow-dev``.  Directories whose names start
+and the sibling checkout ``../carto-flow-dev``.  Close times from GitHub are
+shown in the zone named by ``VISUAL_CHECKS_TZ`` (an IANA name such as
+``America/New_York``), else the system zone; set it wherever pages are rebuilt
+on a machine in another zone.  Directories whose names start
 with ``.`` are ignored.  PR states are read from ``--repo`` (default
 ``bright-fakl/carto-flow``).
 
@@ -84,8 +87,9 @@ import subprocess
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, tzinfo
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 STYLE = """
   :root { color-scheme: light dark; }
@@ -253,6 +257,10 @@ uv run python scripts/build_visual_checks_index.py --root /path/to/carto-flow-de
 ```
 
 Regenerates `index.html` and every `<subdir>/index.html`, plus this file.
+
+Close times from GitHub are shown in the zone named by `VISUAL_CHECKS_TZ` (an IANA name, for
+example `America/New_York`), else the system zone. Set it wherever pages are rebuilt on a machine
+in another zone, so the generated files do not differ between machines.
 
 ## Publishing
 
@@ -517,7 +525,24 @@ def status_class(status: str) -> str:
 
 DEFAULT_REPO = "bright-fakl/carto-flow"
 ROOT_VARIABLE = "VISUAL_CHECKS_ROOT"
+TIMEZONE_VARIABLE = "VISUAL_CHECKS_TZ"
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def display_timezone() -> tzinfo | None:
+    """Time zone for dates read from GitHub: ``VISUAL_CHECKS_TZ`` (an IANA name), else the system zone.
+
+    Pages are rebuilt on machines in different zones (a laptop, a CI runner in
+    UTC); a fixed zone keeps the generated files identical between them.
+    """
+    name = os.environ.get(TIMEZONE_VARIABLE, "").strip()
+    if not name:
+        return None
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        print(f"WARNING: unknown time zone {name!r} in {TIMEZONE_VARIABLE}; using the system zone", file=sys.stderr)
+        return None
 
 
 def default_root() -> Path:
@@ -591,7 +616,7 @@ def pr_closed_from_rows(rows: list[dict]) -> dict[int, str]:
         if not raw:
             continue
         try:
-            moment = datetime.fromisoformat(str(raw).replace("Z", "+00:00")).astimezone()
+            moment = datetime.fromisoformat(str(raw).replace("Z", "+00:00")).astimezone(display_timezone())
         except ValueError:
             continue
         closed[int(row["number"])] = moment.strftime("%Y-%m-%d %H:%M")

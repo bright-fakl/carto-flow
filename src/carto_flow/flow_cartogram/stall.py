@@ -23,10 +23,14 @@ class StallMonitor:
 
     Each cycle of ``cycle`` iterations records the minimum of the mean-error
     ratio (``mean_error / mean_tol``) and of the max-error ratio
-    (``max_error / max_tol``). A completed cycle is progress if either minimum
-    is lower than the best so far by at least the fraction ``min_improvement``
-    of that best. The run is stalled after ``patience`` consecutive cycles
-    without progress. A final incomplete cycle is not judged.
+    (``max_error / max_tol``); a ratio below 1 means that component is
+    satisfied. A component counts toward progress in a cycle only if its cycle
+    minimum is still above 1 and lower than that component's best over the
+    earlier cycles by at least the fraction ``min_improvement`` of that best.
+    A cycle is progress if any component counts. Improvements of a satisfied
+    component, and a component that regressed above 1 after having been
+    satisfied, do not count. The run is stalled after ``patience`` consecutive
+    cycles without progress. A final incomplete cycle is not judged.
 
     Parameters
     ----------
@@ -57,7 +61,9 @@ class StallMonitor:
             return False
 
         keep = 1.0 - self.min_improvement
-        progress = self._cur_mean < self.best_mean * keep or self._cur_max < self.best_max * keep
+        progress = (self._cur_mean > 1.0 and self._cur_mean < self.best_mean * keep) or (
+            self._cur_max > 1.0 and self._cur_max < self.best_max * keep
+        )
         self.best_mean = min(self.best_mean, self._cur_mean)
         self.best_max = min(self.best_max, self._cur_max)
         self._cur_mean = self._cur_max = float("inf")

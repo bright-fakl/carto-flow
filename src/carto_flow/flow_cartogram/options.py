@@ -243,9 +243,14 @@ class MorphOptions:
     and independent of when refreshes actually happen (also with ``refresh_on_rise``). For each
     completed window the minimum of the mean-error ratio ``mean_error / mean_tol`` and the minimum
     of the max-error ratio ``max_error / max_tol`` (log2 errors, as in the convergence test) are
-    compared with the best of the earlier windows. The window is progress if either minimum is
-    lower by at least the fraction ``stall_min_improvement``; a max error that stays fixed while
-    the mean error falls is progress. The run stops with status ``STALLED`` after ``stall_patience``
+    recorded; a ratio below 1 means that component is satisfied. A component counts toward
+    progress only while it is still violated (its window minimum is above 1) and its window
+    minimum is lower than that component's best over the earlier windows by at least the fraction
+    ``stall_min_improvement``. The window is progress if any component counts, so a max error that
+    stays fixed while a still violated mean error falls is progress, whereas improvements of a
+    satisfied component, or of a component that regressed above 1 without beating its earlier
+    best, are not. A window in which neither component is violated does not count either.
+    The run stops with status ``STALLED`` after ``stall_patience``
     consecutive windows without progress, so a stall is detected after at least ``stall_patience``
     windows, and an incomplete last window is not judged.
 
@@ -258,7 +263,7 @@ class MorphOptions:
     stall_min_improvement: float = 0.02
     """Relative improvement of a cycle minimum that counts as progress (see ``stall_patience``).
 
-    A cycle minimum must be below the best earlier minimum by at least this fraction of it, for
+    A violated component's window minimum must be below its best earlier minimum by at least this fraction of it, for
     example 0.02 for 2%. Smaller decreases do not reset the stall count.
     """
 

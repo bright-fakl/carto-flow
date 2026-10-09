@@ -197,6 +197,33 @@ class TestStallMonitor:
         flat_max = np.full_like(mean, 28.0)
         assert _run_monitor(StallMonitor(2, 0.02, 10), mean, flat_max) is None
 
+    def test_creep_of_a_satisfied_component_does_not_count(self):
+        # The mean component is below 1 and keeps improving; the max component is stuck above 1.
+        mean = self._sawtooth([0.9 * 0.9**k for k in range(8)], amplitude=0.05)
+        flat_max = np.full_like(mean, 10.0)
+        assert _run_monitor(StallMonitor(3, 0.02, 10), mean, flat_max) == 40
+
+    def test_violated_plateau_with_falling_mean_counts(self):
+        # Same flat max, but the mean component is still above 1 and falling.
+        mean = self._sawtooth([20, 15, 11, 8, 6, 4.5, 3.4, 2.5])
+        flat_max = np.full_like(mean, 10.0)
+        assert _run_monitor(StallMonitor(3, 0.02, 10), mean, flat_max) is None
+
+    def test_progress_ends_when_the_falling_mean_becomes_satisfied(self):
+        mean = self._sawtooth([4, 3, 2, 1.5, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4], amplitude=0.05)
+        flat_max = np.full_like(mean, 10.0)
+        # Cycles 1 to 4 have a violated, improving mean (cycle 4 minimum 1.5); then 3 cycles without progress.
+        assert _run_monitor(StallMonitor(3, 0.02, 10), mean, flat_max) == 70
+
+    def test_regression_above_one_after_being_satisfied_does_not_count(self):
+        mean = self._sawtooth([0.8, 3.0, 2.5, 2.0, 1.6])
+        flat_max = self._sawtooth([20, 20, 20, 20, 20], amplitude=0.0)
+        assert _run_monitor(StallMonitor(3, 0.02, 10), mean, flat_max) == 40
+
+    def test_first_cycle_counts_when_a_component_is_violated(self):
+        trace = np.full(40, 5.0)
+        assert _run_monitor(StallMonitor(1, 0.02, 10), trace, trace) == 20
+
     def test_flat_everything_stalls_after_patience_cycles(self):
         flat = np.full(100, 5.0)
         assert _run_monitor(StallMonitor(4, 0.02, 10), flat, flat) == 50

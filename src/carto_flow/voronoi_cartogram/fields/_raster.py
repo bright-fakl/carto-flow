@@ -8,8 +8,7 @@ from typing import Any, cast
 
 import numpy as np
 from shapely.errors import ShapelyError
-from shapely.geometry import Point, Polygon
-from shapely.ops import unary_union
+from shapely.geometry import Point
 
 from ._base import BaseField, _extract_exact_cells, _keep_polygonal, drop_sliver_holes
 from ._power import ClippedPowerDiagram, PowerFit, nonempty_offsets
@@ -250,7 +249,9 @@ class RasterField(BaseField):
             g = _G()
             g.dx = dx  # type: ignore[attr-defined]
             g.dy = dy  # type: ignore[attr-defined]
-            return VelocityComputerFFTW(g)  # type: ignore[arg-type]
+            # Single-threaded: on these small grids multithreaded FFTW plans
+            # are far slower (about 100 ms versus 2 ms per call).
+            return VelocityComputerFFTW(g, threads=1)  # type: ignore[arg-type]
         except (ImportError, Exception):
             return None
 
@@ -460,17 +461,19 @@ class RasterField(BaseField):
         # Advect boundary vertices
         _elastic_current_verts = cast(list, self._elastic_current_verts)
         if bdt > 0.0:
-            for i, cur_verts in enumerate(_elastic_current_verts):
-                _elastic_current_verts[i] = displace_coords_numba(
-                    cur_verts,
-                    self._grid_x_coords,
-                    self._grid_y_coords,
-                    vx,
-                    vy,
-                    bdt,
-                    self._grid_dx,
-                    self._grid_dy,
-                )
+            # One call for all rings (the displacement is pointwise).
+            moved = displace_coords_numba(
+                np.vstack(_elastic_current_verts),
+                self._grid_x_coords,
+                self._grid_y_coords,
+                vx,
+                vy,
+                bdt,
+                self._grid_dx,
+                self._grid_dy,
+            )
+            splits = np.cumsum([len(v) for v in _elastic_current_verts])[:-1]
+            _elastic_current_verts[:] = np.split(moved, splits)
             if self._mass_xy is not None:
                 self._mass_xy = displace_coords_numba(
                     self._mass_xy,
@@ -507,30 +510,45 @@ class RasterField(BaseField):
         self._debug_vertex_disp = np.linalg.norm(cur_cat - orig_cat, axis=1)
         self._debug_vertex_disp_vec = cur_cat - orig_cat
 
-        # Rebuild boundary from displaced vertices.
-        # Fast path: skip make_valid + unary_union when all polygons are already
-        # valid (common for small displacements with boundary_elasticity << 1).
-        new_polys = [Polygon(np.vstack([v, v[:1]])) for v in _elastic_current_verts]
-        if len(new_polys) == 1 and sh.is_valid(new_polys[0]):
-            new_geom = new_polys[0]
-        elif len(new_polys) > 1 and all(sh.is_valid(p) for p in new_polys):
-            new_geom = unary_union(new_polys)
-        else:
-            # Slow path: fix self-intersections introduced by displacement.
-            valid_parts: list = []
-            for p in new_polys:
-                # make_valid can return a GeometryCollection that nests the
-                # polygonal result in a MultiPolygon; keep all polygonal parts.
-                vp = _keep_polygonal(sh.make_valid(p))
-                valid_parts.extend(g for g in getattr(vp, "geoms", [vp]) if not g.is_empty)
-            new_geom = unary_union(valid_parts) if valid_parts else self._current_boundary
-        self._current_boundary = drop_sliver_holes(new_geom)
+        self._current_boundary = drop_sliver_holes(self._rebuild_boundary(_elastic_current_verts))
         sh.prepare(self._current_boundary)
         self._elastic_active_mask = sh.contains_xy(self._current_boundary, self._grid_pts_x, self._grid_pts_y)
         # Keep adhesion snap target aligned with the deformed boundary so that
         # _apply_boundary_adhesion() snaps centroids to the current shape.
         if self._adhesion_strength > 0.0 and self._boundary_idx is not None:
             self._boundary_line = self._current_boundary.boundary
+
+    def _rebuild_boundary(self, rings: list):
+        """Boundary (Multi)Polygon from the displaced rings.
+
+        Rings that displacement made self-intersecting are repaired with
+        ``make_valid``; all polygonal parts are kept (``make_valid`` can nest
+        them in a GeometryCollection).  Parts are unioned only where they
+        overlap or touch; disjoint parts are collected as they are.
+        """
+        import shapely as sh
+
+        coords = np.vstack(rings)
+        ring_index = np.repeat(np.arange(len(rings)), [len(v) for v in rings])
+        polys = sh.polygons(sh.linearrings(coords, indices=ring_index))
+        invalid = ~sh.is_valid(polys)
+        if invalid.any():
+            polys = polys.copy()
+            polys[invalid] = [_keep_polygonal(g) for g in sh.make_valid(polys[invalid])]
+        parts = sh.get_parts(polys)
+        parts = parts[~sh.is_empty(parts) & (sh.get_type_id(parts) == 3)]
+        if len(parts) == 0:
+            return self._current_boundary
+        if len(parts) == 1:
+            return parts[0]
+        left, right = sh.STRtree(parts).query(parts, predicate="intersects")
+        overlapping = np.unique(np.concatenate([left[left != right], right[left != right]]))
+        if len(overlapping) == 0:
+            return sh.multipolygons(parts)
+        merged = sh.get_parts(sh.union_all(parts[overlapping]))
+        rest = np.delete(parts, overlapping)
+        all_parts = np.concatenate([merged[sh.get_type_id(merged) == 3], rest])
+        return all_parts[0] if len(all_parts) == 1 else sh.multipolygons(all_parts)
 
     # -- Cell construction helpers ------------------------------------------
 

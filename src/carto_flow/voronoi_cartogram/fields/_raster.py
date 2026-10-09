@@ -79,6 +79,12 @@ class RasterField(BaseField):
     area_tol : float
         With ``weights`` and euclidean labeling, relative area tolerance of
         the exact power-diagram solve in :meth:`get_cells`.
+    geometries : sequence of shapely Geometry or None
+        Input regions, one per generator.  With ``weights`` and
+        ``boundary_elasticity > 0`` the boundary is driven by the input
+        density (weight per region area), carried along by the boundary flow
+        (see :meth:`_deform_boundary`).  ``None`` falls back to the density
+        of multiplicatively weighted cells.
     debug_geodesic : bool
         When ``True`` and ``labeling="geodesic"``, emit warnings for
         misplaced BFS seeds (cross-water labeling diagnostics).
@@ -116,6 +122,7 @@ class RasterField(BaseField):
         adhesion_strength: float = 1.0,
         weights=None,
         area_tol: float = 0.01,
+        geometries=None,
     ) -> None:
         BaseField.__init__(
             self,
@@ -158,6 +165,9 @@ class RasterField(BaseField):
         if self._boundary_elasticity > 0.0:
             self._init_elastic_state(boundary)
         self._precompute_grid()
+        self._mass_xy: np.ndarray | None = None
+        if self._boundary_elasticity > 0.0 and self._power_weighted and geometries is not None:
+            self._init_mass_particles(geometries)
 
     # -- dt helpers ---------------------------------------------------------
 
@@ -278,6 +288,37 @@ class RasterField(BaseField):
                 self._elastic_verts.append(v)
                 self._elastic_current_verts.append(v.copy())
 
+    def _init_mass_particles(self, geometries) -> None:
+        """Seed one particle per active pixel carrying the input density there.
+
+        The density of a pixel inside input region *i* is ``w_i / area_i``;
+        pixels in no region get the mean density.  The particles move with
+        the boundary flow, so their histogram is the input density deformed
+        by the boundary changes made so far.
+        """
+        import shapely as sh
+
+        mask = self._elastic_active_mask
+        xy = np.column_stack([self._grid_pts_x[mask], self._grid_pts_y[mask]]).astype(np.float64)
+        weights = cast(np.ndarray, self._weights)
+        geoms = np.asarray(list(geometries), dtype=object)
+        region_density = weights / np.maximum(sh.area(geoms), 1e-300)
+        mass = np.full(len(xy), float(weights.sum()) / float(self.boundary.area))
+        pi, gi = sh.STRtree(geoms).query(sh.points(xy), predicate="within")
+        mass[pi] = region_density[gi]
+        self._mass_xy = xy
+        self._mass_density = mass
+
+    def _mass_density_grid(self, target_density: float) -> np.ndarray:
+        """Histogram of the particle densities on the grid; mean density outside the boundary."""
+        nx, ny = self._grid_nx, self._grid_ny
+        xy = cast(np.ndarray, self._mass_xy)
+        ix = np.clip(np.rint((xy[:, 0] - self._grid_x_coords[0]) / self._grid_dx).astype(np.intp), 0, nx - 1)
+        iy = np.clip(np.rint((xy[:, 1] - self._grid_y_coords[0]) / self._grid_dy).astype(np.intp), 0, ny - 1)
+        rho = np.bincount(iy * nx + ix, weights=self._mass_density, minlength=nx * ny)
+        rho[~self._elastic_active_mask] = target_density
+        return rho.reshape(ny, nx)
+
     # -- Boundary deformation -----------------------------------------------
 
     def _deform_boundary(self) -> None:
@@ -304,9 +345,10 @@ class RasterField(BaseField):
         mask = self._elastic_active_mask
 
         # Re-compute true Voronoi areas (without power offsets) for density field.
-        # With weights the pressure comes from multiplicatively weighted cells
-        # (distance^2 / w); they only drive the boundary, the cells themselves
-        # are power cells.
+        # Weighted runs with input geometries are driven by the advected input
+        # density instead (the cell areas, which match the weights, are only
+        # reported in the debug state); without geometries, by multiplicatively
+        # weighted cells (distance^2 / w).
         gx_active = self._grid_pts_x[mask]
         gy_active = self._grid_pts_y[mask]
         m_active = int(mask.sum())
@@ -338,6 +380,8 @@ class RasterField(BaseField):
                     )
             else:
                 labels_true = _result
+        elif self._mass_xy is not None:
+            labels_true = self._last_labels_2d.ravel()[np.where(mask)[0]]
         elif self._weights is not None:
             pts32 = self.points.astype(np.float32)
             w32 = self._weights.astype(np.float32)
@@ -371,6 +415,8 @@ class RasterField(BaseField):
         rho_2d = np.full((self._grid_ny, self._grid_nx), target_density, dtype=np.float64)
         valid_pix = labels_2d_true >= 0
         rho_2d[valid_pix] = density[labels_2d_true[valid_pix]]
+        if self._mass_xy is not None:
+            rho_2d = self._mass_density_grid(target_density)
 
         if self._density_smooth:
             from scipy.ndimage import gaussian_filter
@@ -401,6 +447,17 @@ class RasterField(BaseField):
             for i, cur_verts in enumerate(_elastic_current_verts):
                 _elastic_current_verts[i] = displace_coords_numba(
                     cur_verts,
+                    self._grid_x_coords,
+                    self._grid_y_coords,
+                    vx,
+                    vy,
+                    bdt,
+                    self._grid_dx,
+                    self._grid_dy,
+                )
+            if self._mass_xy is not None:
+                self._mass_xy = displace_coords_numba(
+                    self._mass_xy,
                     self._grid_x_coords,
                     self._grid_y_coords,
                     vx,

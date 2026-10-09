@@ -125,8 +125,12 @@ class ElasticBoundary:
     """FFT-driven elastic boundary deformation (RasterBackend only).
 
     Each iteration the outer boundary is deformed by a velocity field driven
-    by cell-area pressure, allowing the outer shape to adapt to the
-    centroid distribution.  Set ``relaxation=0.0`` in :class:`RasterBackend`
+    by area pressure, allowing the outer shape to adapt to the data.
+    Without weights the pressure comes from the cell areas.  With weights it
+    comes from the input density (weight per input region area) carried
+    along by the boundary flow, so the boundary moves outward next to regions
+    whose weight share exceeds their area share and inward next to sparse
+    ones.  Set ``relaxation=0.0`` in :class:`RasterBackend`
     for pure FFT-flow mode (no Lloyd centroid updates).
 
     Parameters
@@ -434,6 +438,7 @@ class RasterBackend:
         adhesion_boundary=None,
         debug: bool = False,
         area_tol: float = 0.01,
+        geometries=None,
     ) -> RasterField:
         from .fields import RasterField
 
@@ -468,6 +473,7 @@ class RasterBackend:
             adhesion_strength=adhesion_strength,
             weights=weights,
             area_tol=area_tol,
+            geometries=geometries,
         )
 
     def relax_step(self, field: RasterField, factor: float, iteration: int = 0) -> None:

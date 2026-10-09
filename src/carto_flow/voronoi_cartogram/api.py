@@ -267,6 +267,7 @@ def create_voronoi_cartogram(
     if isinstance(backend, RasterBackend):
         build_kwargs["debug"] = options.debug
         build_kwargs["area_tol"] = options.area_error_tol
+        build_kwargs["geometries"] = geometries
 
     field = backend.build_field(positions, outer, **build_kwargs)
 

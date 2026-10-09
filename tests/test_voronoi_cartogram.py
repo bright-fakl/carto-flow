@@ -865,6 +865,36 @@ class TestWeightedPowerCells:
         assert result.metrics["mean_area_error_pct"] <= 1.0
         _assert_power_cells(result)
 
+    def test_elastic_boundary_expands_near_dense_regions(self, us_states):
+        """The elastic boundary moves outward near high-density states and inward near low-density ones."""
+        import shapely
+        from scipy.stats import spearmanr
+
+        from carto_flow.voronoi_cartogram import ElasticBoundary
+
+        w = us_states["Population (Millions)"].to_numpy(float)
+        abbr = list(us_states["State Abbreviation"])
+        result = create_voronoi_cartogram(
+            us_states,
+            weights=w,
+            backend=RasterBackend(resolution=128, boundary=ElasticBoundary(strength=0.05)),
+            options=VoronoiOptions(n_iter=60),
+        )
+        field = result._field
+        gained = field._current_boundary.difference(field._original_boundary)
+        lost = field._original_boundary.difference(field._current_boundary)
+        geoms = np.asarray(list(us_states.geometry), dtype=object)
+        near = shapely.buffer(geoms, 150_000)
+        outward = shapely.area(shapely.intersection(near, gained)) - shapely.area(shapely.intersection(near, lost))
+        density = (w / w.sum()) / (shapely.area(geoms) / shapely.area(geoms).sum())
+        for state in ("NY", "NJ", "MA", "CT", "RI"):
+            assert outward[abbr.index(state)] > 0, state
+        for state in ("MT", "ND", "WY"):
+            assert outward[abbr.index(state)] < 0, state
+        coastal = shapely.intersects(shapely.boundary(field._original_boundary), shapely.buffer(geoms, 1000))
+        assert spearmanr(np.log(density[coastal]), outward[coastal]).correlation > 0.5
+        assert result.metrics["mean_area_error_pct"] <= 1.0
+
     def test_weights_spanning_three_orders_of_magnitude(self, us_states):
         w = np.exp(np.random.default_rng(1).normal(0.0, 1.5, len(us_states)))
         assert w.max() / w.min() > 1000

@@ -205,6 +205,14 @@ class ExactBackend:
         :class:`AdhesiveBoundary` to snap boundary centroids toward the outer
         boundary after each step.
 
+    Notes
+    -----
+    ``weights`` are not supported: they are ignored with a warning, the cells
+    are plain Voronoi cells, and the run is reported as not converged when
+    the mean area error against the weight-proportional targets exceeds
+    ``VoronoiOptions.area_error_tol``.  Use :class:`RasterBackend` for
+    weighted cells.
+
     Examples
     --------
     >>> from carto_flow import create_voronoi_cartogram, ExactBackend, VoronoiOptions
@@ -272,6 +280,16 @@ class RasterBackend:
     Uses a precomputed grid of land pixels for Voronoi labeling — typically
     10-50x faster than the exact scipy backend.
 
+    With ``weights`` (and ``distance_mode="euclidean"``), the cells are power
+    cells: a pixel belongs to the generator that minimizes
+    ``|x - p_i|^2 - λᵢ``.  The per-generator offsets ``λᵢ`` are adapted
+    during relaxation so that cell areas follow the weights, and the final
+    cells are exact power-diagram polygons (convex before clipping to the
+    boundary, with straight shared edges) whose offsets are solved on the
+    exact cell areas until every cell is within
+    ``VoronoiOptions.area_error_tol`` of its weight-proportional share of the
+    (possibly deformed) boundary area.
+
     Parameters
     ----------
     resolution : int
@@ -312,23 +330,33 @@ class RasterBackend:
             Multi-source BFS; wavefront cannot cross inactive (water) pixels,
             eliminating cross-bay assignments.  ``area_equalizer_rate`` is
             ignored in this mode.  Weights are not supported in
-            geodesic mode (ignored with a warning).
+            geodesic mode: they are ignored with a warning, cell areas do
+            not follow them, and the run is reported as not converged when
+            the mean area error exceeds ``VoronoiOptions.area_error_tol``.
     area_equalizer_rate : float
-        Learning rate for the power-diagram area equaliser
-        (``distance_mode="euclidean"`` only, **unweighted** case).  Each
-        iteration, per-centroid offsets ``λᵢ`` are updated so that
-        ``dist² - λᵢ`` drives cells toward equal area.  Ignored when
-        ``weights`` are provided (use ``weight_ramp_iters`` instead).
-        Default ``0.1``.  Ignored when ``distance_mode="geodesic"``.
+        Learning rate for the power-diagram offsets ``λᵢ``
+        (``distance_mode="euclidean"`` only).  Each iteration the offsets
+        are moved in proportion to each cell's pixel-area deficit.  Without
+        ``weights`` the update is leaky and drives the cells toward equal
+        area.  With ``weights`` it drives them toward weight-proportional
+        areas: the offsets accumulate the deficit and leak only while the
+        generators are still far from their cell centroids, so the areas
+        converge once the generators settle.  With weights, rates above
+        about ``0.25`` can make the offsets oscillate.  ``0`` disables the
+        update (with weights, the final exact solve then starts from zero
+        offsets).  Default ``0.1``.  Ignored when
+        ``distance_mode="geodesic"``.
     weight_ramp_iters : int
-        Number of iterations over which weights are linearly ramped from
-        1 (uniform) to their target values.  Prevents early engulfment when
-        weight ratios are large (e.g. US state populations).  ``0`` = no
-        ramp.  Default ``10``.
+        Number of iterations over which the target areas used during
+        relaxation are ramped linearly from equal to weight-proportional.
+        Avoids starving small cells early on when weight ratios are large
+        (e.g. US state populations).  The final cells always use the full
+        weights.  ``0`` = no ramp.  Default ``10``.
     output_resolution : int or None
         Upsampled grid resolution used only for final cell extraction when
-        ``distance_mode="geodesic"`` or ``area_equalizer_rate > 0``.
-        Ignored for plain euclidean with ``area_equalizer_rate=0``.  ``None`` = same as
+        ``distance_mode="geodesic"`` or ``area_equalizer_rate > 0`` without
+        weights.  Ignored for plain euclidean with ``area_equalizer_rate=0``
+        and for weighted euclidean runs (exact polygons).  ``None`` = 4x
         ``resolution``.
     cell_smoothing_px : float
         Tolerance for smoothing pixel staircases on extracted cells, in
@@ -336,7 +364,8 @@ class RasterBackend:
         4x ``resolution``). Resolution-independent by construction. For
         cartographic generalisation in map units, apply
         :func:`carto_flow.geo_utils.simplify_coverage` to the result
-        instead. ``0`` disables smoothing. Default ``3.0``.
+        instead. ``0`` disables smoothing. Not used for weighted euclidean
+        runs, whose cells are exact polygons. Default ``3.0``.
 
     Examples
     --------
@@ -404,6 +433,7 @@ class RasterBackend:
         boundary_mask: np.ndarray | None,
         adhesion_boundary=None,
         debug: bool = False,
+        area_tol: float = 0.01,
     ) -> RasterField:
         from .fields import RasterField
 
@@ -437,6 +467,7 @@ class RasterBackend:
             adhesion_boundary=adhesion_boundary,
             adhesion_strength=adhesion_strength,
             weights=weights,
+            area_tol=area_tol,
         )
 
     def relax_step(self, field: RasterField, factor: float, iteration: int = 0) -> None:

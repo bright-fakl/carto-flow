@@ -12,6 +12,7 @@ from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
 from ._base import BaseField, _extract_exact_cells, _keep_polygonal, drop_sliver_holes
+from ._power import ClippedPowerDiagram, PowerFit, nonempty_offsets
 
 # Keep every power-diagram cell non-empty when extracting the final cells
 # (see ``RasterField._nonempty_offsets``).  Module-level constants rather than
@@ -24,6 +25,12 @@ ENSURE_NONEMPTY_POWER_CELLS = True
 # 1 -> 0 at 128) but it perturbs the Lloyd trajectory, and at res 256 it raised
 # the satellite-component count from 16 to 19.  See the PR for the measurement.
 ENSURE_NONEMPTY_POWER_CELLS_IN_RELAXATION = False
+
+# Weighted relaxation: the power offsets leak at
+# ``area_equalizer_rate * min(1, WEIGHTED_OFFSET_LEAK * lag)`` per iteration,
+# where ``lag`` is the median generator-to-centroid distance in units of the
+# mean cell radius.
+WEIGHTED_OFFSET_LEAK = 5.0
 
 # Default coverage_simplify distance tolerance for smoothing raster pixel
 # staircases, expressed in pixel units (multiples of sqrt(dx * dy)) rather
@@ -62,7 +69,16 @@ class RasterField(BaseField):
     labeling : {"euclidean", "geodesic"}
         Pixel labeling algorithm.
     area_eq_weight : float
-        Power-diagram area equalizer learning rate.
+        Power-diagram offset learning rate.  Unweighted: leaky update toward
+        equal areas.  With ``weights``: update toward weight-proportional
+        areas that integrates the area error and leaks only while the
+        generators are still far from their cell centroids.
+    weight_ramp_iters : int
+        With ``weights``, iterations over which the relaxation's target
+        areas are ramped linearly from equal to weight-proportional.
+    area_tol : float
+        With ``weights`` and euclidean labeling, relative area tolerance of
+        the exact power-diagram solve in :meth:`get_cells`.
     debug_geodesic : bool
         When ``True`` and ``labeling="geodesic"``, emit warnings for
         misplaced BFS seeds (cross-water labeling diagnostics).
@@ -99,6 +115,7 @@ class RasterField(BaseField):
         adhesion_boundary=None,
         adhesion_strength: float = 1.0,
         weights=None,
+        area_tol: float = 0.01,
     ) -> None:
         BaseField.__init__(
             self,
@@ -125,13 +142,16 @@ class RasterField(BaseField):
         self._cell_smoothing_px = float(cell_smoothing_px)
         self._power_offsets = np.zeros(len(arr), dtype=np.float64)
         self._debug_geodesic = bool(debug_geodesic)
+        self._area_tol = float(area_tol)
+        # Weighted euclidean runs use additive power offsets fitted to the
+        # weight-proportional areas; the final cells are exact power cells.
+        self._power_weighted = self._weights is not None and not self._geodesic_voronoi
+        self.power_fit: PowerFit | None = None
+        self._power_diagram: ClippedPowerDiagram | None = None
         if self._geodesic_voronoi and self._weights is not None:
-            import warnings
-
             warnings.warn(
-                "RasterBackend: labeling='geodesic' does not support weights; "
-                "weights will be ignored (use labeling='euclidean' with "
-                "area_eq_weight for weighted area-equalised Voronoi)",
+                "RasterBackend: distance_mode='geodesic' does not support weights; the weights "
+                "are ignored and cell areas will not follow them",
                 stacklevel=4,
             )
 
@@ -284,6 +304,9 @@ class RasterField(BaseField):
         mask = self._elastic_active_mask
 
         # Re-compute true Voronoi areas (without power offsets) for density field.
+        # With weights the pressure comes from multiplicatively weighted cells
+        # (distance^2 / w); they only drive the boundary, the cells themselves
+        # are power cells.
         gx_active = self._grid_pts_x[mask]
         gy_active = self._grid_pts_y[mask]
         m_active = int(mask.sum())
@@ -712,25 +735,19 @@ class RasterField(BaseField):
             gx_active = px[active].astype(np.float32)
             gy_active = py[active].astype(np.float32)
             pts32 = self.points.astype(np.float32)
-            use_weights = False  # weights affect target_counts only, not distance formula
-            use_offsets = self._area_eq_weight > 0.0 and self._power_offsets is not None
+            use_offsets = (self._area_eq_weight > 0.0 or self._power_weighted) and self._power_offsets is not None
 
-            if use_weights or use_offsets:
+            if use_offsets:
                 m_active = int(active.sum())
                 chunk = 4096
                 labels_active = np.empty(m_active, dtype=np.int32)
-                w32 = self._weights.astype(np.float32) if use_weights else None
                 lam = self._nonempty_offsets() if ENSURE_NONEMPTY_POWER_CELLS else self._power_offsets
-                lam32 = lam.astype(np.float32) if use_offsets else None
+                lam32 = lam.astype(np.float32)
                 for start in range(0, m_active, chunk):
                     end = min(start + chunk, m_active)
                     dx = gx_active[start:end, None] - pts32[None, :, 0]
                     dy = gy_active[start:end, None] - pts32[None, :, 1]
-                    dist = dx * dx + dy * dy
-                    if use_weights:
-                        dist = dist / cast(np.ndarray, w32)[None, :]
-                    if use_offsets:
-                        dist = dist - cast(np.ndarray, lam32)[None, :]
+                    dist = dx * dx + dy * dy - lam32[None, :]
                     labels_active[start:end] = dist.argmin(axis=1).astype(np.int32)
             else:
                 pts_active = np.column_stack([gx_active.astype(np.float64), gy_active.astype(np.float64)])
@@ -772,28 +789,11 @@ class RasterField(BaseField):
     def _nonempty_offsets(self, max_passes: int = 5) -> np.ndarray:
         """Raise power offsets until every seed owns at least its own position.
 
-        A seed's power cell is ``{x : |x - p_i|^2 - lambda_i <= |x - p_j|^2 - lambda_j}``.
-        When ``lambda_i`` falls far enough below a neighbor's, that set becomes
-        empty: the cell degrades to a Point, and because a pixel-less seed takes
-        its own position as the Lloyd target, it is frozen there and can never
-        win territory back.  ``lambda_i >= max_j(lambda_j - d_ij^2)`` is the
-        weakest condition that keeps ``p_i`` itself inside cell *i*, so clamping
-        the offsets from below by that value is enough to keep every power cell
-        non-empty.  Raising one offset raises other seeds' floors, hence the
-        (cheap, usually single-pass) repetition.
+        A seed whose power cell is empty degrades to a Point and, because a
+        pixel-less seed takes its own position as the Lloyd target, is frozen
+        there.  See :func:`~carto_flow.voronoi_cartogram.fields._power.nonempty_offsets`.
         """
-        pts = self.points
-        sq = np.einsum("ij,ij->i", pts, pts)
-        d2 = sq[:, None] + sq[None, :] - 2.0 * (pts @ pts.T)
-        np.fill_diagonal(d2, np.inf)
-        offsets = self._power_offsets
-        for _ in range(max_passes):
-            floor = (offsets[None, :] - d2).max(axis=1)
-            raised = np.maximum(offsets, floor)
-            if np.array_equal(raised, offsets):
-                break
-            offsets = raised
-        return offsets
+        return nonempty_offsets(self.points, self._power_offsets, max_passes)
 
     # -- Lloyd step ---------------------------------------------------------
 
@@ -860,19 +860,7 @@ class RasterField(BaseField):
                     )
             else:
                 labels = np.asarray(_result, dtype=np.intp)
-        elif self._weights is not None:
-            if self._weight_ramp_iters > 0:
-                ramp = min(iteration / self._weight_ramp_iters, 1.0)
-                w_ramp = (1.0 - ramp) + ramp * self._weights
-                w32 = w_ramp.astype(np.float32)
-            else:
-                w32 = self._weights.astype(np.float32)
-            for start in range(0, m, chunk):
-                end = min(start + chunk, m)
-                dx = gx[start:end, None] - pts32[None, :, 0]
-                dy = gy[start:end, None] - pts32[None, :, 1]
-                labels[start:end] = ((dx * dx + dy * dy) / w32[None, :]).argmin(axis=1)
-        elif area_eq_weight > 0.0:
+        elif area_eq_weight > 0.0 or self._power_weighted:
             lam32 = self._power_offsets.astype(np.float32)
             for start in range(0, m, chunk):
                 end = min(start + chunk, m)
@@ -889,7 +877,24 @@ class RasterField(BaseField):
         target = np.column_stack([sum_x / safe, sum_y / safe])
         target[counts == 0] = self.points[counts == 0]
 
-        if area_eq_weight > 0.0 and self._weights is None and not self._geodesic_voronoi:
+        if self._power_weighted:
+            # Offset update toward weight-proportional pixel counts.  The
+            # offsets integrate the count error; while the generators are still
+            # far from their cell centroids they also leak, which damps the
+            # interplay between offsets and Lloyd moves (a pure integrator
+            # oscillates when many generators start clustered).  Once the
+            # generators settle the leak vanishes and the counts converge.
+            if self._weight_ramp_iters > 0:
+                ramp = min(iteration / self._weight_ramp_iters, 1.0)
+                shares = (1.0 - ramp) + ramp * self._weights
+            else:
+                shares = self._weights
+            target_counts = shares / shares.sum() * m
+            lag = float(np.median(np.linalg.norm(target - self.points, axis=1))) / self._cell_radius
+            leak = area_eq_weight * min(1.0, WEIGHTED_OFFSET_LEAK * lag)
+            self._power_offsets *= 1.0 - leak
+            self._power_offsets += area_eq_weight * 2.0 * self._pixel_area * (target_counts - counts)
+        elif area_eq_weight > 0.0 and self._weights is None and not self._geodesic_voronoi:
             target_counts = float(m) / G
             self._power_offsets *= 1.0 - area_eq_weight
             self._power_offsets += area_eq_weight * 2.0 * self._pixel_area * (target_counts - counts)
@@ -935,10 +940,27 @@ class RasterField(BaseField):
         mean = float(np.mean(normalized))
         return 0.0 if mean == 0 else float(np.std(normalized) / mean)
 
+    def _fit_power_cells(self) -> np.ndarray:
+        """Exact power cells whose areas match the weights (see :class:`ClippedPowerDiagram`).
+
+        Starts from the relaxation's offsets and fits them to the current
+        boundary; the relaxation state is not modified.  The fit is stored in
+        :attr:`power_fit`.
+        """
+        boundary = self._current_boundary
+        if self._power_diagram is None or self._power_diagram.boundary is not boundary:
+            self._power_diagram = ClippedPowerDiagram(boundary)
+        weights = cast(np.ndarray, self._weights)
+        targets = weights / weights.sum() * float(boundary.area)
+        self.power_fit = self._power_diagram.fit(self.points, targets, self._power_offsets, rtol=self._area_tol)
+        return self.power_fit.cells
+
     def get_cells(self) -> np.ndarray:
+        if self._power_weighted:
+            return self._fit_power_cells()
         # Plain euclidean (no weights, no power-diagram): exact Voronoi is pixel-perfect.
-        # Geodesic, weighted, or area_eq_weight>0 all require raster upsampling because
-        # the cell boundaries are not standard Voronoi bisectors.
+        # Geodesic or area_eq_weight>0 require raster upsampling because the
+        # cell boundaries are not standard Voronoi bisectors.
         if not self._geodesic_voronoi and self._area_eq_weight == 0.0 and self._weights is None:
             return _extract_exact_cells(self.points, self._current_boundary)
         # Geodesic / power-weighted: exact Voronoi gives wrong cell shapes;

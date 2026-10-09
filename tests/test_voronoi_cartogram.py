@@ -783,3 +783,159 @@ class TestSliverHoleBoundary:
             _source_gdf=gdf,
         )
         assert result.degenerate_cells == [gdf.index[3]]
+
+
+# ---------------------------------------------------------------------------
+# Weighted cells: power diagrams fitted to weight-proportional areas
+# ---------------------------------------------------------------------------
+
+_GATE_WARNING = r"Voronoi cell areas deviate"
+
+
+@pytest.fixture(scope="module")
+def us_states():
+    import carto_flow.data as examples
+
+    return examples.load_us_census(population=True)
+
+
+def _relative_errors(result, weights):
+    """|area / target - 1| per cell, with targets as weight shares of the total cell area."""
+    import shapely
+
+    areas = shapely.area(result.cells)
+    return np.abs(areas / (weights / weights.sum() * areas.sum()) - 1.0)
+
+
+def _assert_power_cells(result):
+    """Every cell lies in its power cell, interior cells are convex, the cells tile the boundary."""
+    import shapely
+
+    field = result._field
+    points, offsets = field.points, field.power_fit.offsets
+    scale = field._cell_radius**2
+    boundary = field._current_boundary
+    assert not shapely.is_empty(result.cells).any()
+    assert (shapely.area(result.cells) > 0).all()
+    for i, cell in enumerate(result.cells):
+        xy = shapely.get_coordinates(cell)
+        power = ((xy[:, None, :] - points[None, :, :]) ** 2).sum(axis=-1) - offsets[None, :]
+        # Each vertex is at least as close (in power distance) to its own generator.
+        assert (power[:, i] - power.min(axis=1)).max() <= 1e-9 * scale
+        if cell.geom_type == "Polygon" and shapely.contains_properly(boundary, cell):
+            assert cell.area == pytest.approx(cell.convex_hull.area, rel=1e-9)
+    assert shapely.coverage_is_valid(result.cells)
+    assert sum(c.area for c in result.cells) == pytest.approx(boundary.area, rel=1e-9)
+
+
+class TestWeightedPowerCells:
+    """With weights, cells are straight-edged power cells whose areas follow the weights."""
+
+    @pytest.mark.parametrize("boundary", ["union", "circle"])
+    def test_us_states_population_within_default_tolerance(self, us_states, boundary):
+        w = us_states["Population (Millions)"].to_numpy(float)
+        result = create_voronoi_cartogram(
+            us_states,
+            weights="Population (Millions)",
+            boundary=boundary,
+            backend=RasterBackend(resolution=256),
+            options=VoronoiOptions(n_iter=300, area_cv_tol=0.05),
+        )
+        err = _relative_errors(result, w)
+        assert err.mean() <= VoronoiOptions().area_error_tol
+        assert result.metrics["mean_area_error_pct"] == pytest.approx(100 * err.mean(), abs=1e-6)
+        assert result.metrics["max_area_error_pct"] == pytest.approx(100 * err.max(), abs=1e-6)
+        assert result.metrics["converged"] is True
+        _assert_power_cells(result)
+
+    def test_elastic_boundary(self, us_states):
+        from carto_flow.voronoi_cartogram import ElasticBoundary
+
+        w = us_states["Population (Millions)"].to_numpy(float)
+        result = create_voronoi_cartogram(
+            us_states,
+            weights=w,
+            backend=RasterBackend(resolution=96, boundary=ElasticBoundary(strength=0.05)),
+            options=VoronoiOptions(n_iter=60),
+        )
+        field = result._field
+        assert not field._current_boundary.equals(field._original_boundary)
+        # Targets are shares of the deformed boundary.
+        assert _relative_errors(result, w).mean() <= 0.01
+        assert result.metrics["mean_area_error_pct"] <= 1.0
+        _assert_power_cells(result)
+
+    def test_weights_spanning_three_orders_of_magnitude(self, us_states):
+        w = np.exp(np.random.default_rng(1).normal(0.0, 1.5, len(us_states)))
+        assert w.max() / w.min() > 1000
+        result = create_voronoi_cartogram(
+            us_states,
+            weights=w,
+            backend=RasterBackend(resolution=256),
+            options=VoronoiOptions(n_iter=300, area_cv_tol=0.05),
+        )
+        assert _relative_errors(result, w).mean() <= 0.01
+        _assert_power_cells(result)
+
+    def test_custom_tolerance(self, us_states):
+        w = us_states["Population (Millions)"].to_numpy(float)
+        result = create_voronoi_cartogram(
+            us_states,
+            weights=w,
+            backend=RasterBackend(resolution=128),
+            options=VoronoiOptions(n_iter=40, area_error_tol=0.05),
+        )
+        assert result._field.power_fit.converged
+        assert _relative_errors(result, w).max() <= 0.05
+
+    def test_failed_solve_is_reported(self, us_states, monkeypatch):
+        from carto_flow.voronoi_cartogram.fields._power import ClippedPowerDiagram
+
+        fit = ClippedPowerDiagram.fit
+        monkeypatch.setattr(ClippedPowerDiagram, "fit", lambda self, *a, **k: fit(self, *a, **{**k, "max_iter": 0}))
+        w = us_states["Population (Millions)"].to_numpy(float)
+        with pytest.warns(RuntimeWarning, match=_GATE_WARNING) as caught:
+            result = create_voronoi_cartogram(
+                us_states,
+                weights=w,
+                backend=RasterBackend(resolution=64),
+                options=VoronoiOptions(n_iter=3, area_cv_tol=10.0),
+            )
+        assert result.metrics["converged"] is False
+        assert result.metrics["mean_area_error_pct"] > 1.0
+        message = next(str(x.message) for x in caught if _GATE_WARNING in str(x.message))
+        assert "mean error" in message and "max error" in message and "did not reach" in message
+
+    @pytest.mark.filterwarnings("ignore:ExactBackend:UserWarning")
+    def test_exact_backend_with_weights_not_converged(self):
+        gdf, weights = make_grid_gdf(2, 2), np.array([1.0, 1.0, 1.0, 20.0])
+        with pytest.warns(RuntimeWarning, match="ignores weights"):
+            result = create_voronoi_cartogram(
+                gdf, weights=weights, backend=_FAST_EXACT, options=VoronoiOptions(n_iter=20, area_cv_tol=10.0)
+            )
+        assert result.metrics["converged"] is False
+
+    def test_geodesic_labeling_with_weights_warns_and_not_converged(self):
+        gdf, weights = make_grid_gdf(2, 2), np.array([1.0, 1.0, 1.0, 20.0])
+        backend = RasterBackend(resolution=50, distance_mode="geodesic")
+        with (
+            pytest.warns(UserWarning, match="does not support weights"),
+            pytest.warns(RuntimeWarning, match=_GATE_WARNING),
+        ):
+            result = create_voronoi_cartogram(
+                gdf, weights=weights, backend=backend, options=VoronoiOptions(n_iter=20, area_cv_tol=10.0)
+            )
+        assert result.metrics["converged"] is False
+
+    def test_unweighted_runs_have_no_gate(self, recwarn):
+        gdf = make_grid_gdf(3, 3)
+        result = create_voronoi_cartogram(
+            gdf, backend=_FAST_RASTER, options=VoronoiOptions(n_iter=5, area_cv_tol=10.0, area_error_tol=1e-9)
+        )
+        assert result.metrics["converged"] is True
+        assert result._field.power_fit is None
+        assert not [w for w in recwarn if _GATE_WARNING in str(w.message)]
+
+    def test_area_error_tol_validation(self):
+        with pytest.raises(ValueError, match="area_error_tol"):
+            VoronoiOptions(area_error_tol=0.0)

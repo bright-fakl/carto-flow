@@ -53,7 +53,8 @@ class MorphStatus(str, Enum):
     CONVERGED : str
         Algorithm converged within tolerance thresholds
     STALLED : str
-        Algorithm stopped improving (error increasing)
+        Algorithm stopped because more than ``stall_patience`` consecutive
+        iterations did not improve the best score
     COMPLETED : str
         Algorithm completed all iterations without converging
     RUNNING : str
@@ -68,6 +69,28 @@ class MorphStatus(str, Enum):
     COMPLETED = "completed"
     RUNNING = "running"
     FAILED = "failed"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class StopReason(str, Enum):
+    """Rule that ended a morphing run.
+
+    Attributes
+    ----------
+    CONVERGED : str
+        Both ``mean_tol`` and ``max_tol`` were met.
+    STALL_PATIENCE : str
+        More than ``stall_patience`` consecutive iterations did not improve
+        the best score.
+    ITERATION_LIMIT : str
+        ``n_iter`` iterations were run without another rule firing.
+    """
+
+    CONVERGED = "converged"
+    STALL_PATIENCE = "stall_patience"
+    ITERATION_LIMIT = "iteration_limit"
 
     def __str__(self) -> str:
         return self.value
@@ -201,11 +224,23 @@ class MorphOptions:
     """
 
     # Stall detection
-    stall_patience: int | None = 5
-    """Maximum number of iterations to allow error to increase before considering algorithm stalled.
+    stall_patience: int | None = 150
+    """Number of consecutive iterations without a new best score that is tolerated before stopping.
 
-    If None, stall detection is disabled and the algorithm will run until convergence or
-    maximum iterations. If 0, algorithm will stall immediately if error increases.
+    The score of an iteration is ``max(mean_error / mean_tol, max_error / max_tol)`` on the log2
+    errors, the same quantity as the convergence test (below 1 means converged). The run stops with
+    status ``STALLED`` when more than ``stall_patience`` consecutive iterations have not lowered the
+    best score seen so far. Increases of the error are tolerated as long as a new best is reached
+    within that window, and a plateau of the score (for example a maximum error that stays fixed
+    while the mean error falls) counts as no improvement. Because the count starts at the best
+    iteration, the earliest possible stop is at iteration ``stall_patience + 2``. The error is
+    usually not monotone in the first tens of iterations, which the large default allows for.
+
+    When the run does not converge, the returned state is the best iterate (see
+    ``Cartogram.best_iteration``).
+
+    If None, stall detection is disabled and the algorithm runs until convergence or ``n_iter``.
+    If 0, the run stops at the first iteration that does not improve on the best score.
     """
 
     def get_grid(self, bounds: tuple[float, float, float, float]) -> "Grid":

@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from .errors import MorphErrors
     from .grid import Grid
     from .history import CartogramInternalsSnapshot, CartogramSnapshot, ConvergenceHistory, ErrorRecord, History
-    from .options import MorphOptions, MorphStatus
+    from .options import MorphOptions, MorphStatus, StopReason
     from .plot_results import CartogramPlotResult
     from .timings import Benchmark
 
@@ -59,7 +59,16 @@ class Cartogram:
     status : MorphStatus
         Computation status (ORIGINAL, CONVERGED, STALLED, COMPLETED, FAILED).
     niterations : int
-        Number of iterations completed.
+        Number of iterations run (the final iterate).
+    best_iteration : int, optional
+        Iteration of the returned state, i.e. the iterate with the lowest
+        convergence score ``max(mean_error / mean_tol, max_error / max_tol)``.
+        Equals ``niterations`` when the run converged. When it does not, the
+        latest snapshot is this iterate and the snapshot of the final iterate
+        stays in ``snapshots`` before it.
+    stop_reason : StopReason, optional
+        Rule that ended the run: ``CONVERGED``, ``STALL_PATIENCE`` or
+        ``ITERATION_LIMIT``.
     duration : float
         Computation time in seconds.
     options : MorphOptions, optional
@@ -86,6 +95,8 @@ class Cartogram:
     status: "MorphStatus" = None  # type: ignore[assignment]
     # Computation metadata
     niterations: int = 0
+    best_iteration: int | None = None
+    stop_reason: Optional["StopReason"] = None
     duration: float = 0.0
     options: Optional["MorphOptions"] = None
     grid: Optional["Grid"] = None

@@ -42,7 +42,7 @@ from .history import (
     ConvergenceHistory,
     History,
 )
-from .options import MorphOptions, MorphStatus
+from .options import MorphOptions, MorphStatus, StopReason
 from .velocity import VelocityComputerFFTW
 
 __all__ = [
@@ -259,14 +259,20 @@ def morph_geometries(
         Complete cartogram result containing:
         - snapshots: History of CartogramSnapshot objects with algorithm state
         - status: MorphStatus enum (CONVERGED, STALLED, COMPLETED, RUNNING, ORIGINAL)
-        - niterations: Number of iterations completed
+        - niterations: Number of iterations run
+        - best_iteration: Iteration of the returned state (the best iterate by
+          the combined convergence score; equals ``niterations`` when converged)
+        - stop_reason: StopReason enum saying which rule ended the run
         - duration: Computation time in seconds
         - options: MorphOptions used for computation
         - internals: History of internal state (if save_internals=True)
         - grid: Grid used for computation
         - target_density: Target equilibrium density
 
-        Access final results via result.latest or result.snapshots.latest():
+        Access final results via result.latest or result.snapshots.latest().
+        If the run ends without converging, the latest snapshot is the best
+        iterate (iteration ``best_iteration``) and the snapshot of the final
+        iterate (iteration ``niterations``) remains in ``snapshots`` before it:
         - .geometry: List of morphed geometries
         - .landmarks: Morphed landmarks (if provided)
         - .coords: Displaced coordinates (if coords provided)
@@ -439,8 +445,27 @@ def morph_geometries(
 
     status = MorphStatus.ORIGINAL
 
-    last_mean_error = np.inf
-    stalled_acc = 0
+    # Best iterate so far, by the same combined score as the convergence test
+    # (below 1 means converged). Its state is kept to restore it if the run
+    # ends without converging.
+    best_score = np.inf
+    best_step = 0
+    best_state: tuple | None = None
+    stop_reason = StopReason.ITERATION_LIMIT
+    n_done = 0
+
+    def _snapshot(iteration, errors, areas):
+        """Snapshot of the current state of geometries, landmarks and coords."""
+        return CartogramSnapshot(
+            iteration=iteration,
+            geometry=reconstruct_geometries(flat_geoms),
+            landmarks=reconstruct_geometries(flat_landmarks_geoms) if flat_landmarks_geoms is not None else None,
+            coords=_convert_coords_to_input_format(flat_coords.copy(), coords_format, coords_sz)
+            if flat_coords is not None
+            else None,
+            errors=errors,
+            density=values_array / (areas * options.area_scale),
+        )
 
     msg = "Morph geometries" if options.progress_message is None else options.progress_message
     pbar = tqdm.trange(
@@ -599,11 +624,23 @@ def morph_geometries(
 
         # Check convergence using log2-converted thresholds
         converged = mean_error < log2_mean_tol and max_error < log2_max_tol
-        stalled_acc += mean_error > last_mean_error
-        stalled = options.stall_patience is not None and stalled_acc > options.stall_patience
+        score = max(mean_error / log2_mean_tol, max_error / log2_max_tol)
+        if score < best_score:
+            best_score = score
+            best_step = step
+            best_state = (
+                flat_geoms.coords.copy(),
+                flat_landmarks_geoms.coords.copy() if flat_landmarks_geoms is not None else None,
+                flat_coords.copy() if flat_coords is not None else None,
+                current_areas.copy(),
+                error_metrics,
+            )
+        stalled = options.stall_patience is not None and step - best_step > options.stall_patience
+        n_done = step + 1
 
-        last_mean_error = mean_error
-
+        stop_reason = (
+            StopReason.CONVERGED if converged else StopReason.STALL_PATIENCE if stalled else StopReason.ITERATION_LIMIT
+        )
         status = (
             MorphStatus.CONVERGED
             if converged
@@ -625,17 +662,7 @@ def morph_geometries(
         ):
             if _pt is not None:
                 _t0 = _time.perf_counter()
-            snapshot_data = CartogramSnapshot(
-                iteration=step + 1,
-                geometry=reconstruct_geometries(flat_geoms),
-                landmarks=reconstruct_geometries(flat_landmarks_geoms) if flat_landmarks_geoms is not None else None,
-                coords=_convert_coords_to_input_format(flat_coords.copy(), coords_format, coords_sz)
-                if flat_coords is not None
-                else None,
-                errors=error_metrics,
-                density=values_array / (current_areas * options.area_scale),
-            )
-            snapshots.add_snapshot(snapshot_data)
+            snapshots.add_snapshot(_snapshot(step + 1, error_metrics, current_areas))
             if _pt is not None:
                 _pt.snapshot_s += _time.perf_counter() - _t0
 
@@ -649,6 +676,24 @@ def morph_geometries(
             pbar.close()
             break
 
+    # A run that ends without converging returns its best iterate: restore its
+    # state and append it as the last snapshot (the final iterate keeps its own
+    # snapshot).
+    if status != MorphStatus.CONVERGED and best_state is not None and best_step != n_done - 1:
+        if _pt is not None:
+            _t0 = _time.perf_counter()
+        b_coords, b_landmarks, b_flat_coords, b_areas, b_errors = best_state
+        flat_geoms.coords = b_coords
+        flat_geoms.invalidate_cache()
+        if b_landmarks is not None and flat_landmarks_geoms is not None:
+            flat_landmarks_geoms.coords = b_landmarks
+        if b_flat_coords is not None and flat_coords is not None:
+            flat_coords[:] = b_flat_coords
+        snapshots.snapshots = [snap for snap in snapshots.snapshots if snap.iteration != best_step + 1]
+        snapshots.add_snapshot(_snapshot(best_step + 1, b_errors, b_areas))
+        if _pt is not None:
+            _pt.snapshot_s += _time.perf_counter() - _t0
+
     # Return final geometries and snapshot data
     # Finalize convergence history (convert to arrays, free list memory)
     convergence.finalize()
@@ -656,7 +701,7 @@ def morph_geometries(
     elapsed = time.perf_counter() - start_time
     if _pt is not None:
         _pt.total_s = elapsed
-        _pt.niterations = snapshots.latest().iteration  # type: ignore[union-attr]
+        _pt.niterations = n_done
         _pt.other_s = max(
             0.0,
             _pt.total_s
@@ -674,7 +719,9 @@ def morph_geometries(
         snapshots=snapshots,
         convergence=convergence,
         status=status,
-        niterations=snapshots.latest().iteration,  # type: ignore[union-attr]
+        niterations=n_done,
+        best_iteration=best_step + 1,
+        stop_reason=stop_reason,
         duration=elapsed,
         options=options,
         grid=grid,

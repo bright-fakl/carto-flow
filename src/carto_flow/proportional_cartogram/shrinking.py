@@ -12,8 +12,10 @@ import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal
 
+import numpy as np
 import shapely
-from scipy.optimize import root_scalar
+from scipy.optimize import brentq
+from shapely.geometry.polygon import orient
 
 if TYPE_CHECKING:
     from shapely.geometry.base import BaseGeometry
@@ -21,9 +23,52 @@ if TYPE_CHECKING:
 __all__ = ["shrink"]
 
 
-def _shrunken_area(buffer: float, geom: BaseGeometry, target_area: float) -> float:
-    """Compute difference between buffered area and target area."""
-    return geom.buffer(buffer).area - target_area
+def _isotropic_frame(geom: BaseGeometry) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """Centroid and the linear maps (forward, inverse) that equalize the spread of ``geom``.
+
+    The forward map is the inverse square root of the covariance matrix of the
+    area distribution, so the mapped geometry has the same extent in every
+    direction. Returns ``None`` when the covariance is degenerate.
+    """
+    # Accumulate area and first and second moments from the polygon edges
+    # (shoelace formulas), relative to the center of the bounding box so that
+    # large coordinates do not cost precision in the second moments.
+    xmin, ymin, xmax, ymax = geom.bounds
+    origin = np.array([(xmin + xmax) / 2, (ymin + ymax) / 2])
+    area = sx = sy = sxx = syy = sxy = 0.0
+    for part in shapely.get_parts(geom):
+        if part.geom_type != "Polygon" or part.is_empty:
+            continue
+        # Counter-clockwise exterior and clockwise holes: holes get negative
+        # contributions and subtract on their own.
+        part = orient(part, 1.0)
+        for ring in (part.exterior, *part.interiors):
+            x0, y0 = (np.asarray(ring.coords)[:-1] - origin).T
+            x1, y1 = np.roll(x0, -1), np.roll(y0, -1)
+            cross = x0 * y1 - x1 * y0  # twice the signed area of each edge's triangle to the origin
+            area += cross.sum() / 2
+            sx += ((x0 + x1) * cross).sum() / 6  # integral of x over the area
+            sy += ((y0 + y1) * cross).sum() / 6  # integral of y
+            sxx += ((x0**2 + x0 * x1 + x1**2) * cross).sum() / 12  # integral of x^2
+            syy += ((y0**2 + y0 * y1 + y1**2) * cross).sum() / 12  # integral of y^2
+            sxy += ((x0 * y1 + 2 * x0 * y0 + 2 * x1 * y1 + x1 * y0) * cross).sum() / 24  # integral of x*y
+    if not area > 0:
+        return None
+
+    # Centroid, and covariance of the area distribution: second moments per
+    # unit area minus the squared mean.
+    mean = np.array([sx / area, sy / area])
+    cov = np.array([[sxx / area, sxy / area], [sxy / area, syy / area]]) - np.outer(mean, mean)
+
+    # Whitening: with cov = V diag(w) V^T, the map V diag(w^-1/2) V^T gives the
+    # mapped geometry unit covariance (equal spread in every direction) without
+    # rotating it. Its inverse maps the eroded part back.
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    if not eigenvalues[0] > 1e-12 * eigenvalues[1]:
+        return None  # (nearly) a line: no meaningful isotropic frame
+    forward = eigenvectors @ np.diag(eigenvalues**-0.5) @ eigenvectors.T
+    inverse = eigenvectors @ np.diag(eigenvalues**0.5) @ eigenvectors.T
+    return origin + mean, forward, inverse
 
 
 def _shrink_single(
@@ -31,7 +76,8 @@ def _shrink_single(
     fraction: float,
     simplify: float | None = None,
     mode: Literal["area", "shell"] = "area",
-    tol: float = 0.05,
+    tol: float = 0.01,
+    isotropic: bool = False,
 ) -> tuple[BaseGeometry, BaseGeometry]:
     """
     Internal: Shrink a geometry to a specified area fraction.
@@ -50,7 +96,9 @@ def _shrink_single(
     mode : {'area', 'shell'}
         'area' for direct fraction, 'shell' squares the fraction.
     tol : float
-        Root finding tolerance.
+        Relative tolerance on the area of the shrunken geometry.
+    isotropic : bool
+        Erode in a frame where the geometry has equal spread in all directions.
 
     Returns
     -------
@@ -96,61 +144,49 @@ def _shrink_single(
     # Apply simplification if requested
     working_geom = shapely.coverage_simplify(geom, simplify) if simplify else geom
 
+    # Optionally erode in a frame where the geometry is isotropic. A linear map
+    # scales all areas by the same factor, so the area fraction is unchanged.
+    frame = _isotropic_frame(working_geom) if isotropic else None
+    solve_geom = working_geom
+    if frame is not None:
+        center, forward, _ = frame
+        solve_geom = shapely.transform(working_geom, lambda points: (points - center) @ forward.T)
+
     # Compute target area
-    target_area = fraction * working_geom.area
+    target_area = fraction * solve_geom.area
 
-    # Improved buffer range and starting point
-    xmin, ymin, xmax, ymax = working_geom.bounds
-    width = xmax - xmin
-    height = ymax - ymin
-    shortest_edge = min(width, height)
+    # Erosion by half the shortest bounding-box side removes the whole geometry
+    xmin, ymin, xmax, ymax = solve_geom.bounds
+    shortest_edge = min(xmax - xmin, ymax - ymin)
 
-    # Conservative bracket: from 0 to -shortest_edge/2
-    # This ensures we don't shrink more than half the shortest dimension
-    bracket_left = -shortest_edge / 2.0
-    bracket_right = 0.0
+    # Bracketed solve on the relative area residual, which is -1 for a collapsed
+    # geometry and 1/fraction - 1 > 0 at zero buffer. The residual is reported
+    # as 0 once it is below tol, which ends the solve at that buffer distance.
+    best_residual = float("inf")
+    best_geom = solve_geom
 
-    # Better starting point: use a fraction of the expected buffer distance
-    # For area reduction, buffer distance is typically negative and proportional to sqrt(area_ratio)
-    expected_buffer_magnitude = shortest_edge * (1.0 - (fraction**0.5)) * 0.5
-    x0 = -expected_buffer_magnitude  # Start with negative buffer
+    def residual(buffer: float) -> float:
+        nonlocal best_residual, best_geom
+        candidate = solve_geom.buffer(buffer)
+        value = candidate.area / target_area - 1.0
+        if abs(value) < abs(best_residual):
+            best_residual, best_geom = value, candidate
+        return 0.0 if abs(value) < tol else value
 
-    try:
-        result = root_scalar(
-            _shrunken_area,
-            args=(working_geom, target_area),
-            x0=x0,
-            bracket=(bracket_left, bracket_right),
-            rtol=tol,
+    brentq(residual, -shortest_edge / 2.0, 0.0, xtol=shortest_edge * 1e-12)
+    if abs(best_residual) >= tol:
+        warnings.warn(
+            f"shrink reached area error {best_residual:+.2e} for fraction {fraction}, above tol={tol}.",
+            UserWarning,
+            stacklevel=3,
         )
-    except ValueError as e:
-        # Handle root finding failures
-        if "bracket" in str(e).lower():
-            warnings.warn(
-                f"Could not find valid bracket for root finding. Using fallback buffer distance. Error: {e}",
-                UserWarning,
-                stacklevel=2,
-            )
-            # Fallback: use estimated buffer distance
-            fallback_buffer = -shortest_edge * (1.0 - fraction**0.5) * 0.3
-            shrunken_geom = working_geom.buffer(fallback_buffer)
-            shell_geom = working_geom.difference(shrunken_geom)
-            return shrunken_geom, shell_geom
-        else:
-            raise
-    else:
-        # Validate result
-        if not result.converged:
-            warnings.warn(
-                f"Root finding did not converge. Final area may not match target exactly. "
-                f"Convergence flag: {result.flag}",
-                UserWarning,
-                stacklevel=2,
-            )
 
-        shrunken_geom = working_geom.buffer(result.root)
-        shell_geom = working_geom.difference(shrunken_geom)
-        return shrunken_geom, shell_geom
+    shrunken_geom = best_geom
+    if frame is not None:
+        center, _, inverse = frame
+        shrunken_geom = shapely.transform(best_geom, lambda points: points @ inverse.T + center)
+    shell_geom = working_geom.difference(shrunken_geom)
+    return shrunken_geom, shell_geom
 
 
 def shrink(
@@ -158,7 +194,8 @@ def shrink(
     fractions: float | Sequence[float],
     simplify: float | None = None,
     mode: Literal["area", "shell"] = "area",
-    tol: float = 0.05,
+    tol: float = 0.01,
+    isotropic: bool = False,
 ) -> list[BaseGeometry]:
     """
     Shrink a geometry to create concentric shells with specified area fractions.
@@ -190,8 +227,18 @@ def shrink(
 
         - **'area'**: Fractions represent direct area ratios
         - **'shell'**: Fractions represent shell thickness ratios (squared for area)
-    tol : float, default=0.05
-        Relative tolerance for the root finding algorithm.
+    tol : float, default=0.01
+        Relative tolerance on the area of each shrunken part: the buffer
+        distance is refined until ``abs(area / target_area - 1) < tol``.
+        A warning is issued if the tolerance cannot be reached.
+    isotropic : bool, default=False
+        Erode in a coordinate frame where the geometry has equal spread in all
+        directions (a linear map by the inverse square root of its area
+        covariance, undone afterwards). An elongated geometry then shrinks to
+        a part with the proportions of the original instead of a thin strip
+        along its long axis. Parts are still intersections of the original
+        geometry, so its outer boundary is unchanged. Shapes with strongly
+        curved or concave boundaries can still produce thin parts.
 
     Returns
     -------
@@ -255,7 +302,7 @@ def shrink(
     if isinstance(fractions, (int, float)):
         fraction = float(fractions)
         # _shrink_single returns (shrunken_core, shell)
-        core, shell = _shrink_single(geom, fraction, simplify=simplify, mode=mode, tol=tol)
+        core, shell = _shrink_single(geom, fraction, simplify=simplify, mode=mode, tol=tol, isotropic=isotropic)
         # Return [core, shell] - core has area fraction, shell has area (1-fraction)
         return [core, shell]
 
@@ -268,7 +315,7 @@ def shrink(
 
     if len(frac_list) == 1:
         # Single fraction in sequence - same as scalar
-        return shrink(geom, frac_list[0], simplify=simplify, mode=mode, tol=tol)
+        return shrink(geom, frac_list[0], simplify=simplify, mode=mode, tol=tol, isotropic=isotropic)
 
     for i, f in enumerate(frac_list):
         if f < 0.0:
@@ -318,7 +365,9 @@ def shrink(
         shrink_to_frac = max(0.001, min(0.999, shrink_to_frac))
 
         try:
-            shrunken, shell = _shrink_single(current_geom, shrink_to_frac, simplify=simplify, mode=mode, tol=tol)
+            shrunken, shell = _shrink_single(
+                current_geom, shrink_to_frac, simplify=simplify, mode=mode, tol=tol, isotropic=isotropic
+            )
             parts.append(shell)
             current_geom = shrunken
             remaining_fraction = target_remaining

@@ -5,10 +5,12 @@
 A Voronoi cartogram represents each region as a Voronoi cell whose area is
 proportional to a data variable. Rather than deforming polygon boundaries
 (as in flow cartograms), the algorithm moves a set of generator points —
-initially placed at geometry centroids — until each point's Voronoi cell
-has the correct target area. The result is a **Centroidal Voronoi
-Tessellation** (CVT): a tessellation where every generator is the
-weighted centroid of its own cell.
+initially placed at geometry centroids — until each point's cell has the
+correct target area. Without weights the result approximates a **Centroidal
+Voronoi Tessellation** (CVT): a tessellation of equal-area cells where every
+generator is the centroid of its own cell. With weights the cells are
+**power cells** (see [Weighted cells](#weighted-cells-power-diagrams)): convex
+polygons with straight edges whose areas are proportional to the weights.
 
 The implementation lives in
 [`backends.py`](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/voronoi_cartogram/backends.py)
@@ -34,7 +36,8 @@ of its cell.
 
 ### Error Metric
 
-Convergence is tracked by the **area coefficient of variation** (area CV):
+During relaxation, convergence is tracked by the **area coefficient of
+variation** (area CV) of the relaxation cells:
 
 $$
 \text{area\_cv} = \frac{\sigma(a_i / a_i^{\text{target}})}{\bar{a} / \bar{a}^{\text{target}}}
@@ -42,6 +45,10 @@ $$
 
 where $a_i$ is the current cell area and $a_i^{\text{target}} \propto w_i$.
 Lower is better; zero means perfect proportionality.
+
+The output cells are judged by the **mean area error**
+`metrics["mean_area_error_pct"]`, the mean of $|a_i / a_i^{\text{target}} - 1|$
+over the final polygons (and `max_area_error_pct`, its maximum).
 
 ### Lloyd Relaxation Update
 
@@ -104,18 +111,75 @@ flowchart LR
 
 **Pixel labeling / cell computation** differs by backend (see [Backends](#the-two-backends)).
 
-**Weighted centroid**: For the raster backend, the centroid of cell $i$ is:
+**Centroid**: For the raster backend, the centroid of cell $i$ is the mean
+position of the pixels $k$ assigned to it:
 
 $$
-\mathbf{c}_i = \frac{\sum_{k \in V_i} \mathbf{x}_k \cdot w_i}{\sum_{k \in V_i} w_i}
+\mathbf{c}_i = \frac{1}{|V_i|} \sum_{k \in V_i} \mathbf{x}_k
 $$
-
-where the sum is over pixels $k$ inside the cell, and weight $w_i$ is the
-target area normalized weight of generator $i$.
 
 **Over-relaxed update**: $\mathbf{p}_i \leftarrow \mathbf{p}_i + \alpha(\mathbf{c}_i - \mathbf{p}_i)$
 
 **Boundary constraint**: any generator that drifts outside the outer boundary is hard-snapped back to the nearest boundary edge point.
+
+---
+
+## Weighted Cells: Power Diagrams
+
+Plain Voronoi cells of centroidal generators have roughly equal areas, so
+they cannot represent weights by themselves. With weights, `RasterBackend`
+(euclidean distance) assigns each point $\mathbf{x}$ to the generator that
+minimizes the **power distance**
+
+$$
+|\mathbf{x} - \mathbf{p}_i|^2 - \lambda_i,
+$$
+
+with one offset $\lambda_i$ per generator. The border between two cells is the
+straight line where both power distances are equal, so every cell is the
+intersection of half-planes: a convex polygon (before clipping to the outer
+boundary) that shares its edges exactly with its neighbors. Raising
+$\lambda_i$ grows cell $i$.
+
+**During relaxation** the offsets are adapted on the raster: each iteration
+moves $\lambda_i$ by `area_equalizer_rate` $\cdot\, 2 (a_i^{\text{target}} - a_i)$,
+so the offsets accumulate each cell's area deficit, and the generators move to
+the centroids of their power cells. While the generators are still far from
+their centroids the offsets also decay slightly each iteration; this damps the
+interplay between offset and generator updates, which otherwise oscillates when
+many generators start clustered. The target areas are ramped from equal to
+weight-proportional over `weight_ramp_iters` iterations.
+
+**Final cells** are computed exactly. For fixed generators, offsets that give
+every cell its target area exist and are unique up to a common constant; they
+maximize a concave function whose gradient is the area deficit and whose
+Hessian has the entries
+
+$$
+\frac{\partial a_i}{\partial \lambda_j} = -\frac{L_{ij}}{2\,|\mathbf{p}_i - \mathbf{p}_j|}, \qquad
+\frac{\partial a_i}{\partial \lambda_i} = \sum_{j \ne i} \frac{L_{ij}}{2\,|\mathbf{p}_i - \mathbf{p}_j|},
+$$
+
+where $L_{ij}$ is the length of the shared edge inside the boundary. Starting
+from the relaxation's offsets, a damped Newton method on the exact clipped
+polygon areas solves for these offsets until every cell is within
+`VoronoiOptions.area_error_tol` (default 1 %) of its target, usually in two to
+five steps. The power diagram itself comes from the lower convex hull of the
+lifted points $(\mathbf{p}_i, |\mathbf{p}_i|^2 - \lambda_i)$. The targets are
+weight-proportional shares of the final boundary area, which an
+`ElasticBoundary` may have changed.
+
+The run reports `converged=False`, with a warning that states the mean and
+maximum errors, whenever the mean area error of a weighted result exceeds
+`area_error_tol`.
+
+**Limits.** The Newton step keeps the generators fixed, so it fixes the areas
+but not the shapes: when the relaxation has not settled (too few iterations, or
+target cells only a few pixels large at the chosen `resolution`), some
+generators end up far from the centroid of their cell, and small cells can
+become thin slivers. A convex cell clipped to a non-convex boundary can also
+split into several parts across a bay or lake. `ExactBackend` and
+`distance_mode="geodesic"` ignore weights.
 
 ---
 
@@ -136,7 +200,7 @@ Key parameters:
 | `resolution` | 300 | Pixel grid size (longer axis) |
 | `relaxation` | `"overrelax"` | SOR factor schedule |
 | `distance_mode` | `"euclidean"` | `"euclidean"` or `"geodesic"` (see [Geodesic Labeling](voronoi-cartogram-geodesic-labeling.md)) |
-| `area_equalizer_rate` | 0.1 | Power-diagram bias learning rate |
+| `area_equalizer_rate` | 0.1 | Power-diagram offset learning rate |
 | `boundary` | `None` | `AdhesiveBoundary` or `ElasticBoundary` |
 | `adjacency_spring` | 0.0 | Spring strength preserving adjacency |
 
@@ -180,6 +244,10 @@ The algorithm stops at the first satisfied condition:
 | Area CV tolerance | `area_cv_tol` | Stop when `area_cv < area_cv_tol` |
 | Displacement tolerance | `tol` | Stop when max centroid displacement per iter < `tol` (in CRS units) |
 | Iteration limit | `n_iter` | Hard stop after `n_iter` iterations (default 30) |
+
+`metrics["converged"]` is `True` when `area_cv_tol` or `tol` stopped the run.
+For weighted runs it is additionally `False` when the mean area error of the
+output cells exceeds `area_error_tol`.
 
 ---
 

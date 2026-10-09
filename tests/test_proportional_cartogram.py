@@ -174,6 +174,17 @@ class TestShrinkIsotropic:
             assert abs(core.area / (0.05 * geom.area) - 1) < 0.01
             assert geom.buffer(1e-6 * geom.length).contains(core)
 
+    def test_large_coordinates_do_not_change_the_result(self):
+        from shapely import affinity
+        from shapely.geometry import box
+
+        near = box(0, 0, 1000, 100)
+        far = affinity.translate(near, 1e8, 1e8)
+        core_near = shrink(near, 0.2, isotropic=True)[0]
+        core_far = shrink(far, 0.2, isotropic=True)[0]
+        moved_back = affinity.translate(core_far, -1e8, -1e8)
+        assert moved_back.symmetric_difference(core_near).area < 1e-6 * core_near.area
+
     def test_multiple_shells(self):
         from shapely.geometry import box
 

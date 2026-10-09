@@ -24,37 +24,51 @@ __all__ = ["shrink"]
 
 
 def _isotropic_frame(geom: BaseGeometry) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
-    """Centroid and the linear map ``T`` (with inverse) that equalizes the spread of ``geom``.
+    """Centroid and the linear maps (forward, inverse) that equalize the spread of ``geom``.
 
-    ``T`` is the inverse square root of the covariance matrix of the area
-    distribution, so the mapped geometry has the same extent in every
+    The forward map is the inverse square root of the covariance matrix of the
+    area distribution, so the mapped geometry has the same extent in every
     direction. Returns ``None`` when the covariance is degenerate.
     """
-    area = cx = cy = ixx = iyy = ixy = 0.0
+    # Accumulate area and first and second moments from the polygon edges
+    # (shoelace formulas), relative to the center of the bounding box so that
+    # large coordinates do not cost precision in the second moments.
+    xmin, ymin, xmax, ymax = geom.bounds
+    origin = np.array([(xmin + xmax) / 2, (ymin + ymax) / 2])
+    area = sx = sy = sxx = syy = sxy = 0.0
     for part in shapely.get_parts(geom):
         if part.geom_type != "Polygon" or part.is_empty:
             continue
+        # Counter-clockwise exterior and clockwise holes: holes get negative
+        # contributions and subtract on their own.
         part = orient(part, 1.0)
         for ring in (part.exterior, *part.interiors):
-            x0, y0 = np.asarray(ring.coords)[:-1].T
+            x0, y0 = (np.asarray(ring.coords)[:-1] - origin).T
             x1, y1 = np.roll(x0, -1), np.roll(y0, -1)
-            cross = x0 * y1 - x1 * y0
+            cross = x0 * y1 - x1 * y0  # twice the signed area of each edge's triangle to the origin
             area += cross.sum() / 2
-            cx += ((x0 + x1) * cross).sum() / 6
-            cy += ((y0 + y1) * cross).sum() / 6
-            ixx += ((x0**2 + x0 * x1 + x1**2) * cross).sum() / 12
-            iyy += ((y0**2 + y0 * y1 + y1**2) * cross).sum() / 12
-            ixy += ((x0 * y1 + 2 * x0 * y0 + 2 * x1 * y1 + x1 * y0) * cross).sum() / 24
+            sx += ((x0 + x1) * cross).sum() / 6  # integral of x over the area
+            sy += ((y0 + y1) * cross).sum() / 6  # integral of y
+            sxx += ((x0**2 + x0 * x1 + x1**2) * cross).sum() / 12  # integral of x^2
+            syy += ((y0**2 + y0 * y1 + y1**2) * cross).sum() / 12  # integral of y^2
+            sxy += ((x0 * y1 + 2 * x0 * y0 + 2 * x1 * y1 + x1 * y0) * cross).sum() / 24  # integral of x*y
     if not area > 0:
         return None
-    center = np.array([cx / area, cy / area])
-    cov = np.array([[ixx / area, ixy / area], [ixy / area, iyy / area]]) - np.outer(center, center)
+
+    # Centroid, and covariance of the area distribution: second moments per
+    # unit area minus the squared mean.
+    mean = np.array([sx / area, sy / area])
+    cov = np.array([[sxx / area, sxy / area], [sxy / area, syy / area]]) - np.outer(mean, mean)
+
+    # Whitening: with cov = V diag(w) V^T, the map V diag(w^-1/2) V^T gives the
+    # mapped geometry unit covariance (equal spread in every direction) without
+    # rotating it. Its inverse maps the eroded part back.
     eigenvalues, eigenvectors = np.linalg.eigh(cov)
     if not eigenvalues[0] > 1e-12 * eigenvalues[1]:
-        return None
+        return None  # (nearly) a line: no meaningful isotropic frame
     forward = eigenvectors @ np.diag(eigenvalues**-0.5) @ eigenvectors.T
     inverse = eigenvectors @ np.diag(eigenvalues**0.5) @ eigenvectors.T
-    return center, forward, inverse
+    return origin + mean, forward, inverse
 
 
 def _shrink_single(

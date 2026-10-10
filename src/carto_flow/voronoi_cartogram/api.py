@@ -332,6 +332,14 @@ def create_voronoi_cartogram(
         anchor = backend.generator_anchor
         if anchor is None:
             anchor = PREMORPH_GENERATOR_ANCHOR if morph_result is not None else 0.0
+        elif anchor > 0.0 and morph_result is None and not isinstance(backend.boundary, ElasticBoundary):
+            warnings.warn(
+                f"generator_anchor={anchor} without premorph or an ElasticBoundary holds the generators near the "
+                "input region centroids, which are not a layout with weight-proportional areas: cells can collapse "
+                "and areas can miss their targets. Use it with premorph=True or an ElasticBoundary.",
+                UserWarning,
+                stacklevel=2,
+            )
         build_kwargs["generator_anchor"] = anchor
 
     field = backend.build_field(positions, outer, **build_kwargs)

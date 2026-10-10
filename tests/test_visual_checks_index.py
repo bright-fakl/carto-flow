@@ -470,3 +470,8 @@ class TestIndexFilters:
         assert 'data-kind="proposal"' in html and 'data-topics=" flow voronoi "' in html
         assert 'id="filter-kind"' in html and 'id="filter-superseded"' in html
         assert '<option value="voronoi">' in html
+
+    def test_filters_survive_leaving_and_returning(self, mod):
+        """Back link and back button both reload the page; the selection is stored and re-applied."""
+        assert "sessionStorage.setItem" in mod.SORT_SCRIPT
+        assert 'addEventListener("pageshow"' in mod.SORT_SCRIPT

@@ -379,9 +379,38 @@ SORT_SCRIPT = """
     });
     document.getElementById("filter-count").textContent = shown + " of " + body.rows.length + " shown";
   }
+  // The selection is kept in sessionStorage, so it survives opening a page and
+  // coming back by the "back to index" link or the browser's back button.
+  var FILTER_IDS = ["filter-kind", "filter-topic", "filter-class", "filter-superseded"];
+  function saveFilters() {
+    try {
+      var saved = {};
+      FILTER_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        saved[id] = el.type === "checkbox" ? el.checked : el.value;
+      });
+      sessionStorage.setItem("visual-checks-filters", JSON.stringify(saved));
+    } catch (e) {}
+  }
+  function restoreFilters() {
+    try {
+      var saved = JSON.parse(sessionStorage.getItem("visual-checks-filters") || "null");
+      if (!saved) return;
+      FILTER_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!(id in saved)) return;
+        if (el.type === "checkbox") el.checked = saved[id];
+        else if (Array.prototype.some.call(el.options, function (o) { return o.value === saved[id]; })) el.value = saved[id];
+      });
+    } catch (e) {}
+  }
   document.querySelectorAll(".filters select, .filters input").forEach(function (el) {
-    el.addEventListener("change", applyFilters);
+    el.addEventListener("change", function () { saveFilters(); applyFilters(); });
   });
+  // pageshow also fires when the browser restores the page from its back/forward cache
+  // after having restored the dropdowns itself, so the rows are filtered again here.
+  window.addEventListener("pageshow", function () { restoreFilters(); applyFilters(); });
+  restoreFilters();
   applyFilters();
   table.querySelectorAll("th[data-col]").forEach(function (th) {
     th.addEventListener("click", function () {

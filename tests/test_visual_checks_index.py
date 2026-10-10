@@ -475,3 +475,18 @@ class TestIndexFilters:
         """Back link and back button both reload the page; the selection is stored and re-applied."""
         assert "sessionStorage.setItem" in mod.SORT_SCRIPT
         assert 'addEventListener("pageshow"' in mod.SORT_SCRIPT
+
+    def test_reset_button_and_time_filter(self, mod, tmp_path):
+        d = _write(tmp_path, "a", pr=1, title="a", description="d", date="2026-10-01 09:00", updated="2026-10-05")
+        page = mod.scan_pr_dir(d)
+
+        html = mod.build_index_page([page], {d: "merged"}, {1: "2026-10-03 11:00"})
+
+        assert 'id="filter-reset"' in html and 'id="filter-time"' in html
+        assert 'data-active="2026-10-05 00:00"' in html
+
+    def test_latest_activity_takes_the_newest_time(self, mod, tmp_path):
+        page = mod.scan_pr_dir(_write(tmp_path, "a", pr=1, title="a", description="d", date="2026-10-01 09:00"))
+
+        assert mod._latest_activity(page, {1: "2026-10-03 11:00"}) == "2026-10-03 11:00"
+        assert mod._latest_activity(mod.scan_pr_dir(_write(tmp_path, "b", title="b", description="d")), {}) == ""

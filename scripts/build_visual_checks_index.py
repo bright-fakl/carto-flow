@@ -325,7 +325,7 @@ the PR is open.
 """
 
 
-SORT_SCRIPT = """
+SORT_SCRIPT = r"""
 <script>
 (function () {
   var table = document.getElementById("toc");
@@ -362,18 +362,34 @@ SORT_SCRIPT = """
   // Filters: a row shows when it matches every selection.  Superseded pages
   // are hidden until asked for.
   var CLASS_NAMES = {awaiting: "todo", parked: "parked", done: "done"};
+  // "Active" is the latest of a page's created, updated and closed times.
+  function parseTime(text) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/.exec(text);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)).getTime() : 0;
+  }
+  function cutoff(name) {
+    var now = new Date();
+    var day = 24 * 3600 * 1000;
+    if (name === "today") return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (name === "week") return now.getTime() - 7 * day;
+    if (name === "month") return now.getTime() - 30 * day;
+    if (name === "year") return now.getTime() - 365 * day;
+    return null;
+  }
   function applyFilters() {
     var kind = document.getElementById("filter-kind").value;
     var topic = document.getElementById("filter-topic").value;
     var cls = CLASS_NAMES[document.getElementById("filter-class").value] || "";
     var superseded = document.getElementById("filter-superseded").checked;
+    var since = cutoff(document.getElementById("filter-time").value);
     var shown = 0;
     Array.prototype.forEach.call(body.rows, function (row) {
       var d = row.dataset;
       var show = (!kind || d.kind === kind) &&
                  (!topic || d.topics.indexOf(" " + topic + " ") >= 0) &&
                  (!cls || d.class === cls) &&
-                 (superseded || d.status !== "superseded");
+                 (superseded || d.status !== "superseded") &&
+                 (since === null || (d.active && parseTime(d.active) >= since));
       row.hidden = !show;
       if (show) shown += 1;
     });
@@ -381,7 +397,7 @@ SORT_SCRIPT = """
   }
   // The selection is kept in sessionStorage, so it survives opening a page and
   // coming back by the "back to index" link or the browser's back button.
-  var FILTER_IDS = ["filter-kind", "filter-topic", "filter-class", "filter-superseded"];
+  var FILTER_IDS = ["filter-kind", "filter-topic", "filter-class", "filter-time", "filter-superseded"];
   function saveFilters() {
     try {
       var saved = {};
@@ -406,6 +422,15 @@ SORT_SCRIPT = """
   }
   document.querySelectorAll(".filters select, .filters input").forEach(function (el) {
     el.addEventListener("change", function () { saveFilters(); applyFilters(); });
+  });
+  document.getElementById("filter-reset").addEventListener("click", function () {
+    FILTER_IDS.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el.type === "checkbox") el.checked = false;
+      else el.value = "";
+    });
+    saveFilters();
+    applyFilters();
   });
   // pageshow also fires when the browser restores the page from its back/forward cache
   // after having restored the dropdowns itself, so the rows are filtered again here.
@@ -1013,7 +1038,7 @@ def build_index_page(
         closed_cell = html.escape(closed.get(pr.pr, "") if pr.pr is not None else "")
         rows.append(
             f'<tr{row_class} data-ord="{len(rows)}" data-kind="{pr.kind}" data-topics=" {" ".join(pr.topics)} " '
-            f'data-status="{html.escape(status)}" data-class="{cls}">'
+            f'data-status="{html.escape(status)}" data-class="{cls}" data-active="{html.escape(_latest_activity(pr, closed))}">'
             f"<td>{status_cell}</td>"
             f"<td>{html.escape(pr.kind)}</td>"
             f"<td>{html.escape(', '.join(pr.topics))}</td>"
@@ -1041,6 +1066,12 @@ def build_index_page(
     return _page_shell("Visual checks", body)
 
 
+def _latest_activity(pr: PrDir, closed: dict[int, str]) -> str:
+    """Latest of the created, updated and closed times, as ``YYYY-MM-DD HH:MM`` (empty if none)."""
+    times = [pr.meta.get("date", ""), pr.meta.get("updated", ""), closed.get(pr.pr, "") if pr.pr is not None else ""]
+    return max((t.strip() + " 00:00")[:16] if len(t.strip()) == 10 else t.strip() for t in times)
+
+
 def _filter_controls(pr_dirs: list[PrDir]) -> str:
     """Filter row above the table; the script in ``SORT_SCRIPT`` applies it."""
 
@@ -1056,7 +1087,11 @@ def _filter_controls(pr_dirs: list[PrDir]) -> str:
         + select("kind", "Kind", kinds)
         + select("topic", "Topic", topics)
         + select("class", "State", states)
+        + '<label>Active <select id="filter-time"><option value="">any time</option>'
+        + '<option value="today">today</option><option value="week">last 7 days</option>'
+        + '<option value="month">last 30 days</option><option value="year">last year</option></select></label> '
         + '<label><input type="checkbox" id="filter-superseded"> show superseded</label> '
+        + '<button type="button" id="filter-reset">Reset filters</button> '
         + '<span id="filter-count" class="meta"></span></p>\n'
     )
 

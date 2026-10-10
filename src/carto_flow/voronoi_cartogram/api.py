@@ -16,6 +16,10 @@ from .history import VoronoiSnapshot
 from .options import VoronoiOptions
 from .result import VoronoiCartogram
 
+# Generator anchor used with ``premorph`` when the backend leaves
+# ``generator_anchor`` unset.
+PREMORPH_GENERATOR_ANCHOR = 0.5
+
 
 def _make_outer_boundary(geometries, spec, *, _union=None):
     """Compute the outer boundary polygon from a boundary specification.
@@ -54,6 +58,41 @@ def _make_outer_boundary(geometries, spec, *, _union=None):
     raise ValueError(f"boundary must be 'union', 'bbox', 'convex_hull', 'circle', or a shapely Geometry; got {spec!r}")
 
 
+def _premorph(gdf: gpd.GeoDataFrame, weights: str | np.ndarray | None, premorph: Any):
+    """Flow-cartogram morph of *gdf* by *weights*; returns the morph result and repaired geometries.
+
+    A weights column is morphed directly; weights given as an array, or no
+    weights (every region gets the same value, an equal-area morph), are
+    morphed from a copy of *gdf* with the values in a ``_premorph_weight``
+    column.  Invalid morphed rings are repaired with ``make_valid``, keeping
+    only the polygonal parts.
+    """
+    import shapely
+
+    from carto_flow.flow_cartogram import MorphOptions, morph_gdf
+
+    from .fields._base import _keep_polygonal
+
+    if premorph is True:
+        morph_options = MorphOptions.preset_balanced().copy_with(n_iter=400, show_progress=False)
+    elif isinstance(premorph, MorphOptions):
+        morph_options = premorph
+    else:
+        raise TypeError(f"premorph must be None, False, True or a MorphOptions; got {type(premorph).__name__!r}")
+    if isinstance(weights, str):
+        source, column = gdf, weights
+    else:
+        column = "_premorph_weight"
+        source = gdf.copy()
+        source[column] = np.ones(len(gdf)) if weights is None else np.asarray(weights, dtype=float)
+    morph = morph_gdf(source, column, options=morph_options)
+    geoms = np.asarray(morph.to_geodataframe(include_errors=False, include_density=False).geometry, dtype=object)
+    invalid = ~shapely.is_valid(geoms)
+    if invalid.any():
+        geoms[invalid] = [_keep_polygonal(g) for g in shapely.make_valid(geoms[invalid])]
+    return morph, list(geoms)
+
+
 def create_voronoi_cartogram(
     gdf: gpd.GeoDataFrame,
     *,
@@ -62,6 +101,7 @@ def create_voronoi_cartogram(
     options: VoronoiOptions | None = None,
     group_by: str | None = None,
     boundary: str | Any = "union",
+    premorph: bool | Any = None,
 ) -> VoronoiCartogram:
     """Run Lloyd relaxation (or FFT flow) on GeoDataFrame centroids.
 
@@ -116,6 +156,23 @@ def create_voronoi_cartogram(
         simple shapes (e.g. ``"bbox"``) are automatically densified to roughly
         ``backend.resolution`` vertices before the elastic deformation is
         initialized, ensuring smooth FFT-driven boundary deformation.
+    premorph : bool, MorphOptions, or None
+        Morph the regions with the flow cartogram
+        (:func:`carto_flow.flow_cartogram.morph_gdf`) by the same weights
+        before the Voronoi run, and run it on the morphed regions: the
+        generators start at the morphed centroids and *boundary* is built
+        from the morphed regions (``"union"``: their union, which stays rigid
+        unless the backend has an :class:`ElasticBoundary`).  Without weights
+        the morph equalizes the region areas.  Invalid morphed rings are
+        repaired with ``make_valid``, keeping only polygonal parts.  ``True``
+        uses ``MorphOptions.preset_balanced()`` with ``n_iter=400`` and no
+        progress output; a ``MorphOptions`` is used as given.  With
+        :class:`RasterBackend` and ``generator_anchor=None``, the generators
+        are anchored to their morphed starting positions with strength
+        ``0.5``, which keeps each region near its morphed location (see
+        ``RasterBackend.generator_anchor``).  The flow-cartogram result is
+        stored in ``result.premorph``; its ``to_geodataframe()`` has the
+        columns of *gdf*.  ``None`` or ``False`` (default): no morph.
 
     Returns
     -------
@@ -195,7 +252,11 @@ def create_voronoi_cartogram(
     else:
         weights_arr = weights
 
-    geometries = list(gdf.geometry)
+    morph_result = None
+    if premorph is not None and premorph is not False:
+        morph_result, geometries = _premorph(gdf, weights, premorph)
+    else:
+        geometries = list(gdf.geometry)
     areas = np.array([g.area for g in geometries], dtype=np.float64)
     _mean = areas.mean()
     initial_cv: float = float(np.std(areas) / _mean) if _mean > 0 else 0.0
@@ -268,6 +329,10 @@ def create_voronoi_cartogram(
         build_kwargs["debug"] = options.debug
         build_kwargs["area_tol"] = options.area_error_tol
         build_kwargs["geometries"] = geometries
+        anchor = backend.generator_anchor
+        if anchor is None:
+            anchor = PREMORPH_GENERATOR_ANCHOR if morph_result is not None else 0.0
+        build_kwargs["generator_anchor"] = anchor
 
     field = backend.build_field(positions, outer, **build_kwargs)
 
@@ -481,6 +546,7 @@ def create_voronoi_cartogram(
         _field=field,
         area_errors=area_errors,
         _weighted=weights is not None,
+        premorph=morph_result,
     )
 
     degenerate = result.degenerate_cells

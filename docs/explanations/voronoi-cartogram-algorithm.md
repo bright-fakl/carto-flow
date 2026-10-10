@@ -118,7 +118,10 @@ $$
 \mathbf{c}_i = \frac{1}{|V_i|} \sum_{k \in V_i} \mathbf{x}_k
 $$
 
-**Over-relaxed update**: $\mathbf{p}_i \leftarrow \mathbf{p}_i + \alpha(\mathbf{c}_i - \mathbf{p}_i)$
+**Over-relaxed update**: $\mathbf{p}_i \leftarrow \mathbf{p}_i + \alpha(\mathbf{c}_i - \mathbf{p}_i)$.
+With `RasterBackend(generator_anchor=a)` the target $\mathbf{c}_i$ is replaced by
+$(1 - a)\,\mathbf{c}_i + a\,\mathbf{s}_i$, where $\mathbf{s}_i$ is the
+generator's starting position (see [Flow Pre-morph and Generator Anchor](#flow-pre-morph-and-generator-anchor)).
 
 **Boundary constraint**: any generator that drifts outside the outer boundary is hard-snapped back to the nearest boundary edge point.
 
@@ -203,6 +206,7 @@ Key parameters:
 | `area_equalizer_rate` | 0.1 | Power-diagram offset learning rate |
 | `boundary` | `None` | `AdhesiveBoundary` or `ElasticBoundary` |
 | `adjacency_spring` | 0.0 | Spring strength preserving adjacency |
+| `generator_anchor` | `None` | Pull of the generators toward their starting positions; `None` = 0.5 with `premorph`, else 0 |
 
 **Pure FFT-flow mode**: pass `relaxation=0.0` together with `ElasticBoundary` to skip Lloyd relaxation entirely and drive movement solely from area-pressure via the FFT velocity field.
 
@@ -292,6 +296,52 @@ cells inside still match the weights exactly.
 deformation; `adhesion_strength` combines elastic deformation with centroid
 adhesion in a single pass (equivalent to `AdhesiveBoundary` but with the snap
 target tracking the evolving boundary shape).
+
+---
+
+## Flow Pre-morph and Generator Anchor
+
+`create_voronoi_cartogram(..., premorph=True)` first morphs the regions with
+the flow cartogram (`carto_flow.flow_cartogram.morph_gdf`) by the same weights,
+then runs the Voronoi relaxation on the morphed regions: the generators start
+at the morphed centroids, and the boundary (`"union"` by default) is the union
+of the morphed regions. The flow cartogram has already given each region about
+its target area, so the outline and the arrangement of the regions are those of
+a density-equalizing map, and the relaxation only has to make the cells convex
+and their areas exact; it usually needs far fewer iterations than on the
+original outline. Without weights the morph equalizes the region areas. A
+`MorphOptions` can be passed instead of `True`. Morphed rings that are not
+valid polygons are repaired with `make_valid`, keeping only the polygonal
+parts. The boundary stays rigid unless the backend has an `ElasticBoundary`.
+
+**Why an anchor.** Plain Lloyd relaxation moves every generator to the centroid
+of its cell, which makes cells compact but does not keep them where they
+started. A power cell is convex, so a large cell cannot cover a concave region
+or a narrow part of the outline; a neighboring generator then owns that part,
+moves toward its centroid and takes it over. In the US population cartogram,
+Texas' morphed region reaches south along the Gulf coast to the Mexican border.
+In the first iterations the offsets have not grown yet, so Texas' cell is far
+smaller than its target while Louisiana's is larger than its own and includes
+south Texas, and the over-relaxed steps carry Louisiana's generator into south
+Texas. Once the offsets have caught up, the cells form a centroidal power
+diagram and stay that way: Louisiana's cell sits on the Texas coast.
+
+**Anchor.** With `RasterBackend(generator_anchor=a)`, $a \in [0, 1]$, each step
+moves a generator toward $(1 - a)\,\mathbf{c}_i + a\,\mathbf{s}_i$, so the
+generators settle between the centroids of their cells and their starting
+positions. The power offsets still give every cell its target area, because a
+power diagram can realize any target areas for any generator positions; the
+anchor only trades cell compactness for staying close to the starting layout.
+`a = 0` is plain Lloyd relaxation, `a = 1` keeps the generators at their
+starting positions. With `premorph`, `generator_anchor=None` (the default)
+uses `a = 0.5`; otherwise it uses 0, the plain relaxation. With an
+`ElasticBoundary` the starting positions are moved with the boundary flow.
+
+The anchor keeps regions near their morphed locations at the cost of less
+compact cells, with generators further from their cell centroids. On the
+original, fixed outline the cells have to move far from the original centroids
+to reach their areas, and an anchor there makes cells less compact without
+keeping regions closer to their original locations.
 
 ---
 

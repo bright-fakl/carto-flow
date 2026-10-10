@@ -21,21 +21,38 @@ start with a fenced metadata block, parsed as simple ``key: value`` lines
     ---
 
 ``title`` and ``description`` are required - a missing one prints a warning
-naming the directory and falls back to the directory name. ``pr``, ``issue``, ``url``,
-``status``, ``branch``, ``base``, ``date``, ``updated``, ``before``, ``after`` and
-``inputs`` are optional and, when present, are rendered in the page's
-definition list.  ``pr`` and ``url`` are optional because several directories
-are investigation workspaces that belong to no single PR.
+naming the directory and falls back to the directory name. All other keys are
+optional and, when present, are rendered in the page's definition list: ``pr``,
+``issue``, ``url``, ``kind``, ``topic``, ``status``, ``outcome``, ``related``,
+``branch``, ``base``, ``date``, ``updated``, ``before``, ``after`` and ``inputs``.
 
-Review status comes from the PR's GitHub state via one ``gh`` call - merged or
-closed is done, open needs review - and an explicit ``status:`` always wins, so
-a merged PR can still be flagged for follow-up.  Directories with no PR and no
-``status:`` need review: an investigation is outstanding until someone says it
-is not.  The recognized values are ``needs review`` (outstanding), ``deferred``
-(a deliberate park), and ``reviewed`` / ``merged`` / ``closed`` / ``superseded``
-(done); anything else warns.  The generated pages are static, so there is no
-control to click - use ``--set-status DIR STATUS`` to change one and
+``kind`` is ``pr`` (a change under review; the default when ``pr`` is set),
+``exploration`` (experiments and investigations; the default otherwise) or
+``proposal`` (a change not yet in a PR).  ``topic`` is a comma-separated list
+from ``flow``, ``voronoi``, ``symbol``, ``proportional``, ``data``, ``infra``.
+
+Status of a ``pr`` page comes from the PR's GitHub state via one ``gh`` call -
+merged or closed is done, open needs review - and an explicit ``status:``
+always wins, so a merged PR can still be flagged for follow-up.  Its values are
+``needs review`` (outstanding), ``deferred`` (a deliberate park), and
+``reviewed`` / ``merged`` / ``closed`` / ``superseded`` (done).  An exploration
+or proposal has no GitHub state; its ``status:`` is ``open`` (outstanding,
+the default), ``on-hold`` (parked), or one of three closed outcomes:
+``led-to`` (followed by a proposal or PR), ``superseded`` (replaced by a newer
+exploration or synthesis page) and ``no-action`` (concluded, nothing follows;
+``outcome:`` must say why).  A closed ``led-to`` or ``superseded`` page needs
+a ``related`` link to its successor.  The generated pages are static, so there
+is no control to click - use ``--set-status DIR STATUS`` to change one and
 ``--list-status`` to print them all.
+
+``related`` lists the directory names of other pages, comma-separated; the reverse link
+("Referenced by") is derived, so each link is written once.
+
+A page's directory name is its permanent identifier: other pages and external
+links point at it, so a page is never renamed.  Converting a proposal into a PR
+edits the metadata only (``--convert DIR PR``).  Name new pages for their
+subject, without a ``pr<N>-`` or ``proposal-`` prefix, since the kind and the PR
+number are metadata and change over a page's life.
 
 Below the metadata block, ``summary.md`` may contain any number of caption
 lines anywhere in the file:
@@ -158,15 +175,56 @@ DARK_STYLE = """
 
 README_TEXT = """# Visual checks
 
-Before/after visual review pages for PRs, built by
+Review pages for PRs, explorations and proposals, built by
 `scripts/build_visual_checks_index.py` in the carto-flow repository. This
 repository holds the pages and is published with GitHub Pages at
 https://bright-fakl.github.io/carto-flow-dev/. Pages are plain static files,
 so a local clone can be opened directly in a browser without a server.
 
+## Kinds, topics and status
+
+Every page has a `kind`:
+
+- `pr`: a change under review. This is the default when `pr` is set.
+- `exploration`: an experiment or investigation. This is the default otherwise.
+- `proposal`: a change worked out in a page but not yet in a PR.
+
+`topic` is a comma-separated list from `flow`, `voronoi`, `symbol`, `proportional`,
+`data` and `infra`. The index filters and sorts on kind, topic and status.
+
+The status of a `pr` page comes from the PR on GitHub (see below). An exploration or
+proposal has no GitHub state, so its `status` is set by hand:
+
+| status | meaning |
+|---|---|
+| `open` | in progress or waiting for a decision (the default) |
+| `on-hold` | paused on purpose |
+| `led-to` | closed; followed by a proposal or PR |
+| `superseded` | closed; replaced by a newer exploration or a synthesis page |
+| `no-action` | closed; concluded and nothing follows. Requires `outcome:` saying why, for example a negative result, reference data only, or a rejected proposal |
+
+Link pages with `related: <directory>, <directory>`. Write each link once; the page
+at the other end shows it as "Referenced by". A `led-to` or `superseded` page needs
+a link to its successor in either direction. Superseded pages are hidden in the
+index until "show superseded" is ticked.
+
+A directory name is the permanent identifier of a page. Links from other pages,
+PR descriptions and issues use it, so never rename a directory. Name pages for their
+subject, without a `pr<N>-` or `proposal-` prefix; the kind and the PR number are
+metadata and change during a page's life.
+
+- An exploration is evidence (figures and tables from a specific commit). Leave it
+  as it is, set it to `led-to`, and write the proposal or PR as a new page that
+  lists it under `related`.
+- A proposal that becomes one PR is converted in place:
+  `build_visual_checks_index.py --convert <directory> <PR number>` sets `kind: pr`,
+  `pr` and `url` and removes `status`. Add a short "as proposed / as built" section.
+  A proposal that splits into several PRs stays a proposal, set to `led-to`, with
+  one `related` entry per PR.
+
 ## Every PR needs a page
 
-Each PR gets its own page, `pr<N>-<slug>/summary.md`, whether or not the
+Each PR gets its own page, `<slug>/summary.md`, whether or not the
 change produces figures. Review happens from the generated index, not from
 the PR description, so evidence kept only in the description or inside an
 investigation workspace is easy to miss.
@@ -175,8 +233,7 @@ investigation workspace is easy to miss.
   (the builder itself only requires `title` and `description`), and `issue`
   when the PR addresses a GitHub issue.
 - Before the PR exists, leave out `pr` and `url` (do not write `TBD`; it
-  warns) and set `branch`. Add both and rename the directory to
-  `pr<N>-<slug>` once the PR is open.
+  warns) and set `branch`. Add both once the PR is open; the directory keeps its name.
 - A change that can alter cartogram output (algorithm, solver, repair,
   option defaults, data resolution) needs side-by-side before/after figures
   on the standard inputs (US states, congressional districts), so the
@@ -191,19 +248,16 @@ investigation workspace is easy to miss.
   to itself and starts with a comment saying what it produces. Name the
   commit it ran against in `after` (`branch @ <sha>`). Do not commit caches or
   downloaded data; the page says how to get them instead.
-- Investigation workspaces (directories without a `pr`) may hold the
-  underlying figures. The PR page then points at the panels that justify it.
-- Do not write `status: needs review` in a new page. That is already the
+- Explorations may hold the underlying figures. The PR page then points at the
+  panels that justify it and lists the exploration under `related`.
+- Do not write `status: needs review` in a new `pr` page. That is already the
   default, and an explicit `status:` overrides the PR's GitHub state, so the
-  page would stay "needs review" after the PR merges. Set `status:` only to
-  override: `deferred` for parked work, or `reviewed` for an investigation
-  workspace that belongs to no PR.
+  page would stay "needs review" after the PR merges. Set `status:` on a `pr`
+  page only to override, for example `deferred` for parked work.
 
 ## Adding a check
 
-1. Create a subdirectory named `pr<N>-<slug>`, e.g.
-   `pr27-voronoi-smoothing-tolerance`. Investigation workspaces use a plain
-   descriptive name.
+1. Create a subdirectory named for its subject, e.g. `voronoi-smoothing-tolerance`.
 2. Drop PNGs and a `summary.md` in it. `summary.md` must start with a fenced
    metadata header:
 
@@ -224,8 +278,8 @@ investigation workspace is easy to miss.
    ```
 
    `title` and `description` are required; `pr`, `issue` (the GitHub issue the
-   change addresses, e.g. `74` or `74, 75`), `url`, `status`, `branch`,
-   `base`, `date`, `updated`, `before`, `after`, and `inputs` are optional and rendered
+   change addresses, e.g. `74` or `74, 75`), `url`, `kind`, `topic`, `status`, `outcome`,
+   `related`, `branch`, `base`, `date`, `updated`, `before`, `after`, and `inputs` are optional and rendered
    in a definition list on the page.  Pages are listed newest first, by `date`
    where given and by directory mtime otherwise.  Write `date`
    (the creation time) and `updated` (the last time the figures were
@@ -233,9 +287,9 @@ investigation workspace is easy to miss.
    the same day sort by PR number. The closed time is not written by hand; it
    is the merge or close time of the PR on GitHub.
 
-   Review status is taken from the PR's GitHub state unless `status:` says
-   otherwise. Values: `needs review`, `deferred`, `reviewed`, `merged`,
-   `closed`, `superseded`. Change one with
+   The status of a `pr` page is taken from the PR's GitHub state unless `status:` says
+   otherwise. Values for a `pr` page: `needs review`, `deferred`, `reviewed`, `merged`,
+   `closed`, `superseded`; for other kinds see the table above. Change one with
    `--set-status <dir> <status>`; list them all with `--list-status`.
 
 3. Optionally caption a figure by adding a line anywhere below the header:
@@ -266,12 +320,12 @@ in another zone, so the generated files do not differ between machines.
 
 Commit the page directory together with the regenerated `index.html` files
 and push to `main`. GitHub Pages serves the repository as it is; there is no
-build step. Create a page before the PR exists, then rename the directory and
-fill in `pr` and `url` once the PR is open.
+build step. Create a page before the PR exists, then fill in `pr` and `url` once
+the PR is open.
 """
 
 
-SORT_SCRIPT = """
+SORT_SCRIPT = r"""
 <script>
 (function () {
   var table = document.getElementById("toc");
@@ -280,16 +334,20 @@ SORT_SCRIPT = """
   var state = {};
   // First click sorts the way that column is actually useful: newest dates,
   // highest PR, most figures, but outstanding statuses first.
-  var FIRST_ASC = [true, false, true, true, false, false, false];
+  var FIRST_ASC = [true, true, true, false, true, true, false, false, false];
   // Status sorts by how much attention an item still needs, not alphabetically:
   // "needs review" before "deferred" before anything finished.
   var STATUS_RANK = {
     "needs review": 0,
+    "open": 0,
     "deferred": 1,
+    "on-hold": 1,
     "reviewed": 2,
     "merged": 3,
     "closed": 4,
-    "superseded": 5
+    "led-to": 5,
+    "no-action": 6,
+    "superseded": 7
   };
   function cellValue(row, i) {
     var text = (row.cells[i].innerText || "").trim();
@@ -297,10 +355,88 @@ SORT_SCRIPT = """
       var rank = STATUS_RANK[text.toLowerCase()];
       return rank === undefined ? -1 : rank;                        // unknown first
     }
-    if (i === 1) return parseInt(text.replace("#", ""), 10) || -1;  // PR
-    if (i === 6) return parseInt(text, 10) || 0;                    // Figures
+    if (i === 3) return parseInt(text.replace("#", ""), 10) || -1;  // PR
+    if (i === 8) return parseInt(text, 10) || 0;                    // Figures
     return text.toLowerCase();
   }
+  // Filters: a row shows when it matches every selection.  Superseded pages
+  // are hidden until asked for.
+  var CLASS_NAMES = {awaiting: "todo", parked: "parked", done: "done"};
+  // "Active" is the latest of a page's created, updated and closed times.
+  function parseTime(text) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})(?: (\d{2}):(\d{2}))?/.exec(text);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)).getTime() : 0;
+  }
+  function cutoff(name) {
+    var now = new Date();
+    var day = 24 * 3600 * 1000;
+    if (name === "today") return new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    if (name === "week") return now.getTime() - 7 * day;
+    if (name === "month") return now.getTime() - 30 * day;
+    if (name === "year") return now.getTime() - 365 * day;
+    return null;
+  }
+  function applyFilters() {
+    var kind = document.getElementById("filter-kind").value;
+    var topic = document.getElementById("filter-topic").value;
+    var cls = CLASS_NAMES[document.getElementById("filter-class").value] || "";
+    var superseded = document.getElementById("filter-superseded").checked;
+    var since = cutoff(document.getElementById("filter-time").value);
+    var shown = 0;
+    Array.prototype.forEach.call(body.rows, function (row) {
+      var d = row.dataset;
+      var show = (!kind || d.kind === kind) &&
+                 (!topic || d.topics.indexOf(" " + topic + " ") >= 0) &&
+                 (!cls || d.class === cls) &&
+                 (superseded || d.status !== "superseded") &&
+                 (since === null || (d.active && parseTime(d.active) >= since));
+      row.hidden = !show;
+      if (show) shown += 1;
+    });
+    document.getElementById("filter-count").textContent = shown + " of " + body.rows.length + " shown";
+  }
+  // The selection is kept in sessionStorage, so it survives opening a page and
+  // coming back by the "back to index" link or the browser's back button.
+  var FILTER_IDS = ["filter-kind", "filter-topic", "filter-class", "filter-time", "filter-superseded"];
+  function saveFilters() {
+    try {
+      var saved = {};
+      FILTER_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        saved[id] = el.type === "checkbox" ? el.checked : el.value;
+      });
+      sessionStorage.setItem("visual-checks-filters", JSON.stringify(saved));
+    } catch (e) {}
+  }
+  function restoreFilters() {
+    try {
+      var saved = JSON.parse(sessionStorage.getItem("visual-checks-filters") || "null");
+      if (!saved) return;
+      FILTER_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!(id in saved)) return;
+        if (el.type === "checkbox") el.checked = saved[id];
+        else if (Array.prototype.some.call(el.options, function (o) { return o.value === saved[id]; })) el.value = saved[id];
+      });
+    } catch (e) {}
+  }
+  document.querySelectorAll(".filters select, .filters input").forEach(function (el) {
+    el.addEventListener("change", function () { saveFilters(); applyFilters(); });
+  });
+  document.getElementById("filter-reset").addEventListener("click", function () {
+    FILTER_IDS.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el.type === "checkbox") el.checked = false;
+      else el.value = "";
+    });
+    saveFilters();
+    applyFilters();
+  });
+  // pageshow also fires when the browser restores the page from its back/forward cache
+  // after having restored the dropdowns itself, so the rows are filtered again here.
+  window.addEventListener("pageshow", function () { restoreFilters(); applyFilters(); });
+  restoreFilters();
+  applyFilters();
   table.querySelectorAll("th[data-col]").forEach(function (th) {
     th.addEventListener("click", function () {
       var i = +th.dataset.col;
@@ -427,7 +563,23 @@ def render_markdown(text: str) -> str:
 # ---------------------------------------------------------------------------
 
 REQUIRED_META_KEYS = ("title", "description")
-OPTIONAL_META_KEYS = ("pr", "issue", "url", "status", "branch", "base", "date", "updated", "before", "after", "inputs")
+OPTIONAL_META_KEYS = (
+    "pr",
+    "issue",
+    "url",
+    "kind",
+    "topic",
+    "status",
+    "outcome",
+    "related",
+    "branch",
+    "base",
+    "date",
+    "updated",
+    "before",
+    "after",
+    "inputs",
+)
 META_LABELS = {
     "url": "URL",
     "branch": "Branch",
@@ -436,6 +588,9 @@ META_LABELS = {
     "updated": "Updated",
     "closed": "Closed",
     "status": "Status",
+    "kind": "Kind",
+    "topic": "Topic",
+    "outcome": "Outcome",
     "before": "Before",
     "after": "After",
     "inputs": "Inputs",
@@ -506,12 +661,18 @@ def _entry_time(pr: PrDir) -> float:
     return pr.mtime
 
 
-# Recognized review states.  `needs review` is outstanding, `deferred` is a
-# deliberate park (neither finished nor awaiting attention), the rest are done.
-OUTSTANDING_STATUSES = {"needs review"}
-PARKED_STATUSES = {"deferred"}
-DONE_STATUSES = {"reviewed", "merged", "closed", "superseded"}
+# Recognized statuses.  A PR page uses the first group, an exploration or
+# proposal the second; the sets below are their union.  Outstanding items need
+# attention, parked ones are a deliberate pause, the rest are finished.
+PR_STATUSES = {"needs review", "deferred", "reviewed", "merged", "closed", "superseded"}
+EXPLORATION_STATUSES = {"open", "on-hold", "led-to", "superseded", "no-action"}
+OUTSTANDING_STATUSES = {"needs review", "open"}
+PARKED_STATUSES = {"deferred", "on-hold"}
+DONE_STATUSES = {"reviewed", "merged", "closed", "superseded", "led-to", "no-action"}
 KNOWN_STATUSES = OUTSTANDING_STATUSES | PARKED_STATUSES | DONE_STATUSES
+
+KINDS = ("pr", "exploration", "proposal")
+TOPICS = ("flow", "voronoi", "symbol", "proportional", "data", "infra")
 
 
 def status_class(status: str) -> str:
@@ -629,21 +790,32 @@ def fetch_pr_states(repo: str = DEFAULT_REPO, timeout: float = 20.0) -> dict[int
 
 
 def resolve_status(pr: PrDir, pr_states: dict[int, str]) -> str:
-    """Review status for one directory.
+    """Status for one directory.
 
     An explicit ``status:`` in ``summary.md`` always wins, so a merged PR can
-    still be flagged for follow-up.  Otherwise the PR's GitHub state decides.
-    Directories with no PR and no ``status:`` are "needs review": an
-    investigation is outstanding until someone says it is not.
+    still be flagged for follow-up.  Otherwise a PR page takes the PR's GitHub
+    state, and an exploration or proposal is ``open``: it is outstanding until
+    someone says it is not.
     """
     declared = (pr.meta.get("status") or "").strip().lower()
+    name = pr.path.name
     if declared:
         if declared not in KNOWN_STATUSES:
             pr.warnings.append(
-                f"visual_checks/{pr.path.name}: unknown status {declared!r} in summary.md; "
-                f"expected one of {', '.join(sorted(KNOWN_STATUSES))}"
+                f"{name}: unknown status {declared!r} in summary.md; expected one of {', '.join(sorted(KNOWN_STATUSES))}"
             )
+        else:
+            allowed = PR_STATUSES if pr.kind == "pr" else EXPLORATION_STATUSES
+            if declared not in allowed:
+                pr.warnings.append(
+                    f"{name}: status {declared!r} does not apply to kind {pr.kind!r}; expected one of "
+                    f"{', '.join(sorted(allowed))}"
+                )
+        if declared == "no-action" and not pr.meta.get("outcome"):
+            pr.warnings.append(f"{name}: status 'no-action' needs an 'outcome:' line saying why")
         return declared
+    if pr.kind != "pr":
+        return "open"
     if pr.pr is not None and pr.pr in pr_states:
         return _PR_STATE_STATUS.get(pr_states[pr.pr], "needs review")
     if pr.pr is not None:
@@ -667,6 +839,9 @@ class PrDir:
     body_text: str
     figure_count: int
     mtime: float
+    kind: str = "exploration"
+    topics: list[str] = field(default_factory=list)
+    related: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -678,7 +853,7 @@ def scan_pr_dir(directory: Path) -> PrDir:
     warnings: list[str] = []
     for key in REQUIRED_META_KEYS:
         if not meta.get(key):
-            warnings.append(f"visual_checks/{directory.name}: missing required metadata key '{key}' in summary.md")
+            warnings.append(f"{directory.name}: missing required metadata key '{key}' in summary.md")
 
     pr_raw = meta.get("pr")
     pr_number: int | None = None
@@ -686,11 +861,22 @@ def scan_pr_dir(directory: Path) -> PrDir:
         try:
             pr_number = int(pr_raw)
         except ValueError:
-            warnings.append(f"visual_checks/{directory.name}: metadata 'pr' is not an integer ({pr_raw!r})")
+            warnings.append(f"{directory.name}: metadata 'pr' is not an integer ({pr_raw!r})")
 
     issue_raw = (meta.get("issue") or "").strip()
     if issue_raw and not _issue_numbers(issue_raw):
-        warnings.append(f"visual_checks/{directory.name}: metadata 'issue' has no issue number ({issue_raw!r})")
+        warnings.append(f"{directory.name}: metadata 'issue' has no issue number ({issue_raw!r})")
+
+    kind = (meta.get("kind") or "").strip().lower() or ("pr" if pr_number is not None else "exploration")
+    if kind not in KINDS:
+        warnings.append(f"{directory.name}: unknown kind {kind!r}; expected one of {', '.join(KINDS)}")
+    elif kind != "pr" and pr_number is not None:
+        warnings.append(f"{directory.name}: kind {kind!r} with a 'pr' number; convert it with --convert")
+
+    topics = _split_list(meta.get("topic", ""))
+    for topic in topics:
+        if topic not in TOPICS:
+            warnings.append(f"{directory.name}: unknown topic {topic!r}; expected {', '.join(TOPICS)}")
 
     title = meta.get("title") or directory.name
     description = meta.get("description") or ""
@@ -711,8 +897,17 @@ def scan_pr_dir(directory: Path) -> PrDir:
         body_text=body_text,
         figure_count=figure_count,
         mtime=_dir_mtime(directory),
+        kind=kind,
+        topics=topics,
+        related=_split_list(meta.get("related", ""), lower=False),
         warnings=warnings,
     )
+
+
+def _split_list(raw: str, lower: bool = True) -> list[str]:
+    """Comma- or space-separated values of a metadata line."""
+    parts = [part.strip() for part in raw.replace(",", " ").split() if part.strip()]
+    return [part.lower() for part in parts] if lower else parts
 
 
 def _issue_numbers(raw: str) -> list[int]:
@@ -720,14 +915,63 @@ def _issue_numbers(raw: str) -> list[int]:
     return [int(part.lstrip("#")) for part in raw.replace(",", " ").split() if part.lstrip("#").isdigit()]
 
 
-def build_pr_page(pr: PrDir, status: str = "needs review", closed: str | None = None) -> str:
+def link_graph(pr_dirs: list[PrDir]) -> dict[str, list[str]]:
+    """Map directory name -> names of the pages that list it in ``related``.
+
+    Warns about ``related`` entries naming no page and about a closed
+    ``led-to`` or ``superseded`` page with no link to a successor in either
+    direction.
+    """
+    names = {pr.path.name for pr in pr_dirs}
+    incoming: dict[str, list[str]] = {name: [] for name in names}
+    for pr in pr_dirs:
+        for target in pr.related:
+            if target not in names:
+                pr.warnings.append(f"{pr.path.name}: related {target!r} names no page")
+                print(f"WARNING: {pr.warnings[-1]}", file=sys.stderr)
+            else:
+                incoming[target].append(pr.path.name)
+    for pr in pr_dirs:
+        closed_with_successor = (pr.meta.get("status") or "").strip().lower() in {"led-to", "superseded"}
+        if closed_with_successor and pr.kind != "pr" and not pr.related and not incoming[pr.path.name]:
+            pr.warnings.append(f"{pr.path.name}: closed with a successor but no 'related' link either way")
+            print(f"WARNING: {pr.warnings[-1]}", file=sys.stderr)
+    return incoming
+
+
+def build_pr_page(
+    pr: PrDir,
+    status: str = "needs review",
+    closed: str | None = None,
+    pages: dict[str, PrDir] | None = None,
+    incoming: dict[str, list[str]] | None = None,
+) -> str:
     captions = _parse_figure_captions(pr.body_text)
+    pages = pages or {}
+    incoming = incoming or {}
 
     dl_items: list[tuple[str, str]] = []
+    dl_items.append(("Kind", html.escape(pr.kind)))
+    if pr.topics:
+        dl_items.append(("Topic", html.escape(", ".join(pr.topics))))
     dl_items.append(("Status", f'<span class="status {status_class(status)}">{html.escape(status)}</span>'))
+    if pr.meta.get("outcome"):
+        dl_items.append((META_LABELS["outcome"], _render_inline(pr.meta["outcome"])))
+    for label, ids in (
+        ("Related", pr.related),
+        ("Referenced by", [i for i in incoming.get(pr.path.name, []) if i not in pr.related]),
+    ):
+        links = [
+            f'<a href="../{html.escape(pages[i].path.name)}/index.html">{html.escape(pages[i].title)}</a> '
+            f'<span class="meta">({html.escape(pages[i].kind)})</span>'
+            for i in ids
+            if i in pages
+        ]
+        if links:
+            dl_items.append((label, "<br>".join(links)))
     if pr.url:
         dl_items.append(("URL", f'<a href="{html.escape(pr.url)}">{html.escape(pr.url)}</a>'))
-    else:
+    elif pr.kind == "pr":
         dl_items.append(("URL", "(missing)"))
     issues = _issue_numbers(pr.meta.get("issue", ""))
     if issues:
@@ -757,7 +1001,7 @@ def build_pr_page(pr: PrDir, status: str = "needs review", closed: str | None = 
             f"</div>"
         )
 
-    heading = f"PR #{pr.pr}: {pr.title}" if pr.pr is not None else pr.title
+    heading = f"PR #{pr.pr}: {pr.title}" if pr.pr is not None and pr.kind == "pr" else pr.title
     back_link = '<a class="back" href="../index.html">&larr; back to index</a>'
 
     body = (
@@ -793,8 +1037,11 @@ def build_index_page(
         date_cell = html.escape(pr.meta.get("date", ""))
         closed_cell = html.escape(closed.get(pr.pr, "") if pr.pr is not None else "")
         rows.append(
-            f'<tr{row_class} data-ord="{len(rows)}">'
+            f'<tr{row_class} data-ord="{len(rows)}" data-kind="{pr.kind}" data-topics=" {" ".join(pr.topics)} " '
+            f'data-status="{html.escape(status)}" data-class="{cls}" data-active="{html.escape(_latest_activity(pr, closed))}">'
             f"<td>{status_cell}</td>"
+            f"<td>{html.escape(pr.kind)}</td>"
+            f"<td>{html.escape(', '.join(pr.topics))}</td>"
             f"<td>{pr_cell}</td>"
             f"<td>{title_cell}</td>"
             f"<td>{desc_cell}</td>"
@@ -804,7 +1051,7 @@ def build_index_page(
             "</tr>"
         )
 
-    headers = ("Status", "PR", "Title", "Description", "Created", "Closed", "Figures")
+    headers = ("Status", "Kind", "Topic", "PR", "Title", "Description", "Created", "Closed", "Figures")
     header_row = "".join(f'<th data-col="{i}" title="Sort by {h}">{h}</th>' for i, h in enumerate(headers))
     table = (
         f'<table id="toc">\n<thead><tr>{header_row}</tr></thead>\n<tbody>\n' + "\n".join(rows) + "\n</tbody>\n</table>"
@@ -815,8 +1062,38 @@ def build_index_page(
     if counts["parked"]:
         parts.append(f"{counts['parked']} deferred")
     lead = f"<p>{', '.join(parts)}. Newest first; click a column heading to re-sort.</p>"
-    body = "<h1>Visual checks</h1>\n" + lead + "\n" + table + SORT_SCRIPT
+    body = "<h1>Visual checks</h1>\n" + lead + "\n" + _filter_controls(pr_dirs) + table + SORT_SCRIPT
     return _page_shell("Visual checks", body)
+
+
+def _latest_activity(pr: PrDir, closed: dict[int, str]) -> str:
+    """Latest of the created, updated and closed times, as ``YYYY-MM-DD HH:MM`` (empty if none)."""
+    times = [pr.meta.get("date", ""), pr.meta.get("updated", ""), closed.get(pr.pr, "") if pr.pr is not None else ""]
+    return max((t.strip() + " 00:00")[:16] if len(t.strip()) == 10 else t.strip() for t in times)
+
+
+def _filter_controls(pr_dirs: list[PrDir]) -> str:
+    """Filter row above the table; the script in ``SORT_SCRIPT`` applies it."""
+
+    def select(name: str, label: str, values: list[str]) -> str:
+        options = "".join(f'<option value="{html.escape(v)}">{html.escape(v)}</option>' for v in values)
+        return f'<label>{label} <select id="filter-{name}"><option value="">all</option>{options}</select></label> '
+
+    kinds = [k for k in KINDS if any(pr.kind == k for pr in pr_dirs)]
+    topics = [t for t in TOPICS if any(t in pr.topics for pr in pr_dirs)]
+    states = ["awaiting", "parked", "done"]
+    return (
+        '<p class="filters">'
+        + select("kind", "Kind", kinds)
+        + select("topic", "Topic", topics)
+        + select("class", "State", states)
+        + '<label>Active <select id="filter-time"><option value="">any time</option>'
+        + '<option value="today">today</option><option value="week">last 7 days</option>'
+        + '<option value="month">last 30 days</option><option value="year">last year</option></select></label> '
+        + '<label><input type="checkbox" id="filter-superseded"> show superseded</label> '
+        + '<button type="button" id="filter-reset">Reset filters</button> '
+        + '<span id="filter-count" class="meta"></span></p>\n'
+    )
 
 
 def _sort_key(pr: PrDir) -> tuple[float, int]:
@@ -854,6 +1131,28 @@ def set_status(directory: Path, status: str) -> None:
     print(f"{directory.name}: status set to {status}")
 
 
+def convert_to_pr(directory: Path, number: int, repo: str = DEFAULT_REPO) -> None:
+    """Turn a proposal's page into a PR page: set ``kind``, ``pr`` and ``url``, drop ``status``.
+
+    The directory keeps its name, so links to the page keep working; the status
+    is then taken from the PR's GitHub state.
+    """
+    summary = directory / "summary.md"
+    if not summary.is_file():
+        raise SystemExit(f"No summary.md in {directory}")
+    text = summary.read_text(encoding="utf-8")
+    match = re.match(r"(---\n)(.*?)(\n---\n)", text, re.S)
+    if not match:
+        raise SystemExit(f"{summary} has no metadata header to write into")
+    header = match.group(2)
+    if re.search(r"^kind:\s*pr\s*$", header, re.M):
+        raise SystemExit(f"{directory.name} is already a PR page")
+    header = re.sub(r"^(kind|pr|url|status):.*\n?", "", header, flags=re.M).rstrip("\n")
+    header += f"\nkind: pr\npr: {number}\nurl: https://github.com/{repo}/pull/{number}"
+    summary.write_text(text[: match.start(2)] + header + text[match.end(2) :], encoding="utf-8")
+    print(f"{directory.name}: converted to PR #{number}")
+
+
 def list_status(pr_dirs: list[PrDir], statuses: dict[Path, str]) -> None:
     """Print each directory and its status, outstanding first."""
     order = {"todo": 0, "parked": 1, "done": 2}
@@ -878,7 +1177,13 @@ def main() -> None:
         "--set-status",
         nargs=2,
         metavar=("DIR", "STATUS"),
-        help=f"Set a directory's review status and rebuild. One of: {', '.join(sorted(KNOWN_STATUSES))}.",
+        help=f"Set a directory's status and rebuild. One of: {', '.join(sorted(KNOWN_STATUSES))}.",
+    )
+    parser.add_argument(
+        "--convert",
+        nargs=2,
+        metavar=("DIR", "PR"),
+        help="Turn a proposal page into the page of PR number PR (metadata only; the directory keeps its name).",
     )
     parser.add_argument(
         "--list-status",
@@ -900,6 +1205,10 @@ def main() -> None:
         name, status = args.set_status
         set_status(root / name, status)
 
+    if args.convert:
+        name, number = args.convert
+        convert_to_pr(root / name, int(number), args.repo)
+
     pr_dirs = [scan_pr_dir(p) for p in sorted(root.iterdir()) if p.is_dir() and not p.name.startswith(".")]
 
     pr_dirs.sort(key=_sort_key)
@@ -915,9 +1224,12 @@ def main() -> None:
         list_status(pr_dirs, statuses)
         return
 
+    incoming = link_graph(pr_dirs)
+    pages = {pr.path.name: pr for pr in pr_dirs}
     for pr in pr_dirs:
+        closed = pr_closed.get(pr.pr) if pr.pr is not None else None
         (pr.path / "index.html").write_text(
-            build_pr_page(pr, statuses[pr.path], pr_closed.get(pr.pr) if pr.pr is not None else None), encoding="utf-8"
+            build_pr_page(pr, statuses[pr.path], closed, pages, incoming), encoding="utf-8"
         )
 
     (root / "index.html").write_text(build_index_page(pr_dirs, statuses, pr_closed), encoding="utf-8")

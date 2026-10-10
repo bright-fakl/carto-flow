@@ -325,6 +325,7 @@ def create_voronoi_cartogram(
         "boundary_mask": boundary_mask,
         "adhesion_boundary": adhesion_boundary,
     }
+    anchor = 0.0
     if isinstance(backend, RasterBackend):
         build_kwargs["debug"] = options.debug
         build_kwargs["area_tol"] = options.area_error_tol
@@ -332,14 +333,6 @@ def create_voronoi_cartogram(
         anchor = backend.generator_anchor
         if anchor is None:
             anchor = PREMORPH_GENERATOR_ANCHOR if morph_result is not None else 0.0
-        elif anchor > 0.0 and morph_result is None and not isinstance(backend.boundary, ElasticBoundary):
-            warnings.warn(
-                f"generator_anchor={anchor} without premorph or an ElasticBoundary holds the generators near the "
-                "input region centroids, which are not a layout with weight-proportional areas: cells can collapse "
-                "and areas can miss their targets. Use it with premorph=True or an ElasticBoundary.",
-                UserWarning,
-                stacklevel=2,
-            )
         build_kwargs["generator_anchor"] = anchor
 
     field = backend.build_field(positions, outer, **build_kwargs)
@@ -526,6 +519,8 @@ def create_voronoi_cartogram(
             if ignores_weights
             else "the power-diagram offset solve did not reach the tolerance"
         )
+        if not ignores_weights and anchor > 0.0:
+            cause += f"; generator_anchor={anchor:g} holds the generators near their starting positions"
         warnings.warn(
             f"Voronoi cell areas deviate from their weight-proportional targets: mean error "
             f"{mean_error:.2f} %, max error {max_error:.1f} % (area_error_tol="

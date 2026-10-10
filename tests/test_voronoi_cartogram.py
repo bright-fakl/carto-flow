@@ -976,9 +976,13 @@ class TestWeightedPowerCells:
 class TestPremorphAndGeneratorAnchor:
     """Flow-cartogram pre-morph and the generator anchor."""
 
-    def test_anchor_on_the_fixed_outline_warns(self, us_states):
+    def test_anchor_on_morphed_input_does_not_warn(self, us_states):
+        """The anchor is a plain option; the input may be a geometry the user morphed beforehand."""
+        import warnings
+
         w = us_states["Population (Millions)"].to_numpy(float)
-        with pytest.warns(UserWarning, match="generator_anchor"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", UserWarning)
             create_voronoi_cartogram(
                 us_states,
                 weights=w,

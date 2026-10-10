@@ -85,7 +85,7 @@ Each polygon is rasterized onto the grid: cells whose centers fall inside polygo
 
 Rasterization uses `shapely.contains_xy()` for vectorized point-in-polygon tests. The resulting field can be transformed by a `DensityModulator` before the velocity solve (see [Modulators](#density-and-velocity-modulators) below).
 
-By default, the density field is recomputed every `recompute_every` iterations (default: 10). Between recomputations the same field is reused, which is valid because the velocity pattern changes slowly near convergence.
+By default, the density field is recomputed every `recompute_every` iterations (default: 10). Between recomputations the same field is reused, which is valid because the velocity pattern changes slowly near convergence. With `refresh_on_rise` set (default 0.01; `None` disables it), the field is also recomputed before the next iteration whenever the convergence score `max(mean error / mean_tol, max error / max_tol)` rose by more than that relative amount in the last iteration; `recompute_every` then is the maximum interval between recomputations.
 
 #### 2. Velocity Field
 
@@ -139,7 +139,7 @@ The `coords` parameter supports three formats—$(N, 2)$ point arrays, $(X, Y)$ 
 After displacement, polygon areas are recomputed from the deformed vertices and per-geometry log₂ errors $e_i$ are calculated. The algorithm terminates when:
 
 - **Convergence**: $\bar{e} < \log_2(1 + \tau_{\text{mean}})$ and $\max e_i < \log_2(1 + \tau_{\text{max}})$, where $\tau_{\text{mean}}$ and $\tau_{\text{max}}$ are the `mean_tol` and `max_tol` parameters (expressed as fractions, e.g. 0.05 for 5%).
-- **Stall**: The maximum error increases for `stall_patience` consecutive iterations.
+- **Stall**: Judged per cycle: fixed windows of `max(recompute_every, 10)` iterations counted from the first iteration, independent of when the field is actually refreshed. Per cycle the minimum of the mean-error ratio (`mean error / mean_tol`) and of the max-error ratio (`max error / max_tol`) is recorded (below 1 means satisfied). A component counts toward progress only while it is still violated (cycle minimum above 1) and its cycle minimum is lower than that component's best so far by at least `stall_min_improvement`; improvements of a satisfied component do not count. The run stops after `stall_patience` consecutive cycles without progress. A run that ends without converging returns its best iterate (lowest `max(mean ratio, max ratio)`); `Cartogram.best_iteration` and `Cartogram.stop_reason` report which iterate and which rule.
 - **Iteration limit**: `n_iter` iterations have been completed.
 
 Scalar error metrics are recorded in `ConvergenceHistory` at every iteration. Full `CartogramSnapshot` objects (including geometries) are saved at every `snapshot_every` iterations, and always at the final iteration regardless of the termination reason.
@@ -186,11 +186,13 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 |---|---|---|
 | `dt` | 1.0 | Time step scalar controlling displacement magnitude per iteration |
 | `n_iter` | 500 | Maximum iterations |
-| `recompute_every` | 10 | Recompute density/velocity every N iterations |
+| `recompute_every` | 10 | Recompute density/velocity every N iterations (maximum interval with `refresh_on_rise`) |
+| `refresh_on_rise` | 0.01 | Relative score rise that triggers an early recompute; `None` = fixed schedule only |
 | `snapshot_every` | `None` | Save full snapshot every N iterations; `None` = final only |
 | `mean_tol` | 0.05 | Convergence threshold for mean area error (fraction) |
 | `max_tol` | 0.1 | Convergence threshold for max area error (fraction) |
-| `stall_patience` | 5 | Stall after N consecutive iterations of increasing max error; `None` = disabled |
+| `stall_patience` | 4 | Stall after N consecutive cycles (windows) without progress; `None` = disabled |
+| `stall_min_improvement` | 0.02 | Relative improvement of a violated component's cycle minimum that counts as progress |
 | `grid` | `None` | Pre-constructed `Grid`; takes precedence over size/margin/square |
 | `grid_size` | 100 | Grid points on longest axis |
 | `grid_margin` | 0.5 | Fractional padding around input bounds |

@@ -971,3 +971,96 @@ class TestWeightedPowerCells:
     def test_area_error_tol_validation(self):
         with pytest.raises(ValueError, match="area_error_tol"):
             VoronoiOptions(area_error_tol=0.0)
+
+
+class TestPremorphAndGeneratorAnchor:
+    """Flow-cartogram pre-morph and the generator anchor."""
+
+    def test_premorph_keeps_texas_on_the_gulf_coast(self, us_states):
+        """With the pre-morph, Texas keeps its morphed region and Louisiana does not move into it."""
+        import shapely
+
+        w = us_states["Population (Millions)"].to_numpy(float)
+        abbr = list(us_states["State Abbreviation"])
+        result = create_voronoi_cartogram(
+            us_states,
+            weights=w,
+            premorph=True,
+            backend=RasterBackend(resolution=256),
+            options=VoronoiOptions(n_iter=300, area_cv_tol=0.05),
+        )
+        assert result.premorph is not None
+        morphed = np.asarray(result.premorph.to_geodataframe().geometry, dtype=object)
+        cells = np.asarray(result.cells, dtype=object)
+        # The rigid boundary is the union of the morphed regions.
+        outline = shapely.union_all(shapely.make_valid(morphed))
+        assert result._field._current_boundary.symmetric_difference(outline).area <= 1e-6 * outline.area
+        assert _relative_errors(result, w).mean() <= VoronoiOptions().area_error_tol
+        assert result.metrics["converged"] is True
+        _assert_power_cells(result)
+        # Share of each morphed region covered by its own cell.
+        own = shapely.area(shapely.intersection(cells, shapely.make_valid(morphed))) / shapely.area(morphed)
+        tx, la = abbr.index("TX"), abbr.index("LA")
+        assert own[tx] >= 0.8  # 0.73 without the anchor
+        assert own[la] >= 0.5  # 0.0 without the anchor
+        # Cell centroids stay near the morphed centroids (median 0.44 cell radii without the anchor).
+        shift = shapely.distance(shapely.centroid(cells), shapely.centroid(morphed))
+        assert np.median(shift) <= 0.25 * result._field._cell_radius
+
+    def test_premorph_without_weights_equalizes_areas(self):
+        gdf = make_grid_gdf(3, 3)
+        gdf["area_weight"] = np.arange(1.0, 10.0)
+        result = create_voronoi_cartogram(gdf, premorph=True, backend=_FAST_RASTER, options=VoronoiOptions(n_iter=5))
+        assert result.premorph is not None
+        assert result._field._generator_anchor == 0.5
+        # Equal values: the morphed regions keep the unit squares' areas.
+        morphed = result.premorph.to_geodataframe().geometry.area.to_numpy()
+        assert morphed == pytest.approx(np.ones(9), rel=0.05)
+
+    def test_premorph_accepts_morph_options(self):
+        from carto_flow.flow_cartogram import MorphOptions
+
+        gdf = make_grid_gdf(3, 3)
+        opts = MorphOptions.preset_fast().copy_with(show_progress=False)
+        result = create_voronoi_cartogram(
+            gdf, weights="population", premorph=opts, backend=_FAST_RASTER, options=_FAST_OPTIONS
+        )
+        assert result.premorph.options.grid_size == opts.grid_size == 128
+        with pytest.raises(TypeError, match="premorph"):
+            create_voronoi_cartogram(gdf, premorph="yes", backend=_FAST_RASTER, options=_FAST_OPTIONS)
+
+    def test_anchor_is_off_by_default(self, gdf):
+        result = create_voronoi_cartogram(gdf, weights="population", backend=_FAST_RASTER, options=_FAST_OPTIONS)
+        assert result._field._anchors is None
+
+    def test_full_anchor_holds_generators_at_their_start(self):
+        gdf = make_grid_gdf(3, 3)
+        start = np.column_stack([gdf.geometry.centroid.x, gdf.geometry.centroid.y])
+        result = create_voronoi_cartogram(
+            gdf,
+            weights="population",
+            backend=RasterBackend(resolution=64, generator_anchor=1.0),
+            options=VoronoiOptions(n_iter=20),
+        )
+        np.testing.assert_allclose(result.positions, start, atol=1e-12)
+        # The areas still follow the weights.
+        w = gdf["population"].to_numpy(float)
+        assert _relative_errors(result, w).mean() <= VoronoiOptions().area_error_tol
+
+    def test_anchors_follow_the_elastic_boundary(self):
+        from carto_flow.voronoi_cartogram import ElasticBoundary
+
+        gdf = make_grid_gdf(3, 3)
+        start = np.column_stack([gdf.geometry.centroid.x, gdf.geometry.centroid.y])
+        result = create_voronoi_cartogram(
+            gdf,
+            weights="population",
+            backend=RasterBackend(resolution=64, generator_anchor=0.5, boundary=ElasticBoundary(0.1)),
+            options=VoronoiOptions(n_iter=5),
+        )
+        assert np.abs(result._field._anchors - start).max() > 0.0
+
+    @pytest.mark.parametrize("value", [-0.1, 1.5])
+    def test_anchor_validation(self, value):
+        with pytest.raises(ValueError, match="generator_anchor"):
+            RasterBackend(generator_anchor=value)

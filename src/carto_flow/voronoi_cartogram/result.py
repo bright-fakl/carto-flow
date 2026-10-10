@@ -401,6 +401,10 @@ class VoronoiCartogram:
     history : History or None
         Per-iteration snapshots (:class:`~carto_flow.voronoi_cartogram.history.VoronoiSnapshot`)
         captured when ``options.record_history=True``.  ``None`` otherwise.
+    premorph : Cartogram or None
+        The flow-cartogram result the run started from when
+        ``create_voronoi_cartogram(..., premorph=...)`` was used, else
+        ``None``.
     """
 
     positions: np.ndarray
@@ -413,6 +417,7 @@ class VoronoiCartogram:
     _field: Any = field(default=None, repr=False)
     area_errors: np.ndarray | None = field(default=None, repr=False)
     _weighted: bool = field(default=False, repr=False)
+    premorph: Any = field(default=None, repr=False)
 
     @property
     def degenerate_cells(self) -> list[Any]:

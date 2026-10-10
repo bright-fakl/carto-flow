@@ -370,6 +370,25 @@ class RasterBackend:
         :func:`carto_flow.geo_utils.simplify_coverage` to the result
         instead. ``0`` disables smoothing. Not used for weighted euclidean
         runs, whose cells are exact polygons. Default ``3.0``.
+    generator_anchor : float or None
+        Pull of each generator toward its starting position, in ``[0, 1]``.
+        Each relaxation step moves a generator toward
+        ``(1 - a) * cell_centroid + a * start``, so the generators settle
+        between the centroids of their cells and where they started (with an
+        elastic boundary, the starting positions move with the boundary
+        flow).  ``0`` is plain Lloyd relaxation, which makes cells compact
+        but can move regions far from their starting arrangement: a large
+        cell whose region is concave or reaches into a narrow part of the
+        outline (Texas on a population cartogram) cannot cover it with a
+        convex cell, and a neighbor whose generator slides into that part
+        takes it over.  Values above ``0`` keep regions near their starting
+        locations at the cost of less compact cells; cell areas are
+        unaffected.  Useful when the starting positions are already a good
+        layout, as with ``premorph`` in
+        :func:`~carto_flow.voronoi_cartogram.create_voronoi_cartogram`; on a
+        fixed original outline, where cells have to move to reach their
+        areas, it does not keep regions closer to their original locations.
+        ``None`` (default): ``0.5`` with ``premorph``, else ``0``.
 
     Examples
     --------
@@ -405,6 +424,7 @@ class RasterBackend:
     weight_ramp_iters: int = 10
     output_resolution: int | None = None
     cell_smoothing_px: float = 3.0
+    generator_anchor: float | None = None
 
     def __post_init__(self) -> None:
         if self.resolution < 10:
@@ -425,6 +445,8 @@ class RasterBackend:
 
         if self.area_equalizer_rate < 0:
             raise ValueError(f"area_equalizer_rate must be >= 0, got {self.area_equalizer_rate}")
+        if self.generator_anchor is not None and not (0.0 <= self.generator_anchor <= 1.0):
+            raise ValueError(f"generator_anchor must be in [0, 1], got {self.generator_anchor}")
 
     def build_field(
         self,
@@ -439,6 +461,7 @@ class RasterBackend:
         debug: bool = False,
         area_tol: float = 0.01,
         geometries=None,
+        generator_anchor: float | None = None,
     ) -> RasterField:
         from .fields import RasterField
 
@@ -474,6 +497,7 @@ class RasterBackend:
             weights=weights,
             area_tol=area_tol,
             geometries=geometries,
+            generator_anchor=generator_anchor if generator_anchor is not None else (self.generator_anchor or 0.0),
         )
 
     def relax_step(self, field: RasterField, factor: float, iteration: int = 0) -> None:

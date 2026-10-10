@@ -101,9 +101,14 @@ class TestStatus:
 
         assert mod.resolve_status(pr_dir, {7: state}) == expected
 
-    def test_directory_without_pr_needs_review(self, mod, tmp_path):
-        """An investigation is outstanding until someone says otherwise."""
+    def test_exploration_is_open(self, mod, tmp_path):
+        """An exploration is outstanding until someone says otherwise."""
         pr_dir = mod.scan_pr_dir(_write(tmp_path, "inv", title="t", description="d"))
+
+        assert mod.resolve_status(pr_dir, {}) == "open"
+
+    def test_pr_page_before_the_pr_exists_needs_review(self, mod, tmp_path):
+        pr_dir = mod.scan_pr_dir(_write(tmp_path, "draft", kind="pr", title="t", description="d"))
 
         assert mod.resolve_status(pr_dir, {}) == "needs review"
 
@@ -206,7 +211,7 @@ class TestStatusSortOrder:
         """The client-side rank table and the Python vocabulary must not drift."""
         import re
 
-        ranks = dict(re.findall(r'"([a-z ]+)": (\d+)', mod.SORT_SCRIPT))
+        ranks = dict(re.findall(r'"([a-z -]+)": (\d+)', mod.SORT_SCRIPT))
 
         assert set(ranks) == mod.KNOWN_STATUSES
         assert ranks["needs review"] == "0", "outstanding items must sort first"
@@ -234,12 +239,12 @@ class TestClickSortDirection:
         assert match
         first_asc = [v.strip() == "true" for v in match.group(1).split(",")]
 
-        assert len(first_asc) == 7
+        assert len(first_asc) == 9
         assert first_asc[0] is True, "Status: outstanding first"
-        assert first_asc[1] is False, "PR: highest first"
-        assert first_asc[4] is False, "Created: newest first"
-        assert first_asc[5] is False, "Closed: newest first"
-        assert first_asc[6] is False, "Figures: most first"
+        assert first_asc[3] is False, "PR: highest first"
+        assert first_asc[6] is False, "Created: newest first"
+        assert first_asc[7] is False, "Closed: newest first"
+        assert first_asc[8] is False, "Figures: most first"
 
 
 class TestTieBreaking:
@@ -332,7 +337,7 @@ class TestClosedAndUpdatedDates:
         d = _write(tmp_path, "a", pr=1, title="a", description="d", date="2026-10-01 09:00")
         pr = mod.scan_pr_dir(d)
         page = mod.build_index_page([pr], {pr.path: "merged"}, {1: "2026-10-03 11:00"})
-        assert '<th data-col="5" title="Sort by Closed">Closed</th>' in page
+        assert '<th data-col="7" title="Sort by Closed">Closed</th>' in page
         assert "<td>2026-10-03 11:00</td>" in page
 
 
@@ -360,3 +365,108 @@ class TestStableOrder:
         mod.main()
         page = (tmp_path / "index.html").read_text(encoding="utf-8")
         assert re.findall(r'href="(\w+)/index.html"', page) == ["alpha", "mid", "zeta"]
+
+
+class TestKindTopicAndStatus:
+    def test_kind_defaults_follow_the_pr_number(self, mod, tmp_path):
+        assert mod.scan_pr_dir(_write(tmp_path, "a", pr=1, title="t", description="d")).kind == "pr"
+        assert mod.scan_pr_dir(_write(tmp_path, "b", title="t", description="d")).kind == "exploration"
+
+    def test_unknown_kind_and_topic_warn(self, mod, tmp_path):
+        page = mod.scan_pr_dir(_write(tmp_path, "a", kind="idea", topic="flow, graphs", title="t", description="d"))
+
+        assert any("unknown kind" in w for w in page.warnings)
+        assert any("unknown topic 'graphs'" in w for w in page.warnings)
+        assert page.topics == ["flow", "graphs"]
+
+    def test_exploration_with_a_pr_number_warns(self, mod, tmp_path):
+        page = mod.scan_pr_dir(_write(tmp_path, "a", kind="proposal", pr=3, title="t", description="d"))
+
+        assert any("--convert" in w for w in page.warnings)
+
+    def test_status_must_fit_the_kind(self, mod, tmp_path):
+        exploration = mod.scan_pr_dir(_write(tmp_path, "a", title="t", description="d", status="merged"))
+        pr = mod.scan_pr_dir(_write(tmp_path, "b", pr=2, title="t", description="d", status="led-to"))
+        mod.resolve_status(exploration, {})
+        mod.resolve_status(pr, {})
+
+        assert any("does not apply" in w for w in exploration.warnings)
+        assert any("does not apply" in w for w in pr.warnings)
+
+    def test_no_action_needs_an_outcome(self, mod, tmp_path):
+        bare = mod.scan_pr_dir(_write(tmp_path, "a", title="t", description="d", status="no-action"))
+        explained = mod.scan_pr_dir(
+            _write(tmp_path, "b", title="t", description="d", status="no-action", outcome="negative result")
+        )
+        mod.resolve_status(bare, {})
+        mod.resolve_status(explained, {})
+
+        assert any("outcome" in w for w in bare.warnings)
+        assert explained.warnings == []
+
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [("open", "todo"), ("on-hold", "parked"), ("led-to", "done"), ("superseded", "done"), ("no-action", "done")],
+    )
+    def test_exploration_status_classes(self, mod, status, expected):
+        assert mod.status_class(status) == expected
+
+    def test_vocabularies_cover_every_known_status(self, mod):
+        assert mod.PR_STATUSES | mod.EXPLORATION_STATUSES == mod.KNOWN_STATUSES
+
+
+class TestRelatedLinks:
+    def test_reverse_link_is_derived(self, mod, tmp_path):
+        a = mod.scan_pr_dir(_write(tmp_path, "study", title="study", description="d", status="led-to"))
+        b = mod.scan_pr_dir(_write(tmp_path, "change", pr=5, title="change", description="d", related="study"))
+        incoming = mod.link_graph([a, b])
+        pages = {"study": a, "change": b}
+
+        assert incoming == {"study": ["change"], "change": []}
+        assert "Referenced by" in mod.build_pr_page(a, "led-to", None, pages, incoming)
+        assert "Related" in mod.build_pr_page(b, "needs review", None, pages, incoming)
+
+    def test_unknown_target_warns(self, mod, tmp_path):
+        a = mod.scan_pr_dir(_write(tmp_path, "a", title="t", description="d", related="ghost"))
+        mod.link_graph([a])
+
+        assert any("'ghost' names no page" in w for w in a.warnings)
+
+    def test_closed_page_without_a_successor_warns(self, mod, tmp_path):
+        alone = mod.scan_pr_dir(_write(tmp_path, "alone", title="t", description="d", status="led-to"))
+        mod.link_graph([alone])
+
+        assert any("no 'related' link" in w for w in alone.warnings)
+
+
+class TestConvert:
+    def test_proposal_becomes_a_pr_page_in_place(self, mod, tmp_path):
+        directory = _write(
+            tmp_path, "idea", kind="proposal", title="t", description="d", status="open", date="2026-06-01"
+        )
+
+        mod.convert_to_pr(directory, 42)
+        page = mod.scan_pr_dir(directory)
+
+        assert directory.is_dir() and page.kind == "pr" and page.pr == 42
+        assert page.url == "https://github.com/bright-fakl/carto-flow/pull/42"
+        assert "status" not in page.meta and page.meta["date"] == "2026-06-01"
+        assert page.warnings == []
+
+    def test_converting_a_pr_page_is_refused(self, mod, tmp_path):
+        directory = _write(tmp_path, "done", kind="pr", pr=1, title="t", description="d")
+
+        with pytest.raises(SystemExit, match="already a PR page"):
+            mod.convert_to_pr(directory, 2)
+
+
+class TestIndexFilters:
+    def test_rows_and_controls_carry_kind_topic_and_status(self, mod, tmp_path):
+        d = _write(tmp_path, "a", kind="proposal", topic="flow, voronoi", title="a", description="d")
+        page = mod.scan_pr_dir(d)
+
+        html = mod.build_index_page([page], {d: "open"})
+
+        assert 'data-kind="proposal"' in html and 'data-topics=" flow voronoi "' in html
+        assert 'id="filter-kind"' in html and 'id="filter-superseded"' in html
+        assert '<option value="voronoi">' in html

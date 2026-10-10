@@ -976,6 +976,16 @@ class TestWeightedPowerCells:
 class TestPremorphAndGeneratorAnchor:
     """Flow-cartogram pre-morph and the generator anchor."""
 
+    def test_anchor_on_the_fixed_outline_warns(self, us_states):
+        w = us_states["Population (Millions)"].to_numpy(float)
+        with pytest.warns(UserWarning, match="generator_anchor"):
+            create_voronoi_cartogram(
+                us_states,
+                weights=w,
+                backend=RasterBackend(resolution=64, generator_anchor=0.5),
+                options=VoronoiOptions(n_iter=3),
+            )
+
     def test_premorph_keeps_texas_on_the_gulf_coast(self, us_states):
         """With the pre-morph, Texas keeps its morphed region and Louisiana does not move into it."""
         import shapely

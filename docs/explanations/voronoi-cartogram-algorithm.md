@@ -343,6 +343,23 @@ original, fixed outline the cells have to move far from the original centroids
 to reach their areas, and an anchor there makes cells less compact without
 keeping regions closer to their original locations.
 
+Setting `generator_anchor` above 0 without `premorph` and without an
+`ElasticBoundary` emits a warning: on the fixed outline the generators are held
+near the original region centroids, which are not a layout with
+weight-proportional areas, and cells can collapse and miss their targets.
+
+**Split cells.** A power cell is convex before it is clipped to the outline. A
+convex cell that straddles a bay, a lake or a narrow neck of a non-convex
+outline is cut into two or more parts, and small islands become separate
+parts of the cell that owns them. The areas stay exact (the area of a cell is
+the sum of its parts), but a region can appear in more than one piece. This is
+more frequent with `premorph`, whose morphed outline has narrow necks and
+bays (432 congressional districts: 43 cells with a second part above 1 % of
+their area, against 15 to 23 on the original outline). To reduce it, simplify
+the outline (`simplify_tol`), choose a more compact outline (`boundary="convex_hull"`,
+`"bbox"` or `"circle"`), or use an `ElasticBoundary`. Geodesic labeling avoids
+assignments across bays but is available only without weights.
+
 ---
 
 ## Limitations

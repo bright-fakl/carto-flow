@@ -45,7 +45,7 @@ from .history import (
 from .options import MorphOptions, MorphStatus
 from .recompute import score_rose, should_recompute
 from .stall import StallMonitor, cycle_length
-from .stepsize import StepController
+from .stepsize import DEAD_BAND_FRACTION, StepController
 from .velocity import VelocityComputerFFTW
 
 __all__ = [
@@ -462,7 +462,12 @@ def morph_geometries(
         options.stall_patience, options.stall_min_improvement, cycle_length(options.recompute_every)
     )
     n_done = 0
-    step_controller = StepController(cycle_length(options.recompute_every), np.inf, enabled=options.adaptive_dt)
+    step_controller = StepController(
+        cycle_length(options.recompute_every),
+        np.inf,
+        DEAD_BAND_FRACTION * log2_max_tol,
+        enabled=options.adaptive_dt,
+    )
     if options.adaptive_dt:
         # Score of the starting geometries, for the first steps of a run that starts near the target.
         _e0 = compute_error_metrics(flat_geoms.compute_areas(use_parallel=False), target_areas, eps=error_eps)

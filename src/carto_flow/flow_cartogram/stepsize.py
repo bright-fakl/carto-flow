@@ -4,10 +4,10 @@ from collections import deque
 
 import numpy as np
 
-__all__ = ["DEAD_BAND", "FLOOR", "RESTART_SCORE", "STRENGTH", "THRESHOLD", "WINDOW", "StepController"]
+__all__ = ["DEAD_BAND_FRACTION", "FLOOR", "RESTART_SCORE", "STRENGTH", "THRESHOLD", "WINDOW", "StepController"]
 
-DEAD_BAND = 1e-3
-"""Smallest ``|log2(area / target)|`` that counts as an error with a sign."""
+DEAD_BAND_FRACTION = 0.1
+"""Dead band of the sign of an error, as a fraction of ``log2(1 + max_tol)``."""
 
 WINDOW = 3
 """Number of iterations over which a sign change of a region is remembered."""
@@ -32,7 +32,9 @@ class StepController:
     more than the correction asks for: the area of each region then alternates around its target
     and the sign of its error changes from one iteration to the next. A region counts as inverted
     if the sign of its error changed in any of the last ``WINDOW`` iterations; a change is only
-    recorded between two iterations in which the region's error exceeds ``DEAD_BAND``. Far from
+    recorded between two iterations in which the region's error exceeds the dead band, which is
+    ``DEAD_BAND_FRACTION * log2(1 + max_tol)``: it follows the tolerance, so a tight tolerance sees the
+    sign of smaller errors. Far from
     the target almost no region inverts. When the share of inverted regions exceeds ``THRESHOLD``
     the fraction is multiplied by ``1 - STRENGTH * share`` (not below ``FLOOR``); one shrink is
     followed by ``WINDOW`` iterations without another, so a sign change shrinks the step once. It never grows
@@ -50,13 +52,16 @@ class StepController:
         Number of iterations of the restart limit.
     score : float
         Score of the starting geometries (below 1 is converged).
+    dead_band : float
+        Smallest ``|log2(area / target)|`` that counts as an error with a sign.
     enabled : bool
         If False, the fraction is always 1.
     """
 
-    def __init__(self, window: int, score: float, enabled: bool = True):
+    def __init__(self, window: int, score: float, dead_band: float, enabled: bool = True):
         self.window = window
         self.score = score
+        self.dead_band = dead_band
         self.enabled = enabled
         self.fraction = 1.0
         self._previous: np.ndarray | None = None
@@ -79,7 +84,7 @@ class StepController:
         if self._previous is None:
             self._recent.append(np.zeros(len(log_errors), dtype=bool))
         else:
-            significant = (np.abs(log_errors) > DEAD_BAND) & (np.abs(self._previous) > DEAD_BAND)
+            significant = (np.abs(log_errors) > self.dead_band) & (np.abs(self._previous) > self.dead_band)
             self._recent.append(significant & (np.sign(log_errors) != np.sign(self._previous)))
         self._previous = log_errors
         if self._pause > 0:

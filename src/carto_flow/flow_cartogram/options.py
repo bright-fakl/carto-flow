@@ -158,11 +158,12 @@ class MorphOptions:
     ``dt``, and a tolerance below that amplitude is met only when the oscillation happens to dip
     below it. With ``adaptive_dt`` a region counts as inverted if the sign of its area error
     (current area against target area) changed in any of the last 3 iterations, between two
-    iterations in which its log2 error exceeds 1e-3. Far from the target almost no region inverts.
-    When more than 30 % of the regions are inverted the step is multiplied by ``1 - 0.6 * share``
-    (share of inverted regions), down to ``dt / 8``; the next 3 iterations cannot shrink it again.
-    The step never grows back. The rule does not
-    depend on the tolerances or on ``recompute_on_rise``.
+    iterations in which its log2 error exceeds 10 % of ``log2(1 + max_tol)`` (a tight tolerance
+    sees the sign of smaller errors). Far from the target almost no region inverts. When more than
+    30 % of the regions are inverted the step is multiplied by ``1 - 0.6 * share`` (share of
+    inverted regions), down to ``dt / 8``; the next 3 iterations cannot shrink it again. The step
+    never grows back. Apart from that dead band the rule does not depend on the tolerances, and it
+    does not depend on ``recompute_every`` or ``recompute_on_rise``.
 
     During the first ``max(recompute_every, 10)`` iterations the step is also limited to the score
     of the current state divided by 10 (not below ``dt / 8``), so a run that continues from a

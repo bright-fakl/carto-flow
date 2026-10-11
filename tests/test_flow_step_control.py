@@ -8,8 +8,17 @@ import pytest
 import shapely
 
 import carto_flow.data as data
+import carto_flow.flow_cartogram.algorithm as algorithm
 from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, morph_gdf
-from carto_flow.flow_cartogram.stepsize import FLOOR, RESTART_SCORE, STRENGTH, THRESHOLD, WINDOW, StepController
+from carto_flow.flow_cartogram.stepsize import (
+    DEAD_BAND_FRACTION,
+    FLOOR,
+    RESTART_SCORE,
+    STRENGTH,
+    THRESHOLD,
+    WINDOW,
+    StepController,
+)
 
 
 @pytest.fixture(scope="module")
@@ -58,21 +67,28 @@ def _alternating(n_regions, n_flipping, sign):
     return e
 
 
+BAND = 1e-3
+
+
+def _controller(window, score, enabled=True):
+    return StepController(window, score, BAND, enabled=enabled)
+
+
 class TestStepController:
     def test_disabled_always_uses_the_full_step(self):
-        controller = StepController(10, 0.1, enabled=False)
+        controller = _controller(10, 0.1, enabled=False)
         for sign in (1, -1, 1, -1):
             controller.update(_alternating(20, 20, sign), 5.0)
         assert [controller.current(step) for step in (0, 1, 50)] == [1.0, 1.0, 1.0]
 
     def test_errors_that_keep_their_sign_never_shrink_the_step(self):
-        controller = StepController(0, 100.0)
+        controller = _controller(0, 100.0)
         for k in range(20):
             controller.update(np.linspace(0.5, 0.05, 20) * (0.9**k), 100.0)
         assert controller.current(5) == 1.0
 
     def test_alternating_errors_shrink_the_step_and_it_does_not_recover(self):
-        controller = StepController(0, 100.0)
+        controller = _controller(0, 100.0)
         fractions = []
         for k in range(12):
             controller.update(_alternating(20, 20, 1 if k % 2 == 0 else -1), 100.0)
@@ -87,7 +103,7 @@ class TestStepController:
         assert controller.current(5) == FLOOR
 
     def test_a_sign_change_is_remembered_for_the_window(self):
-        controller = StepController(0, 100.0)
+        controller = _controller(0, 100.0)
         controller.update(_alternating(20, 20, 1), 100.0)
         controller.update(_alternating(20, 20, -1), 100.0)
         shrunk = controller.current(5)
@@ -102,19 +118,19 @@ class TestStepController:
 
     def test_share_below_the_threshold_is_ignored(self):
         n = 100
-        controller = StepController(0, 100.0)
+        controller = _controller(0, 100.0)
         controller.update(_alternating(n, 0, 1), 100.0)
         controller.update(_alternating(n, int(THRESHOLD * n), -1), 100.0)  # exactly the threshold: not above
         assert controller.current(5) == 1.0
 
     def test_errors_inside_the_dead_band_have_no_sign(self):
-        controller = StepController(0, 100.0)
+        controller = _controller(0, 100.0)
         for k in range(10):
             controller.update(np.full(20, 5e-4 * (1 if k % 2 == 0 else -1)), 100.0)
         assert controller.current(5) == 1.0
 
     def test_restart_window_scales_with_the_score(self):
-        controller = StepController(10, 0.5 * RESTART_SCORE)
+        controller = _controller(10, 0.5 * RESTART_SCORE)
         assert controller.current(0) == pytest.approx(0.5)
         assert controller.current(9) == pytest.approx(0.5)
         assert controller.current(10) == 1.0  # after the window
@@ -122,8 +138,40 @@ class TestStepController:
         assert controller.current(1) == FLOOR  # not below the floor
 
     def test_far_from_the_target_the_step_is_full(self):
-        controller = StepController(10, 1000.0)
+        controller = _controller(10, 1000.0)
         assert controller.current(0) == 1.0
+
+
+class TestDeadBand:
+    @staticmethod
+    def _band(states, monkeypatch, max_tol):
+        seen = []
+        original = algorithm.StepController
+
+        def recording(window, score, dead_band, enabled=True):
+            seen.append(dead_band)
+            return original(window, score, dead_band, enabled)
+
+        monkeypatch.setattr(algorithm, "StepController", recording)
+        morph_gdf(
+            states, "Population", options=_options(True, n_iter=2, recompute_every=2, mean_tol=0.002, max_tol=max_tol)
+        )
+        return seen[0]
+
+    def test_band_follows_the_max_tolerance(self, states, monkeypatch):
+        default = self._band(states, monkeypatch, 0.1)
+        tight = self._band(states, monkeypatch, 0.004)
+        assert default == pytest.approx(DEAD_BAND_FRACTION * np.log2(1.1))
+        assert tight == pytest.approx(DEAD_BAND_FRACTION * np.log2(1.004))
+        assert tight < default
+
+    def test_a_tight_band_sees_signs_that_a_wide_band_ignores(self):
+        errors = [np.full(20, 0.004 * sign) for sign in (1, -1, 1, -1, 1, -1)]
+        for band, shrinks in ((1e-3, True), (1e-2, False)):
+            controller = StepController(0, 100.0, band)
+            for e in errors:
+                controller.update(e, 100.0)
+            assert (controller.current(5) < 1.0) is shrinks
 
 
 class TestRunsWithoutOvershoot:

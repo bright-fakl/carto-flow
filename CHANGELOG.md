@@ -26,6 +26,17 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **Flow-cartogram error metrics floor areas relative to the mean target area,
+  not at one grid cell.** `MorphOptions.error_floor` (default `1e-3`) replaces the
+  floor of `grid.dx * grid.dy`, so the reported errors (`mean_error_pct`,
+  `max_error_pct`, the convergence history and the snapshot errors) no longer
+  depend on the grid size and are comparable between the levels of a
+  multiresolution morph; the initial error of the 432 districts is 513 % on every
+  grid (it was 176 % at grid 128 and 509 % at 1024). Runs on the bundled states and
+  districts are unchanged. On the counties the reported mean error at grid 256
+  is now 58.6 % (it was 4.5 % while the true mean error was 58.5 %). `0` disables
+  the floor.
+  ([#121](https://github.com/bright-fakl/carto-flow/pull/121))
 - **Weighted Voronoi cells follow their weights.** With `weights` and euclidean
   labeling, `RasterBackend` builds power diagrams (straight, convex-before-clipping
   cells) and solves the final areas exactly, so every cell is within

@@ -2345,7 +2345,8 @@ def animate_workflow(
         - ``str``: format-string expanded each frame. Available keys:
           ``{run}`` (0-based keyframe index), ``{n_runs}``,
           ``{t}`` (elapsed seconds), ``{duration}`` (total seconds),
-          ``{iteration}``, ``{n_iterations}``, ``{mean_error}``,
+          ``{iteration}`` (iteration of the shown state, ``best_iteration``),
+          ``{n_iterations}`` (iterations run, summed over the runs), ``{mean_error}``,
           ``{max_error}``, ``{mean_error_pct}``, ``{max_error_pct}``.
     precompute : bool, default=True
         If True, all frames are computed before the animation starts.
@@ -2390,7 +2391,8 @@ def animate_workflow(
     kf_max_error: list[float] = []
     kf_mean_error_pct: list[float] = []
     kf_max_error_pct: list[float] = []
-    kf_iterations: list[float] = []
+    kf_iterations: list[float] = []  # iteration of the shown (best) state
+    kf_iterations_run: list[float] = []  # iterations run, including those after the best one
 
     for cartogram in workflow:
         latest = cartogram.best
@@ -2407,7 +2409,9 @@ def animate_workflow(
         kf_max_error.append(errs.max_log_error if errs else _nan)
         kf_mean_error_pct.append(errs.mean_error_pct if errs else _nan)
         kf_max_error_pct.append(errs.max_error_pct if errs else _nan)
-        kf_iterations.append(float(cartogram.niterations) if hasattr(cartogram, "niterations") else _nan)
+        _best_iter = cartogram.best_iteration
+        kf_iterations.append(float(_best_iter) if _best_iter is not None else _nan)
+        kf_iterations_run.append(float(cartogram.niterations) if hasattr(cartogram, "niterations") else _nan)
 
         # Extract color values based on color_by
         if isinstance(color_by, str):
@@ -2724,7 +2728,7 @@ def animate_workflow(
             ax.set_title(_auto_title)
         elif isinstance(title, str):
             _t_elapsed = frame * duration / max(1, n_frames - 1)
-            _n_iters = sum(i for i in kf_iterations if not np.isnan(i))
+            _n_iters = sum(i for i in kf_iterations_run if not np.isnan(i))
             ctx = _SafeFormatDict(
                 run=keyframe_idx,
                 n_runs=n_keyframes,

@@ -434,7 +434,9 @@ class Cartogram:
         parts = [f"status={status_str}"]
 
         if self.niterations > 0:
-            parts.append(f"iter={self.niterations}")
+            best = self.best_iteration
+            suffix = f" (best {best})" if best is not None and best != self.niterations else ""
+            parts.append(f"iter={self.niterations}{suffix}")
 
         if self.duration > 0:
             parts.append(f"duration={self.duration:.2f}s")

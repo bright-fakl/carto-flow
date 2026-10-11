@@ -401,3 +401,19 @@ class TestBestAndLast:
         assert seen[-1][-1] == result.niterations
         with pytest.raises(ValueError, match="through"):
             animate_morph_history(result, through="never")
+
+    def test_repr_names_the_best_iteration(self, result):
+        assert f"iter={result.niterations} (best {result.best_iteration})" in repr(result)
+
+    @pytest.mark.filterwarnings("ignore:Animation was deleted")
+    def test_workflow_animation_title_uses_the_best_iteration(self, states):
+        from carto_flow.flow_cartogram.animation import animate_workflow
+
+        workflow = CartogramWorkflow(states, "Population", options=MorphOptions(**TestBestIterate.OPTIONS))
+        workflow.morph()
+        run = workflow.last
+        anim = animate_workflow(workflow, title="{iteration:.0f}|{n_iterations:.0f}", duration=1.0, fps=4)
+        anim._func(anim._save_count - 1 if hasattr(anim, "_save_count") else 3)
+        shown, total = anim._fig.axes[0].get_title().split("|")
+        assert int(shown) == run.best_iteration
+        assert int(total) == run.niterations

@@ -71,4 +71,4 @@ class TestMorphUnchangedForNormalRegions:
         """No state is below the floor, so the run is the one the one-cell floor gave."""
         result = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
         assert result.status == MorphStatus.CONVERGED
-        assert result.niterations == 113
+        assert result.niterations == 112

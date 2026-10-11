@@ -198,6 +198,18 @@ class MorphOptions:
     multiresolution morph. ``0`` disables the floor (a zero area then gives an infinite error).
     """
 
+    density_rasterization: str = "exact"
+    """How the density is rasterized onto the grid.
+
+    - ``"exact"`` (default): each cell takes the area-weighted mean density over the cell, so every
+      region takes part in proportion to its area and the integral of the density over the grid
+      equals the total value. Costs about as much as ``"center"`` (less from grid 256 up).
+      ``parallel_density`` is ignored.
+    - ``"center"``: each cell takes the density of the geometry that contains its center. Every
+      region is quantized to whole cells, and a region smaller than a cell that contains no cell
+      center is invisible to the flow.
+    """
+
     # Parallel computation options
     parallel_fft: bool | int = False
     """Control FFTW thread count for the velocity (Poisson solve) phase.
@@ -395,6 +407,7 @@ class MorphOptions:
             "stall_min_improvement",
             "recompute_on_rise",
             "error_floor",
+            "density_rasterization",
             "parallel_fft",
             "parallel_density",
         ]
@@ -418,6 +431,9 @@ class MorphOptions:
         elif field_name == "grid_square":
             if not isinstance(value, bool):
                 return "grid_square must be a boolean"
+        elif field_name == "density_rasterization":
+            if value not in ("center", "exact"):
+                return 'density_rasterization must be "center" or "exact"'
         elif field_name in ("parallel_fft", "parallel_density"):
             if not isinstance(value, (bool, int)) or (
                 isinstance(value, int) and not isinstance(value, bool) and value <= 0

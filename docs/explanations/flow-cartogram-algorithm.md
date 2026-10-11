@@ -85,7 +85,7 @@ flowchart LR
 
 Each polygon is rasterized onto the grid: cells whose centers fall inside polygon $i$ receive density $\rho_i = v_i / a_i$. Cells outside all polygons are filled with the global mean density $\rho^*$.
 
-Rasterization uses `shapely.contains_xy()` for vectorized point-in-polygon tests. The resulting field can be transformed by a `DensityModulator` before the velocity solve (see [Modulators](#density-and-velocity-modulators) below).
+By default (`density_rasterization="exact"`) each cell takes the area-weighted mean density over the cell: the signed areas that each polygon edge sweeps across the cells it crosses are accumulated and summed along each row, so the coverage of every cell is exact, a region smaller than a cell takes part in proportion to its area, and the integral of the density over the grid equals the total value. The cost is about that of the center test (it is faster from grid 256 up on the states and the districts), and `parallel_density` is ignored. With `density_rasterization="center"` rasterization uses `shapely.contains_xy()` for vectorized point-in-polygon tests: each cell takes the density of the geometry that contains its center, every region is quantized to whole cells, and a region smaller than a cell that contains no cell center is invisible to the flow. The resulting field can be transformed by a `DensityModulator` before the velocity solve (see [Modulators](#density-and-velocity-modulators) below).
 
 By default, the density field is recomputed every `recompute_every` iterations (default: 10). Between recomputations the same field is reused, which is valid because the velocity pattern changes slowly near convergence. With `recompute_on_rise` set (default 0.01; `None` disables it), the field is also recomputed before the next iteration whenever the convergence score `max(mean error / mean_tol, max error / max_tol)` rose by more than that relative amount in the last iteration; `recompute_on_rise` adds to `recompute_every` and does not replace it: `recompute_every` remains the maximum interval between recomputations.
 
@@ -190,6 +190,7 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `n_iter` | 500 | Maximum iterations |
 | `recompute_every` | 10 | Recompute density/velocity every N iterations (maximum interval with `recompute_on_rise`) |
 | `recompute_on_rise` | 0.01 | Relative score rise that triggers an early recompute; `None` = fixed schedule only |
+| `density_rasterization` | `"exact"` | `"exact"`: area-weighted over the cell; `"center"`: each cell takes the density at its center |
 | `snapshot_every` | `None` | Save full snapshot every N iterations; `None` = final only |
 | `mean_tol` | 0.05 | Convergence threshold for mean area error (fraction) |
 | `max_tol` | 0.1 | Convergence threshold for max area error (fraction) |

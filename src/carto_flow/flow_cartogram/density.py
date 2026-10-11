@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 import shapely
+from numba import njit
 from scipy.ndimage import distance_transform_edt, gaussian_filter
 
 # Import grid utilities
@@ -156,6 +157,7 @@ def compute_density_field_from_geometries(
     return_outside_mask=False,  # Deprecated for backward compatibility
     use_parallel=False,
     n_jobs=None,
+    rasterization="exact",
 ):
     """Compute density field directly from geometries (no dataframe dependency).
 
@@ -185,6 +187,14 @@ def compute_density_field_from_geometries(
     n_jobs : int, optional
         Number of parallel jobs to use for density field calculation. If None,
         uses all available cores.
+    rasterization : {"exact", "center"}, default="exact"
+        ``"exact"``: each cell takes the area-weighted mean of the geometry densities over the cell
+        (the uncovered part at the mean density), so a geometry smaller than a cell contributes in
+        proportion to its area and the integral of the density over the grid equals the total value.
+        With ``"exact"``, ``geometry_mask`` holds the geometry that covers most of the cell, or -1 if
+        that geometry covers less than half of it, and ``use_parallel`` and ``n_jobs`` are ignored.
+        ``"center"``: each cell takes the density of the geometry that contains its center, and the
+        mean density outside all geometries.
 
     Returns
     -------
@@ -195,6 +205,13 @@ def compute_density_field_from_geometries(
     outside_mask : np.ndarray (only if return_outside_mask=True)
         Boolean array where True indicates cells outside all geometries.
     """
+    if rasterization not in ("center", "exact"):
+        raise ValueError(f"rasterization must be 'center' or 'exact', got {rasterization!r}")
+    if rasterization == "exact":
+        return _exact_density(
+            geometries, column_values, grid, mean_density, smooth, return_geometry_mask, return_outside_mask
+        )
+
     rho = np.zeros_like(grid.X)
     # Initialize geometry mask with -1 (outside all geometries)
     geom_mask = np.full(grid.X.shape, -1, dtype=int)
@@ -284,6 +301,159 @@ def compute_density_field_from_geometries(
         mu_rho = np.mean(rho)
         rho = gaussian_filter(rho, sigma=smooth)
         # Preserve the global mean
+        rho *= mu_rho / np.mean(rho)
+
+    if return_geometry_mask:
+        return rho, geom_mask
+    if return_outside_mask:
+        return rho, outside
+    return rho
+
+
+@njit(cache=True)
+def _coverage_kernel(u, v, starts, nr, nc, cu, cv):
+    """Exact fraction of each cell covered by oriented rings, by signed area accumulation.
+
+    ``u, v`` are ring vertices in cell units (cell (i, j) spans [j, j+1] x [i, i+1] after subtracting
+    the offset ``cu, cv`` of the first cell); ``starts`` gives the ring boundaries. Each edge adds its signed area contribution to the cells it crosses; a
+    cumulative sum along each row then gives the coverage (the method used by scanline font
+    rasterizers).
+    """
+    acc = np.zeros((nr, nc + 2))
+    for k in range(len(starts) - 1):
+        for i in range(starts[k], starts[k + 1] - 1):
+            x0, y0, x1, y1 = u[i] - cu, v[i] - cv, u[i + 1] - cu, v[i + 1] - cv
+            if y0 == y1:
+                continue
+            d = 1.0
+            if y0 > y1:
+                x0, y0, x1, y1 = x1, y1, x0, y0
+                d = -1.0
+            dxdy = (x1 - x0) / (y1 - y0)
+            x = x0
+            if y0 < 0.0:
+                x -= y0 * dxdy
+                y0 = 0.0
+            yend = min(nr, int(np.ceil(y1)))
+            for r in range(int(y0), yend):
+                dy = min(r + 1.0, y1) - max(float(r), y0)
+                xn = x + dxdy * dy
+                w = dy * d
+                xa = min(max(min(x, xn), 0.0), float(nc))
+                xb = min(max(max(x, xn), 0.0), float(nc))
+                xaf = np.floor(xa)
+                ia = int(xaf)
+                ib = int(np.ceil(xb))
+                if ib <= ia + 1:
+                    xm = 0.5 * (xa + xb) - xaf
+                    acc[r, ia] += w - w * xm
+                    acc[r, ia + 1] += w * xm
+                else:
+                    sl = 1.0 / (xb - xa)
+                    xa_f = xa - xaf
+                    a0 = 0.5 * sl * (1.0 - xa_f) * (1.0 - xa_f)
+                    xb_f = xb - ib + 1.0
+                    am = 0.5 * sl * xb_f * xb_f
+                    acc[r, ia] += w * a0
+                    if ib == ia + 2:
+                        acc[r, ia + 1] += w * (1.0 - a0 - am)
+                    else:
+                        a1 = sl * (1.5 - xa_f)
+                        acc[r, ia + 1] += w * (a1 - a0)
+                        for xi in range(ia + 2, ib - 1):
+                            acc[r, xi] += w * sl
+                        a2 = a1 + (ib - ia - 3) * sl
+                        acc[r, ib - 1] += w * (1.0 - a2 - am)
+                    acc[r, ib] += w * am
+                x = xn
+    out = np.zeros((nr, nc))
+    for r in range(nr):
+        run = 0.0
+        for c in range(nc):
+            run += acc[r, c]
+            f = -run
+            out[r, c] = 0.0 if f < 1e-12 else (1.0 if f > 1.0 else f)
+    return out
+
+
+@njit(cache=True)
+def _exact_fields(u, v, ring_starts, geom_rings, density, nx, ny, rho, cover, best, mask):
+    """Accumulate exact coverage of every geometry into ``rho``, ``cover``, ``best`` and ``mask``."""
+    for g in range(len(geom_rings) - 1):
+        ra, rb = geom_rings[g], geom_rings[g + 1]
+        if rb <= ra:
+            continue
+        pa, pb = ring_starts[ra], ring_starts[rb]
+        c0, r0, c1, r1 = nx, ny, 0, 0
+        for i in range(pa, pb):
+            c0 = min(c0, int(np.floor(u[i])))
+            c1 = max(c1, int(np.ceil(u[i])))
+            r0 = min(r0, int(np.floor(v[i])))
+            r1 = max(r1, int(np.ceil(v[i])))
+        c0, r0, c1, r1 = max(c0, 0), max(r0, 0), min(max(c1, c0 + 1), nx), min(max(r1, r0 + 1), ny)
+        if c1 <= c0 or r1 <= r0:
+            continue
+        frac = _coverage_kernel(
+            u[pa:pb], v[pa:pb], ring_starts[ra : rb + 1] - pa, r1 - r0, c1 - c0, float(c0), float(r0)
+        )
+        for i in range(r1 - r0):
+            for j in range(c1 - c0):
+                f = frac[i, j]
+                if f > 0.0:
+                    rho[r0 + i, c0 + j] += f * density[g]
+                    cover[r0 + i, c0 + j] += f
+                    if f > best[r0 + i, c0 + j]:
+                        best[r0 + i, c0 + j] = f
+                        mask[r0 + i, c0 + j] = g
+
+
+def _exact_coverage_fields(geometries, density, grid, rho, cover, best, geom_mask):
+    """Exact coverage of all geometries on the grid (polygon edges integrated per cell, in numba)."""
+    arr = np.empty(len(geometries), dtype=object)
+    arr[:] = list(geometries)
+    parts, part_g = shapely.get_parts(shapely.orient_polygons(arr), return_index=True)
+    rings, ring_p = shapely.get_rings(parts, return_index=True)
+    pts, pt_r = shapely.get_coordinates(rings, return_index=True)
+    ring_starts = np.searchsorted(pt_r, np.arange(len(rings) + 1))
+    geom_rings = np.searchsorted(part_g[ring_p], np.arange(len(arr) + 1))
+    u = (pts[:, 0] - (grid.x_coords[0] - 0.5 * grid.dx)) / grid.dx
+    v = (pts[:, 1] - (grid.y_coords[0] - 0.5 * grid.dy)) / grid.dy
+    ny, nx = rho.shape
+    _exact_fields(u, v, ring_starts, geom_rings, density, nx, ny, rho, cover, best, geom_mask)
+
+
+def _exact_density(geometries, column_values, grid, mean_density, smooth, return_geometry_mask, return_outside_mask):
+    """Area-weighted density field (``rasterization="exact"`` of ``compute_density_field_from_geometries``)."""
+    rho = np.zeros_like(grid.X)
+    cover = np.zeros_like(grid.X)
+    best = np.zeros_like(grid.X)
+    geom_mask = np.full(grid.X.shape, -1, dtype=int)
+
+    areas = shapely.area(np.asarray(list(geometries), dtype=object)) if len(geometries) else np.zeros(0)
+    valid = np.array([not g.is_empty for g in geometries], dtype=bool) & (areas > 0)
+    density = np.where(valid, np.asarray(column_values, dtype=float) / np.where(valid, areas, 1.0), 0.0)
+    total_area = float(areas[valid].sum())
+
+    _exact_coverage_fields(
+        [g if ok else shapely.Polygon() for g, ok in zip(geometries, valid, strict=False)],
+        density,
+        grid,
+        rho,
+        cover,
+        best,
+        geom_mask,
+    )
+
+    if mean_density is None:
+        total_value = np.sum(column_values)
+        mean_density = float(total_value / total_area) if total_area > 0 else 0.0
+    rho += np.clip(1.0 - cover, 0.0, 1.0) * mean_density
+    outside = best < 0.5
+    geom_mask[outside] = -1
+
+    if smooth is not None:
+        mu_rho = np.mean(rho)
+        rho = gaussian_filter(rho, sigma=smooth)
         rho *= mu_rho / np.mean(rho)
 
     if return_geometry_mask:

@@ -36,7 +36,7 @@ Releases before 2.0.0 have no changelog entry; see the
   and the rule does not depend on `recompute_on_rise`. The first
   steps of a run that starts near the target are limited by the score, so a refinement
   of a converged cartogram continues from it. Of 32 tight-tolerance runs on the
-  states and districts 32 converge against 17, the highest true error in the late
+  states and districts 32 converge against 18, the highest true error in the late
   phase of the states at grid 256 and `dt` 0.2 drops from 2.0 % to 0.3 %, and a
   second run on a converged states cartogram takes 1 iteration instead of 4. Runs at
   the default tolerances take the same iterations as before in the 12 cases measured

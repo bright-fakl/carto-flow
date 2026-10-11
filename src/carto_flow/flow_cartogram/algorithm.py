@@ -508,6 +508,7 @@ def morph_geometries(
                 return_geometry_mask=True,
                 use_parallel=_parallel_density,
                 n_jobs=_ndensity,
+                rasterization=options.density_rasterization,
             )
             if _pt is not None:
                 _pt.density_s += _time.perf_counter() - _t0

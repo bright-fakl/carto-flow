@@ -122,7 +122,14 @@ $$
 \Delta t = dt \cdot \frac{\min(\Delta x, \Delta y)}{\max(|v_x|, |v_y|)}
 $$
 
-The factor $dt \in (0, 1]$ is set in `MorphOptions`. This CFL-like expression ensures that no vertex moves more than one cell width per iteration, preventing coordinate overshooting.
+The factor $dt \in (0, 1]$ is set in `MorphOptions`. This CFL-like expression ensures that no vertex moves more than one cell width per iteration, preventing coordinate overshooting. The fastest point moves $dt$ cells per iteration whatever the area error, so close to the target the step is larger than the correction the field asks for: the area of each region then alternates around its target, with an amplitude proportional to $dt$, and a tolerance below that amplitude is met only when the oscillation happens to dip below it.
+
+With `adaptive_dt=True` (default) $dt$ is replaced by $f \cdot dt$ with a fraction $f \in [1/8, 1]$:
+
+- **Sign changes.** A region is inverted if the sign of its area error (current area against target area, as $\log_2$ of the ratio) changed in any of the last 3 iterations; a change is only recorded between two iterations in which the error of the region exceeds $10^{-3}$. Far from the target almost no region inverts; in the oscillation most do. When the share $s$ of inverted regions exceeds 30 %, $f$ is multiplied by $1 - 0.6\,s$ (not below 1/8), and the next 3 iterations cannot shrink it again. $f$ never grows back. The rule does not depend on the tolerances, `recompute_every` or `recompute_on_rise`.
+- **Restart.** In the first `max(recompute_every, 10)` iterations $f$ is also limited to the score of the current state divided by 10 (not below 1/8). A run that continues from a geometry near the target (a level of a multiresolution morph, a refinement with `CartogramWorkflow.morph`, the second phase of a two-phase schedule) then takes a small first step instead of one that moves the fastest point $dt$ cells and undoes the convergence, which no sign change could prevent because it happens in the first iteration. A run that starts far from the target (score above 10) is not affected.
+
+`adaptive_dt=False` uses the constant $dt$. A run that stops at the end of a shrunk step ends at a point within the tolerance but not necessarily as close to the target as a constant step that happens to land low.
 
 #### 4. Displacement
 
@@ -190,6 +197,7 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `n_iter` | 500 | Maximum iterations |
 | `recompute_every` | 10 | Recompute density/velocity every N iterations (maximum interval with `recompute_on_rise`) |
 | `recompute_on_rise` | 0.01 | Relative score rise that triggers an early recompute; `None` = fixed schedule only |
+| `adaptive_dt` | `True` | Shrink the step when the area errors alternate in sign (down to `dt / 8`, never growing back) and limit the first steps of a run that starts near the target; `False` = constant `dt` |
 | `density_rasterization` | `"exact"` | `"exact"`: area-weighted over the cell; `"center"`: each cell takes the density at its center |
 | `snapshot_every` | `None` | Save full snapshot every N iterations; `None` = final only |
 | `mean_tol` | 0.05 | Convergence threshold for mean area error (fraction) |

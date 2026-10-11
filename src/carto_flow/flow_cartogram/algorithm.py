@@ -45,6 +45,7 @@ from .history import (
 from .options import MorphOptions, MorphStatus
 from .recompute import score_rose, should_recompute
 from .stall import StallMonitor, cycle_length
+from .stepsize import StepController
 from .velocity import VelocityComputerFFTW
 
 __all__ = [
@@ -461,6 +462,11 @@ def morph_geometries(
         options.stall_patience, options.stall_min_improvement, cycle_length(options.recompute_every)
     )
     n_done = 0
+    step_controller = StepController(cycle_length(options.recompute_every), np.inf, enabled=options.adaptive_dt)
+    if options.adaptive_dt:
+        # Score of the starting geometries, for the first steps of a run that starts near the target.
+        _e0 = compute_error_metrics(flat_geoms.compute_areas(use_parallel=False), target_areas, eps=error_eps)
+        step_controller.score = max(_e0.mean_log_error / log2_mean_tol, _e0.max_log_error / log2_max_tol)
 
     def _snapshot(iteration, errors, areas):
         """Snapshot of the current state of geometries, landmarks and coords."""
@@ -563,7 +569,7 @@ def morph_geometries(
         if _pt is not None:
             _t0 = _time.perf_counter()
         max_v = max(max_abs_velocity(vx, vy), 1e-8)
-        dt_prime = options.dt * min(grid.dx, grid.dy) / max_v
+        dt_prime = options.dt * step_controller.current(step) * min(grid.dx, grid.dy) / max_v
         since_recompute += 1
 
         # 2a. Displace geometry coordinates using the velocity field
@@ -638,6 +644,7 @@ def morph_geometries(
         score = max(mean_error / log2_mean_tol, max_error / log2_max_tol)
         rose = score_rose(score, prev_score, options.recompute_on_rise)
         prev_score = score
+        step_controller.update(error_metrics.log_errors, score)
         if score < best_score:
             best_score = score
             best_step = step

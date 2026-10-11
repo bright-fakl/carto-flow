@@ -150,6 +150,28 @@ class MorphOptions:
     iteration. ``recompute_every`` stays the maximum interval between recomputes. The window used for
     stall detection does not depend on when recomputes happen.
     """
+    adaptive_dt: bool = True
+    """Shrink the step when the area errors alternate in sign.
+
+    The step moves the fastest point ``dt`` grid cells whatever the error, so close to the target
+    each step overshoots: the areas alternate around their targets with an amplitude proportional to
+    ``dt``, and a tolerance below that amplitude is met only when the oscillation happens to dip
+    below it. With ``adaptive_dt`` a region counts as inverted if the sign of its area error
+    (current area against target area) changed in any of the last 3 iterations, between two
+    iterations in which its log2 error exceeds 1e-3. Far from the target almost no region inverts.
+    When more than 30 % of the regions are inverted the step is multiplied by ``1 - 0.6 * share``
+    (share of inverted regions), down to ``dt / 8``; the next 3 iterations cannot shrink it again.
+    The step never grows back. The rule does not
+    depend on the tolerances or on ``recompute_on_rise``.
+
+    During the first ``max(recompute_every, 10)`` iterations the step is also limited to the score
+    of the current state divided by 10 (not below ``dt / 8``), so a run that continues from a
+    geometry near the target (a multiresolution level, a refinement, a second phase) does not start
+    with a full step that undoes it. A run that starts far from the target (score above 10) is not
+    affected.
+
+    False: constant ``dt``.
+    """
     snapshot_every: int | None = None
     mean_tol: float = 0.05  # Percentage tolerance, e.g., 0.05 = 5%
     max_tol: float = 0.10  # Percentage tolerance, e.g., 0.10 = 10%
@@ -403,6 +425,7 @@ class MorphOptions:
             "progress_message",
             "benchmark",
             "prescale_components",
+            "adaptive_dt",
             "stall_patience",
             "stall_min_improvement",
             "recompute_on_rise",
@@ -523,6 +546,8 @@ class MorphOptions:
                 return "stall_min_improvement must be a number in [0, 1)"
 
         # Outer-boundary distortion reduction options
+        elif field_name == "adaptive_dt" and not isinstance(value, bool):
+            return "adaptive_dt must be a boolean"
         elif field_name == "prescale_components" and not isinstance(value, bool):
             return "prescale_components must be a boolean"
 

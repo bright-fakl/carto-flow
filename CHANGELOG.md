@@ -9,6 +9,46 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ## [Unreleased]
 
+### Added
+
+- **`create_voronoi_cartogram(..., premorph=True | MorphOptions)`** first morphs
+  the regions with the flow cartogram by the same weights and runs the Voronoi
+  relaxation on the morphed regions; the flow result is kept in
+  `result.premorph`. Without weights the morph equalizes the region areas.
+  ([#112](https://github.com/bright-fakl/carto-flow/pull/112))
+- **`RasterBackend(generator_anchor=a)`** pulls each generator toward its
+  starting position (strength in `[0, 1]`). The default is `0.5` with `premorph`
+  and `0` otherwise, so runs without `premorph` are unchanged.
+  ([#112](https://github.com/bright-fakl/carto-flow/pull/112))
+- **`VoronoiOptions.area_error_tol`** (default `0.01`): the tolerance on weighted
+  cell areas relative to their share of the boundary area.
+  ([#111](https://github.com/bright-fakl/carto-flow/pull/111))
+
+### Changed
+
+- **Weighted Voronoi cells follow their weights.** With `weights` and euclidean
+  labeling, `RasterBackend` builds power diagrams (straight, convex-before-clipping
+  cells) and solves the final areas exactly, so every cell is within
+  `area_error_tol` of its weight share; on the 49 states the mean area error is
+  0.04 % against 77.6 % before. Every weighted `RasterBackend` result changes;
+  unweighted results are unchanged. A weighted run that misses the tolerance is
+  reported as `converged=False` with a `RuntimeWarning`, which includes
+  `ExactBackend` and `distance_mode="geodesic"`, since both still ignore weights.
+  ([#111](https://github.com/bright-fakl/carto-flow/pull/111))
+- **The weighted `ElasticBoundary`** is driven by the input density carried along by
+  the boundary flow, keeps the boundary area at its initial value, and its step is
+  about twice as fast.
+  ([#111](https://github.com/bright-fakl/carto-flow/pull/111))
+- **A flow morph that does not converge returns its best iterate** (lowest
+  combined error score), and stops after `stall_patience` consecutive cycles
+  without progress. `History.best_iteration` points at the returned snapshot,
+  the snapshots stay in iteration order, and `animate_morph_history`,
+  `animate_fields` and `animate_workflow_fields` stop at it unless called with
+  `through="last"`. New option `MorphOptions.recompute_on_rise` recomputes the
+  velocity field early when the score rises; `recompute_every` stays the
+  maximum interval.
+  ([#110](https://github.com/bright-fakl/carto-flow/pull/110))
+
 ### Deprecated
 
 - **`Cartogram.latest`, `CartogramWorkflow.latest` and `History.latest()`.**
@@ -19,17 +59,12 @@ Releases before 2.0.0 have no changelog entry; see the
   returns, not the final iterate.
   ([#110](https://github.com/bright-fakl/carto-flow/pull/110))
 
-### Changed
+### Fixed
 
-- **A flow morph that does not converge returns its best iterate** (lowest
-  combined error score), and stops after `stall_patience` consecutive cycles
-  without progress. `History.best_iteration` points at the returned snapshot,
-  the snapshots stay in iteration order, and `animate_morph_history`,
-  `animate_fields` and `animate_workflow_fields` stop at it unless called with
-  `through="last"`. New option `MorphOptions.recompute_on_rise` recomputes the
-  velocity field early when the score rises; `recompute_every` stays the
-  maximum interval.
-  ([#110](https://github.com/bright-fakl/carto-flow/pull/110))
+- **Long `ElasticBoundary` runs could drop the mainland and collapse the
+  boundary:** when a rebuilt ring was self-intersecting, `make_valid` returned a
+  geometry collection and only items of type `Polygon` were kept.
+  ([#111](https://github.com/bright-fakl/carto-flow/pull/111))
 
 ## [2.0.0] - 2026-09-24
 

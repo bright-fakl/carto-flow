@@ -94,6 +94,11 @@ class RasterField(BaseField):
         ``0`` disables smoothing.  For cartographic generalisation in map
         units, apply :func:`carto_flow.geo_utils.simplify_coverage` to the
         result instead.
+    generator_anchor : float
+        In ``[0, 1]``: each relaxation step moves the generators toward
+        ``(1 - generator_anchor) * centroid + generator_anchor * anchor``,
+        where the anchors are the initial generator positions, advected with
+        an elastic boundary.  ``0`` is plain Lloyd relaxation.
     adj_pairs, boundary_mask, adhesion_boundary, adhesion_strength, weights
         See :class:`BaseField`.
     """
@@ -122,6 +127,7 @@ class RasterField(BaseField):
         weights=None,
         area_tol: float = 0.01,
         geometries=None,
+        generator_anchor: float = 0.0,
     ) -> None:
         BaseField.__init__(
             self,
@@ -149,6 +155,12 @@ class RasterField(BaseField):
         self._power_offsets = np.zeros(len(arr), dtype=np.float64)
         self._debug_geodesic = bool(debug_geodesic)
         self._area_tol = float(area_tol)
+        if not (0.0 <= generator_anchor <= 1.0):
+            raise ValueError(f"generator_anchor must be in [0, 1], got {generator_anchor}")
+        self._generator_anchor = float(generator_anchor)
+        # Anchor positions: the initial generators, carried along by an elastic
+        # boundary's flow (see _deform_boundary).
+        self._anchors = self.points.copy() if self._generator_anchor > 0.0 else None
         # Weighted euclidean runs use additive power offsets fitted to the
         # weight-proportional areas; the final cells are exact power cells.
         self._power_weighted = self._weights is not None and not self._geodesic_voronoi
@@ -498,6 +510,17 @@ class RasterField(BaseField):
                 self._grid_dx,
                 self._grid_dy,
             )
+            if self._anchors is not None:
+                self._anchors = displace_coords_numba(
+                    self._anchors,
+                    self._grid_x_coords,
+                    self._grid_y_coords,
+                    vx,
+                    vy,
+                    cdt,
+                    self._grid_dx,
+                    self._grid_dy,
+                )
 
         # Debug state
         orig_cat = np.vstack(cast(list, self._elastic_verts))
@@ -965,6 +988,8 @@ class RasterField(BaseField):
         safe = np.maximum(counts, 1)
         target = np.column_stack([sum_x / safe, sum_y / safe])
         target[counts == 0] = self.points[counts == 0]
+        if self._anchors is not None:
+            target = (1.0 - self._generator_anchor) * target + self._generator_anchor * self._anchors
 
         if self._power_weighted:
             # Offset update toward weight-proportional pixel counts.  The

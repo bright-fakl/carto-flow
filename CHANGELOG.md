@@ -82,6 +82,11 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **A region whose ring has a small self-intersection could be missing from the
+  density field of the exact rasterizer:** the ring was judged counter-clockwise
+  although its signed area was negative, so the region got negative coverage and
+  was clipped to zero. Rings are now oriented by their signed area.
+  ([#124](https://github.com/bright-fakl/carto-flow/pull/124))
 - **Long `ElasticBoundary` runs could drop the mainland and collapse the
   boundary:** when a rebuilt ring was self-intersecting, `make_valid` returned a
   geometry collection and only items of type `Polygon` were kept.

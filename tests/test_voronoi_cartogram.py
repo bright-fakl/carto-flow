@@ -1026,7 +1026,7 @@ class TestPremorphAndGeneratorAnchor:
         gdf["area_weight"] = np.arange(1.0, 10.0)
         result = create_voronoi_cartogram(gdf, premorph=True, backend=_FAST_RASTER, options=VoronoiOptions(n_iter=5))
         assert result.premorph is not None
-        assert result._field._generator_anchor == 0.5
+        assert result._field._generator_anchor == 0.25
         # Equal values: the morphed regions keep the unit squares' areas.
         morphed = result.premorph.to_geodataframe().geometry.area.to_numpy()
         assert morphed == pytest.approx(np.ones(9), rel=0.05)
@@ -1078,3 +1078,36 @@ class TestPremorphAndGeneratorAnchor:
     def test_anchor_validation(self, value):
         with pytest.raises(ValueError, match="generator_anchor"):
             RasterBackend(generator_anchor=value)
+
+
+class TestPrescaleComponents:
+    """prescale_components on input with disconnected parts of very different size."""
+
+    @pytest.fixture(scope="class")
+    def states_with_alaska_hawaii(self):
+        import carto_flow.data as examples
+
+        return examples.load_us_census(population=True, contiguous_only=False)
+
+    def _run(self, gdf, prescale):
+        w = gdf["Population (Millions)"].to_numpy(float)
+        result = create_voronoi_cartogram(
+            gdf,
+            weights=w,
+            backend=RasterBackend(resolution=96),
+            options=VoronoiOptions(n_iter=60, area_cv_tol=0.05, prescale_components=prescale),
+        )
+        return result, _relative_errors(result, w)
+
+    def test_alaska_and_hawaii_reach_their_weights_with_prescale(self, states_with_alaska_hawaii):
+        gdf = states_with_alaska_hawaii
+        abbr = list(gdf["State Abbreviation"])
+        _, err = self._run(gdf, prescale=True)
+        assert err.mean() <= VoronoiOptions().area_error_tol
+        assert err[abbr.index("AK")] <= 0.02
+        assert err[abbr.index("HI")] <= 0.02
+
+    def test_prescale_is_what_fixes_the_areas(self, states_with_alaska_hawaii):
+        _, off = self._run(states_with_alaska_hawaii, prescale=False)
+        _, on = self._run(states_with_alaska_hawaii, prescale=True)
+        assert off.mean() > 10 * on.mean()

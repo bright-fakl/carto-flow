@@ -17,7 +17,7 @@ Releases before 2.0.0 have no changelog entry; see the
   `result.premorph`. Without weights the morph equalizes the region areas.
   ([#112](https://github.com/bright-fakl/carto-flow/pull/112))
 - **`RasterBackend(generator_anchor=a)`** pulls each generator toward its
-  starting position (strength in `[0, 1]`). The default is `0.5` with `premorph`
+  starting position (strength in `[0, 1]`). The default is `0.25` with `premorph`
   and `0` otherwise, so runs without `premorph` are unchanged.
   ([#112](https://github.com/bright-fakl/carto-flow/pull/112))
 - **`VoronoiOptions.area_error_tol`** (default `0.01`): the tolerance on weighted

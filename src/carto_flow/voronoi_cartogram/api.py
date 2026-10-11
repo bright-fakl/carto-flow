@@ -18,7 +18,7 @@ from .result import VoronoiCartogram
 
 # Generator anchor used with ``premorph`` when the backend leaves
 # ``generator_anchor`` unset.
-PREMORPH_GENERATOR_ANCHOR = 0.5
+PREMORPH_GENERATOR_ANCHOR = 0.25
 
 
 def _make_outer_boundary(geometries, spec, *, _union=None):
@@ -169,7 +169,7 @@ def create_voronoi_cartogram(
         progress output; a ``MorphOptions`` is used as given.  With
         :class:`RasterBackend` and ``generator_anchor=None``, the generators
         are anchored to their morphed starting positions with strength
-        ``0.5``, which keeps each region near its morphed location (see
+        ``0.25``, which keeps each region near its morphed location (see
         ``RasterBackend.generator_anchor``).  The flow-cartogram result is
         stored in ``result.premorph``; its ``to_geodataframe()`` has the
         columns of *gdf*.  ``None`` or ``False`` (default): no morph.

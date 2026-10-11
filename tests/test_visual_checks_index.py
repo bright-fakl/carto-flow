@@ -490,3 +490,31 @@ class TestIndexFilters:
 
         assert mod._latest_activity(page, {1: "2026-10-03 11:00"}) == "2026-10-03 11:00"
         assert mod._latest_activity(mod.scan_pr_dir(_write(tmp_path, "b", title="b", description="d")), {}) == ""
+
+
+class TestInlineLinks:
+    def test_relative_and_absolute_links_become_anchors(self, mod):
+        html = mod._render_inline("see [the page](../other/index.html) and [GitHub](https://github.com/x/y)")
+
+        assert '<a href="../other/index.html">the page</a>' in html
+        assert '<a href="https://github.com/x/y">GitHub</a>' in html
+
+    def test_unsafe_schemes_are_left_as_text(self, mod):
+        html = mod._render_inline("[x](javascript:alert(1)) [y](data:text/html,hi)")
+
+        assert "<a " not in html
+
+    def test_code_spans_keep_their_brackets(self, mod):
+        html = mod._render_inline("use `a[0](x)` here")
+
+        assert "<code>a[0](x)</code>" in html and "<a " not in html
+
+    def test_link_text_may_hold_code(self, mod):
+        html = mod._render_inline("[`MorphOptions`](../p/index.html)")
+
+        assert '<a href="../p/index.html"><code>MorphOptions</code></a>' in html
+
+    def test_links_render_in_tables_and_paragraphs(self, mod):
+        page = mod.render_markdown("| a | b |\n|---|---|\n| [x](../y/index.html) | 1 |\n\ntext [z](https://e.org)")
+
+        assert page.count("<a href=") == 2

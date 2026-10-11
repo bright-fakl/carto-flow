@@ -68,8 +68,10 @@ class TestConvergedRunsUnchanged:
 class TestBestIterate:
     """A run that does not converge returns the iterate with the lowest score."""
 
-    # A large step with tight tolerances: the error is lowest well before the end.
+    # A large step with tight tolerances: the error is lowest well before the end. The step control
+    # would settle this run, so it is off here.
     OPTIONS: ClassVar[dict] = {
+        "adaptive_dt": False,
         "show_progress": False,
         "n_iter": 60,
         "dt": 0.6,
@@ -241,12 +243,19 @@ class TestStallMonitor:
 
 
 class TestStallPatience:
-    OPTIONS: ClassVar[dict] = {"show_progress": False, "n_iter": 60, "dt": 0.6, "mean_tol": 0.001, "max_tol": 0.002}
+    OPTIONS: ClassVar[dict] = {
+        "adaptive_dt": False,
+        "show_progress": False,
+        "n_iter": 60,
+        "dt": 0.6,
+        "mean_tol": 0.001,
+        "max_tol": 0.002,
+    }
 
     def test_preset_balanced_stalls_on_a_diverging_step(self, states):
         # The diverging step is tuned on center sampling; this test is about the stall rule, not the rasterizer.
         options = MorphOptions.preset_balanced().copy_with(
-            dt=0.6, show_progress=False, recompute_on_rise=None, density_rasterization="center"
+            dt=0.6, show_progress=False, recompute_on_rise=None, density_rasterization="center", adaptive_dt=False
         )
         result = morph_gdf(states, "Population", options=options)
         score = _score(result.convergence, options)
@@ -318,7 +327,9 @@ class TestRecomputeOnRise:
         assert _run_monitor(monitor, flat, flat) == 50
 
     def test_fewer_rises_than_the_fixed_schedule(self, states):
-        options = _strong_anisotropy_options(DirectionalTensor(theta=0, Dpar=4, Dperp=0.3)).copy_with(benchmark=True)
+        options = _strong_anisotropy_options(DirectionalTensor(theta=0, Dpar=4, Dperp=0.3)).copy_with(
+            benchmark=True, adaptive_dt=False
+        )
 
         def rises(result):
             s = _score(result.convergence, options)

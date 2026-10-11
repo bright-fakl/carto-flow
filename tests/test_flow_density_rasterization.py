@@ -126,7 +126,7 @@ class TestMorph:
 
     def test_exact_lowers_the_area_error(self, states):
         """Center sampling quantizes every region to whole cells; exact coverage removes that (grid 256, states)."""
-        base = MorphOptions(show_progress=False, grid_size=256, n_iter=300)
+        base = MorphOptions(show_progress=False, grid_size=256, n_iter=300, adaptive_dt=False)
         center = morph_gdf(states, "Population", options=base.copy_with(density_rasterization="center"))
         exact = morph_gdf(states, "Population", options=base)
         assert exact.status == MorphStatus.CONVERGED

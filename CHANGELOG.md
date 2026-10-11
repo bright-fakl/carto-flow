@@ -26,6 +26,25 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`MorphOptions.adaptive_dt`** (new, default `True`, so flow results change) shrinks the step of the flow
+  cartogram when the area errors alternate in sign. Near the target a constant step
+  overshoots, the areas alternate around their targets with an amplitude proportional
+  to `dt`, and a tolerance below that amplitude is met only by chance. When more than
+  30 % of the regions changed the sign of their error in the last 3 iterations, the
+  step is multiplied by `1 - 0.6 * share` (down to `dt / 8`) and never grows back;
+  the sign of an error counts only above a dead band of `0.1 * log2(1 + max_tol)`,
+  and the rule does not depend on `recompute_on_rise`. The first
+  steps of a run that starts near the target are limited by the score, so a refinement
+  of a converged cartogram continues from it. Of 32 tight-tolerance runs on the
+  states and districts 32 converge against 18, the highest true error in the late
+  phase of the states at grid 256 and `dt` 0.2 drops from 2.0 % to 0.3 %, and a
+  second run on a converged states cartogram takes 1 iteration instead of 4. Runs at
+  the default tolerances take the same iterations as before in the 12 cases measured
+  at `dt` 0.2 to 0.6 (at most 13 % more at `dt` 0.8); a run that stops after a shrunk
+  step stops within the tolerance, not necessarily as close to the target as a
+  constant step that lands low.
+  `adaptive_dt=False` restores the constant step.
+  ([#123](https://github.com/bright-fakl/carto-flow/pull/123))
 - **The density is rasterized by the area each region covers in a cell by
   default** (`MorphOptions.density_rasterization="exact"`) instead of by the
   region at the cell center; `"center"` restores the previous behavior. Regions

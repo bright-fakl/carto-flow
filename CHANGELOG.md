@@ -11,6 +11,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`MorphOptions.density_rasterization="exact"`** rasterizes the density by the
+  area each region covers in a cell instead of by the region at the cell center.
+  Regions smaller than a cell take part in the flow, and the coarse level of a
+  multiresolution morph no longer plateaus on them (states from grid 128: 63
+  iterations against 134; districts: 123 against 231). The default stays
+  `"center"`.
+  ([#119](https://github.com/bright-fakl/carto-flow/pull/119))
 - **`create_voronoi_cartogram(..., premorph=True | MorphOptions)`** first morphs
   the regions with the flow cartogram by the same weights and runs the Voronoi
   relaxation on the morphed regions; the flow result is kept in

@@ -105,6 +105,11 @@ def states():
     return data.load_us_census(population=True).reset_index(drop=True)
 
 
+@pytest.fixture(scope="module")
+def districts():
+    return data.load_us_census(population=True, level="congressional_district").reset_index(drop=True)
+
+
 class TestMorph:
     def test_default_is_the_exact_run(self, states):
         """The default run is the same with the option spelled out."""
@@ -126,3 +131,47 @@ class TestMorph:
         exact = morph_gdf(states, "Population", options=base)
         assert exact.status == MorphStatus.CONVERGED
         assert exact.get_errors().max_error_pct < 0.5 * center.get_errors().max_error_pct
+
+    def test_districts_converge_with_self_intersecting_regions(self, districts):
+        """A region whose ring crosses itself is not dropped from the field (districts, grid 128, dt 0.4, 1 % / 2 %)."""
+        options = MorphOptions(show_progress=False, grid_size=128, dt=0.4, mean_tol=0.01, max_tol=0.02, n_iter=400)
+        result = morph_gdf(districts, "Population", options=options)
+        assert result.status == MorphStatus.CONVERGED
+        assert result.get_errors().max_error_pct < 3.0
+
+
+def _twisted_ring():
+    """Clockwise body (10 x 8) whose highest vertex belongs to a small self-crossing loop.
+
+    GEOS reports the ring as counter-clockwise (its test looks at the highest vertex) while the signed
+    area of the ring is negative.
+    """
+    return [(2, 2), (2, 10), (4, 12), (1.5, 11), (5, 11.5), (10, 10), (10, 2), (2, 2)]
+
+
+class TestSelfIntersectingRing:
+    def test_the_ring_is_the_case_under_test(self):
+        ring = np.asarray(_twisted_ring())
+        shoelace = 0.5 * np.sum(ring[:-1, 0] * ring[1:, 1] - ring[1:, 0] * ring[:-1, 1])
+        polygon = Polygon(ring)
+        assert not polygon.is_valid
+        assert shoelace < 0
+        assert polygon.exterior.is_ccw
+
+    def test_the_body_keeps_its_density(self):
+        """Cells inside the body take the region's density, whatever way the ring runs."""
+        grid = _grid(bounds=(0.0, 0.0, 16.0, 16.0))
+        ring = _twisted_ring()
+        value = 100.0
+        area = Polygon(ring).area
+        for coords in (ring, ring[::-1]):
+            rho = compute_density_field_from_geometries([Polygon(coords)], [value], grid, 0.0, rasterization="exact")
+            inside = (grid.X > 3.0) & (grid.X < 9.0) & (grid.Y > 3.0) & (grid.Y < 9.0)
+            assert np.allclose(rho[inside], value / area)
+
+    def test_both_directions_give_the_same_field(self):
+        grid = _grid()
+        ring = _twisted_ring()
+        a = compute_density_field_from_geometries([Polygon(ring)], [100.0], grid, 0.0, rasterization="exact")
+        b = compute_density_field_from_geometries([Polygon(ring[::-1])], [100.0], grid, 0.0, rasterization="exact")
+        assert np.allclose(a, b)

@@ -21,7 +21,7 @@ Examples
 >>>
 >>> # Access results
 >>> workflow.original                     # Initial unmorphed state
->>> workflow.latest                       # Most recent result
+>>> workflow.last                         # Most recent result
 >>> workflow[1]                           # First morph result
 >>>
 >>> # Export
@@ -29,6 +29,7 @@ Examples
 """
 
 import copy
+import warnings
 from collections.abc import Iterator
 from typing import Any, Literal
 
@@ -134,7 +135,7 @@ class CartogramWorkflow:
     >>>
     >>> # Access results
     >>> workflow.original                     # Initial state
-    >>> workflow.latest                       # Most recent
+    >>> workflow.last                         # Most recent
     >>> workflow[1]                           # First morph result
     >>>
     >>> # Export
@@ -247,7 +248,7 @@ class CartogramWorkflow:
                 else:
                     raise AttributeError(f"MorphOptions has no attribute '{key}'")
 
-        latest = self._results[-1].latest
+        latest = self._results[-1].best
         values = np.array(self._original_gdf[self._column])
 
         # Compute target density from original data (invariant across refinements)
@@ -305,7 +306,7 @@ class CartogramWorkflow:
         Returns
         -------
         Cartogram
-            Final level result (also accessible via self.latest).
+            Final level result (also accessible via self.last).
 
         Examples
         --------
@@ -347,7 +348,7 @@ class CartogramWorkflow:
             if result.status == MorphStatus.CONVERGED:
                 break
 
-        return self.latest
+        return self.last
 
     # ========================================================================
     # Container Access
@@ -371,9 +372,19 @@ class CartogramWorkflow:
         return self._results[0]
 
     @property
-    def latest(self) -> Cartogram:
+    def last(self) -> Cartogram:
         """The most recent result."""
         return self._results[-1]
+
+    @property
+    def latest(self) -> Cartogram:
+        """The most recent result.
+
+        .. deprecated:: 2.1
+            Use :attr:`last`.
+        """
+        warnings.warn("CartogramWorkflow.latest is deprecated; use last", DeprecationWarning, stacklevel=2)
+        return self.last
 
     @property
     def results(self) -> list[Cartogram]:
@@ -402,7 +413,7 @@ class CartogramWorkflow:
         Parameters
         ----------
         run_id : int, optional
-            Which result to export (default: latest).
+            Which result to export (default: last).
         iteration : int, optional
             Which iteration snapshot (default: latest in result).
         include_errors : bool, default=True
@@ -415,7 +426,7 @@ class CartogramWorkflow:
         GeoDataFrame
             Copy of original with morphed geometry and optional metrics.
         """
-        cartogram = self._results[run_id] if run_id is not None else self.latest
+        cartogram = self._results[run_id] if run_id is not None else self.last
         return cartogram.to_geodataframe(
             iteration=iteration,
             include_errors=include_errors,
@@ -465,10 +476,10 @@ class CartogramWorkflow:
         """Concise string representation."""
         n_geoms = len(self._original_gdf)
         n_results = len(self._results)
-        status = self.latest.status.value
+        status = self.last.status.value
 
         if self.is_morphed:
-            errors = self.latest.get_errors()
+            errors = self.last.get_errors()
             error_str = f", mean_error={errors.mean_error_pct:.1f}%" if errors else ""
         else:
             error_str = ""

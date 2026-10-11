@@ -30,7 +30,7 @@ Examples
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -476,9 +476,9 @@ def _extract_geometries(source: Any) -> "GeoDataFrame":
     TypeError
         If source type is not supported
     """
-    # Check for Cartogram first (has .latest property with .geometry)
-    if hasattr(source, "latest") and source.latest is not None:
-        snapshot = source.latest
+    # Check for Cartogram first (has .best property with .geometry)
+    if hasattr(source, "best") and source.best is not None:
+        snapshot = source.best
         if hasattr(snapshot, "geometry") and snapshot.geometry is not None:
             # Return geometry as a GeoDataFrame-like object
             import geopandas as gpd
@@ -762,6 +762,7 @@ def animate_morph_history(
     title: str | bool | None = None,
     precompute: bool = True,
     figsize: tuple[float, float] = (10, 8),
+    through: Literal["best", "last"] = "best",
     **kwargs: Any,
 ) -> FuncAnimation:
     """Animate through algorithm snapshots from a Cartogram's history.
@@ -828,6 +829,9 @@ def animate_morph_history(
         Set to False to reduce peak memory usage for very long animations.
     figsize : tuple, default=(10, 8)
         Figure size (width, height)
+    through : {"best", "last"}, default="best"
+        Where the animation ends. ``"best"`` stops at the returned state
+        (``best_iteration``); ``"last"`` continues through the iterations run after it.
     **kwargs
         Additional arguments passed to GeoDataFrame.plot()
 
@@ -884,7 +888,9 @@ def animate_morph_history(
     if not hasattr(cartogram, "snapshots") or cartogram.snapshots is None:
         raise ValueError("cartogram.snapshots is required for animate_morph_history")
 
-    snapshots = cartogram.snapshots.snapshots
+    if through not in ("best", "last"):
+        raise ValueError(f"through must be 'best' or 'last', got {through!r}")
+    snapshots = cartogram.snapshots.through_best() if through == "best" else cartogram.snapshots.snapshots
     if not snapshots:
         raise ValueError("cartogram.snapshots contains no snapshots")
 
@@ -1783,6 +1789,7 @@ def animate_fields(
     show_axes: bool = True,
     title: str | bool | None = None,
     figsize: tuple[float, float] = (10, 8),
+    through: Literal["best", "last"] = "best",
 ) -> FuncAnimation:
     """Animate density and/or velocity fields over iterations.
 
@@ -1835,6 +1842,9 @@ def animate_fields(
           ``{iteration}``, ``{field}`` (e.g. "Density Field"), ``{t}``.
     figsize : tuple, default=(10, 8)
         Figure size (width, height)
+    through : {"best", "last"}, default="best"
+        Where the animation ends. ``"best"`` stops at the returned state
+        (``best_iteration``); ``"last"`` continues through the iterations run after it.
 
     Returns
     -------
@@ -1883,7 +1893,9 @@ def animate_fields(
     if cartogram.grid is None:
         raise ValueError("cartogram.grid is required for field animation")
 
-    snapshots = cartogram.internals.snapshots
+    if through not in ("best", "last"):
+        raise ValueError(f"through must be 'best' or 'last', got {through!r}")
+    snapshots = cartogram.internals.through_best() if through == "best" else cartogram.internals.snapshots
     if not snapshots:
         raise ValueError("cartogram.internals contains no snapshots")
 
@@ -2381,7 +2393,7 @@ def animate_workflow(
     kf_iterations: list[float] = []
 
     for cartogram in workflow:
-        latest = cartogram.latest
+        latest = cartogram.best
         if latest is None or latest.geometry is None:
             raise ValueError("Cartogram has no geometry snapshot")
 
@@ -2756,6 +2768,7 @@ def animate_workflow_fields(
     show_axes: bool = True,
     title: str | bool | None = None,
     figsize: tuple[float, float] = (10, 8),
+    through: Literal["best", "last"] = "best",
 ) -> FuncAnimation:
     """Animate density and/or velocity fields across all cartograms in a workflow.
 
@@ -2800,6 +2813,9 @@ def animate_workflow_fields(
           ``{field}`` (e.g. "Density Field"), ``{t}``.
     figsize : tuple, default=(10, 8)
         Figure size (width, height).
+    through : {"best", "last"}, default="best"
+        Where the animation ends. ``"best"`` stops at the returned state
+        (``best_iteration``); ``"last"`` continues through the iterations run after it.
 
     Returns
     -------
@@ -2872,7 +2888,8 @@ def animate_workflow_fields(
         global_xmax = max(global_xmax, grid.xmax)
         global_ymax = max(global_ymax, grid.ymax)
 
-        for snap in cartogram.internals.snapshots:
+        run_snapshots = cartogram.internals.through_best() if through == "best" else cartogram.internals.snapshots
+        for snap in run_snapshots:
             # Filter based on what we need to show
             if show_density and show_velocity:
                 if not (has_density(snap) and has_velocity(snap)):
@@ -2887,8 +2904,8 @@ def animate_workflow_fields(
             all_snapshots.append((run_idx, grid, snap, cumulative_iter + snap.iteration))
 
         # Update cumulative iteration based on last snapshot
-        if cartogram.internals.snapshots:
-            cumulative_iter += cartogram.internals.snapshots[-1].iteration
+        if run_snapshots:
+            cumulative_iter += run_snapshots[-1].iteration
 
         run_boundaries.append(len(all_snapshots))
 

@@ -56,7 +56,7 @@ algorithm using `values=counts`:
 
 ```python
 flow_result = morph_geometries(geometries, values=counts, options=morph_opts)
-working_geometries = list(flow_result.latest.geometry)
+working_geometries = list(flow_result.best.geometry)
 ```
 
 This pre-distorts each region's shape so its area becomes proportional to its target tile count

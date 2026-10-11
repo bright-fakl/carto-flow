@@ -95,7 +95,7 @@ def save_cartogram(
         }
 
     # Latest morphed geometries
-    latest = cartogram.snapshots.latest() if cartogram.snapshots else None
+    latest = cartogram.best
     if latest is not None and latest.geometry is not None:
         data["latest_geometries"] = [geom.__geo_interface__ for geom in latest.geometry]
         if latest.density is not None:
@@ -212,7 +212,7 @@ def load_cartogram(path: str | Path) -> "Cartogram":
         errors=errors,
         density=density,
     )
-    history: History[CartogramSnapshot] = History()
+    history: History[CartogramSnapshot] = History(best_iteration=snapshot.iteration)
     history.add_snapshot(snapshot)
 
     # Source GeoDataFrame
@@ -256,7 +256,6 @@ def load_cartogram(path: str | Path) -> "Cartogram":
         convergence=conv,
         status=status,
         niterations=niterations,
-        best_iteration=data.get("best_iteration"),
         duration=data.get("duration", 0.0),
         target_density=data.get("target_density"),
         grid=grid,

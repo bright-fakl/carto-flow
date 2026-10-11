@@ -89,7 +89,7 @@ class TestBestIterate:
         assert result.best_iteration == best
         assert best < 60
         # The returned state is the best iterate; the final iterate stays available.
-        assert result.latest.iteration == best
+        assert result.best.iteration == best
         assert result.snapshots.get_snapshot(60) is not None
         assert result.get_errors().max_log_error == result.convergence.get_by_iteration(best).max_log_error
         assert result.get_errors().max_log_error < result.get_errors(60).max_log_error
@@ -101,7 +101,7 @@ class TestBestIterate:
         result = morph_gdf(states, "Population", options=options)
         iterations = result.snapshots.get_iterations()
         assert len(iterations) == len(set(iterations))
-        assert result.latest.iteration == result.best_iteration
+        assert result.best.iteration == result.best_iteration
 
     def test_geometry_landmarks_and_coords_belong_to_the_same_iterate(self, states):
         landmarks = states.copy()
@@ -127,7 +127,7 @@ class TestBestIterate:
         result.save(tmp_path / "c.json")
         loaded = type(result).load(tmp_path / "c.json")
         assert loaded.best_iteration == result.best_iteration
-        assert loaded.latest.iteration == result.best_iteration
+        assert loaded.best.iteration == result.best_iteration
 
 
 class TestWorkflowContinuation:
@@ -136,7 +136,7 @@ class TestWorkflowContinuation:
         workflow = CartogramWorkflow(states, "Population", options=options)
         first = workflow.morph()
         assert first.best_iteration < first.niterations
-        best_geometry = first.latest.geometry
+        best_geometry = first.best.geometry
 
         # The exported geometry is the best iterate, and it is the start of the next run.
         assert workflow.to_geodataframe().geometry.iloc[0].equals(best_geometry[0])
@@ -252,7 +252,7 @@ class TestStallPatience:
         assert result.niterations % options.recompute_every == 0
         assert result.best_iteration == int(np.argmin(score)) + 1
         assert result.best_iteration < result.niterations
-        assert result.latest.iteration == result.best_iteration
+        assert result.best.iteration == result.best_iteration
 
     def test_none_disables_stall_detection(self, states):
         options = MorphOptions(**self.OPTIONS, stall_patience=None)
@@ -337,3 +337,67 @@ class TestRecomputeOnRise:
     def test_invalid_value_is_rejected(self, value):
         with pytest.raises(ValueError, match="recompute_on_rise"):
             MorphOptions(recompute_on_rise=value)
+
+
+class TestBestAndLast:
+    """`best` is the returned state, `last` the last stored snapshot; histories stay in iteration order."""
+
+    @pytest.fixture(scope="class")
+    def result(self, states):
+        return morph_gdf(states, "Population", options=MorphOptions(**TestBestIterate.OPTIONS, snapshot_every=20))
+
+    def test_snapshots_are_in_iteration_order(self, result):
+        iterations = result.snapshots.get_iterations()
+        assert iterations == sorted(iterations)
+        assert iterations[-1] == result.niterations
+        assert result.best_iteration in iterations
+        assert result.best_iteration < result.niterations
+
+    def test_best_and_last(self, result):
+        assert result.best.iteration == result.best_iteration
+        assert result.last.iteration == result.niterations
+        assert result.get_errors().max_error_pct < result.get_errors(iteration=result.niterations).max_error_pct
+
+    def test_defaults_read_the_best_snapshot(self, result):
+        gdf = result.to_geodataframe()
+        assert list(gdf.geometry) == list(result.best.geometry)
+        assert list(result.get_geometry()) == list(result.best.geometry)
+
+    def test_latest_is_deprecated_and_means_best(self, result):
+        with pytest.warns(DeprecationWarning, match="best"):
+            assert result.latest is result.best
+
+    def test_converged_run_has_the_same_best_and_last(self, states):
+        result = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
+        assert result.best is result.last
+
+    def test_internals_end_at_the_best_iterate(self, states):
+        result = morph_gdf(states, "Population", options=MorphOptions(**TestBestIterate.OPTIONS, save_internals=True))
+        internals = result.internals
+        assert internals.best_iteration <= result.best_iteration
+        assert internals.best().iteration == internals.best_iteration
+        assert all(s.iteration <= result.best_iteration for s in internals.through_best())
+
+    def test_workflow_last_replaces_latest(self, states):
+        workflow = CartogramWorkflow(states, "Population", options=MorphOptions(show_progress=False))
+        workflow.morph()
+        assert workflow.last is workflow[-1]
+        with pytest.warns(DeprecationWarning, match="last"):
+            assert workflow.latest is workflow.last
+
+    @pytest.mark.filterwarnings("ignore:Animation was deleted")
+    def test_animation_stops_at_the_best_iteration(self, result):
+        from carto_flow.flow_cartogram.animation import animate_morph_history
+
+        seen = []
+
+        def mapper(progress, variables):
+            seen.append(list(variables["iteration"]))
+            return 0.0
+
+        animate_morph_history(result, position_mapper=mapper, duration=0.2, fps=5)
+        animate_morph_history(result, position_mapper=mapper, duration=0.2, fps=5, through="last")
+        assert seen[0][-1] == result.best_iteration
+        assert seen[-1][-1] == result.niterations
+        with pytest.raises(ValueError, match="through"):
+            animate_morph_history(result, through="never")

@@ -18,7 +18,7 @@ Examples
 >>> options = MorphOptions(n_iter=50)
 >>>
 >>> result = morph_geometries(polygons, values, options=options)
->>> morphed = result.snapshots.latest().geometry
+>>> morphed = result.best.geometry
 """
 
 import time
@@ -270,10 +270,11 @@ def morph_geometries(
         - grid: Grid used for computation
         - target_density: Target equilibrium density
 
-        Access final results via result.latest or result.snapshots.latest().
-        If the run ends without converging, the latest snapshot is the best
-        iterate (iteration ``best_iteration``) and the snapshot of the final
-        iterate (iteration ``niterations``) remains in ``snapshots`` before it:
+        Access the result via result.best (the snapshot at ``best_iteration``) and
+        the last stored snapshot via result.last. They are the same snapshot when
+        the run converged. If it does not, the best iterate is recorded in
+        iteration order and the snapshot of the final iterate (iteration
+        ``niterations``) remains in ``snapshots`` after it:
         - .geometry: List of morphed geometries
         - .landmarks: Morphed landmarks (if provided)
         - .coords: Displaced coordinates (if coords provided)
@@ -292,7 +293,7 @@ def morph_geometries(
     >>>
     >>> # Get complete result object
     >>> result = morph_geometries(polygons, values, options=options)
-    >>> morphed = result.snapshots.latest().geometry
+    >>> morphed = result.best.geometry
     >>> print(f"Status: {result.status}")
     >>> print(f"Converged in {result.niterations} iterations")
 
@@ -311,7 +312,7 @@ def morph_geometries(
     ... )
     >>>
     >>> # Access displaced coordinates (same format as input)
-    >>> final = result.snapshots.latest()
+    >>> final = result.best
     >>> displaced_coords = final.coords
     >>>
     >>> # Refine with displaced coordinates (format auto-detected)
@@ -684,8 +685,8 @@ def morph_geometries(
             break
 
     # A run that ends without converging returns its best iterate: restore its
-    # state and append it as the last snapshot (the final iterate keeps its own
-    # snapshot).
+    # state and record its snapshot in iteration order (the final iterate keeps
+    # its own snapshot). `best_iteration` points at the returned snapshot.
     if status != MorphStatus.CONVERGED and best_state is not None and best_step != n_done - 1:
         if _pt is not None:
             _t0 = _time.perf_counter()
@@ -698,8 +699,15 @@ def morph_geometries(
             flat_coords[:] = b_flat_coords
         snapshots.snapshots = [snap for snap in snapshots.snapshots if snap.iteration != best_step + 1]
         snapshots.add_snapshot(_snapshot(best_step + 1, b_errors, b_areas))
+        snapshots.snapshots.sort(key=lambda snap: snap.iteration)
         if _pt is not None:
             _pt.snapshot_s += _time.perf_counter() - _t0
+
+    snapshots.best_iteration = best_step + 1
+    if internals is not None:
+        # The field that produced the best iterate is the last one computed at or before it.
+        recorded = [snap.iteration for snap in internals.snapshots if snap.iteration <= best_step + 1]
+        internals.best_iteration = max(recorded) if recorded else None
 
     # Return final geometries and snapshot data
     # Finalize convergence history (convert to arrays, free list memory)
@@ -727,7 +735,6 @@ def morph_geometries(
         convergence=convergence,
         status=status,
         niterations=n_done,
-        best_iteration=best_step + 1,
         duration=elapsed,
         options=options,
         grid=grid,

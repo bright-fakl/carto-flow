@@ -576,8 +576,8 @@ class MosaicLayout(Layout):
                 values=counts.astype(np.float64),
                 options=morph_opts,
             )
-            latest = flow_result.latest
-            morphed = latest.geometry if latest is not None else None
+            best = flow_result.best
+            morphed = best.geometry if best is not None else None
             if morphed is None:  # pragma: no cover - morph always stores a snapshot
                 raise RuntimeError("flow morph returned no morphed geometry")
             working_geometries = list(morphed)

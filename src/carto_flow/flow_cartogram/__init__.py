@@ -50,7 +50,7 @@ The Cartogram result object contains:
 - ``grid`` - Grid used for computation
 - ``target_density`` - Target equilibrium density
 
-Access final results via ``cartogram.latest`` or convenience methods:
+Access the result via ``cartogram.best`` (the returned snapshot; ``cartogram.last`` is the last stored one) or convenience methods:
 
 - ``cartogram.get_geometry()`` - Morphed geometries
 - ``cartogram.get_landmarks()`` - Morphed landmarks (if provided)

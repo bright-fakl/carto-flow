@@ -22,6 +22,7 @@ Examples
 >>> gdf_result = cartogram.to_geodataframe()
 """
 
+import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -55,17 +56,11 @@ class Cartogram:
     ----------
     snapshots : History
         Collection of CartogramSnapshot objects capturing algorithm state
-        at saved iterations. Access final results via `latest` property.
+        at saved iterations. ``best`` is the snapshot of the returned state and ``last`` the last stored one.
     status : MorphStatus
         Computation status (ORIGINAL, CONVERGED, STALLED, COMPLETED, FAILED).
     niterations : int
         Number of iterations run (the final iterate).
-    best_iteration : int, optional
-        Iteration of the returned state, i.e. the iterate with the lowest
-        convergence score ``max(mean_error / mean_tol, max_error / max_tol)``.
-        Equals ``niterations`` when the run converged. When it does not, the
-        latest snapshot is this iterate and the snapshot of the final iterate
-        stays in ``snapshots`` before it.
     duration : float
         Computation time in seconds.
     options : MorphOptions, optional
@@ -92,7 +87,6 @@ class Cartogram:
     status: "MorphStatus" = None  # type: ignore[assignment]
     # Computation metadata
     niterations: int = 0
-    best_iteration: int | None = None
     duration: float = 0.0
     options: Optional["MorphOptions"] = None
     grid: Optional["Grid"] = None
@@ -110,15 +104,39 @@ class Cartogram:
     # ========================================================================
 
     @property
-    def latest(self) -> Optional["CartogramSnapshot"]:
-        """Get the most recent snapshot.
+    def best(self) -> Optional["CartogramSnapshot"]:
+        """Snapshot of the returned state, or None if no snapshots exist.
 
-        Returns
-        -------
-        CartogramSnapshot or None
-            The latest snapshot, or None if no snapshots exist.
+        This is the iterate with the lowest convergence score
+        ``max(mean_error / mean_tol, max_error / max_tol)``, at ``best_iteration``.
+        It is the same snapshot as :attr:`last` when the run converged.
         """
-        return self.snapshots.latest() if self.snapshots else None
+        return self.snapshots.best() if self.snapshots else None
+
+    @property
+    def last(self) -> Optional["CartogramSnapshot"]:
+        """Last stored snapshot (the final iterate), or None if no snapshots exist."""
+        return self.snapshots.last() if self.snapshots else None
+
+    @property
+    def best_iteration(self) -> int | None:
+        """Iteration of :attr:`best`, or None if no snapshots exist."""
+        best = self.best
+        return best.iteration if best is not None else None
+
+    @property
+    def latest(self) -> Optional["CartogramSnapshot"]:
+        """Snapshot of the returned state.
+
+        .. deprecated:: 2.1
+            Use :attr:`best`, or :attr:`last` for the last stored snapshot.
+        """
+        warnings.warn(
+            "Cartogram.latest is deprecated; use best (the returned state) or last (the last stored snapshot)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.best
 
     def get_errors(self, iteration: int | None = None) -> Optional["MorphErrors"]:
         """Get error metrics for a specific iteration.
@@ -133,10 +151,7 @@ class Cartogram:
         MorphErrors or None
             Error metrics, or None if not available.
         """
-        if iteration is None:
-            snapshot = self.snapshots.latest() if self.snapshots else None
-        else:
-            snapshot = self.snapshots.get_snapshot(iteration)
+        snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
         return snapshot.errors if snapshot else None
 
     def get_convergence_errors(self, iteration: int | None = None) -> Optional["ErrorRecord"]:
@@ -176,10 +191,7 @@ class Cartogram:
         array-like
             Sequence of geometries.
         """
-        if iteration is None:
-            snapshot = self.snapshots.latest() if self.snapshots else None
-        else:
-            snapshot = self.snapshots.get_snapshot(iteration)
+        snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
         return snapshot.geometry if snapshot else None
 
     def get_density(self, iteration: int | None = None) -> np.ndarray | None:
@@ -195,10 +207,7 @@ class Cartogram:
         np.ndarray or None
             Density values per geometry.
         """
-        if iteration is None:
-            snapshot = self.snapshots.latest() if self.snapshots else None
-        else:
-            snapshot = self.snapshots.get_snapshot(iteration)
+        snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
         return snapshot.density if snapshot else None
 
     def get_landmarks(self, iteration: int | None = None) -> Any:
@@ -214,10 +223,7 @@ class Cartogram:
         array-like or None
             Landmark geometries, or None if not available.
         """
-        if iteration is None:
-            snapshot = self.snapshots.latest() if self.snapshots else None
-        else:
-            snapshot = self.snapshots.get_snapshot(iteration)
+        snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
         return snapshot.landmarks if snapshot else None
 
     def get_coords(self, iteration: int | None = None) -> Any:
@@ -233,10 +239,7 @@ class Cartogram:
         array-like or None
             Displaced coordinates, or None if not available.
         """
-        if iteration is None:
-            snapshot = self.snapshots.latest() if self.snapshots else None
-        else:
-            snapshot = self.snapshots.get_snapshot(iteration)
+        snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
         return snapshot.coords if snapshot else None
 
     # ========================================================================
@@ -284,7 +287,7 @@ class Cartogram:
                 "No source GeoDataFrame available. Use CartogramWorkflow.to_geodataframe() or set _source_gdf."
             )
 
-        snapshot = self.snapshots.latest() if iteration is None else self.snapshots.get_snapshot(iteration)
+        snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
 
         if snapshot is None:
             raise ValueError(f"No snapshot found for iteration {iteration}")
@@ -420,9 +423,9 @@ class Cartogram:
 
         # Geometry count
         geom_count = 0
-        if self.latest and self.latest.geometry is not None:
+        if self.best and self.best.geometry is not None:
             try:
-                geom_count = len(self.latest.geometry)
+                geom_count = len(self.best.geometry)
             except TypeError:
                 geom_count = 1
 

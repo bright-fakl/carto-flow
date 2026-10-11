@@ -26,6 +26,11 @@ def states():
     return data.load_us_census(population=True).reset_index(drop=True)
 
 
+@pytest.fixture(scope="module")
+def districts():
+    return data.load_us_census(population=True, level="congressional_district").reset_index(drop=True)
+
+
 def _options(adaptive, **kwargs):
     return MorphOptions(**{"grid_size": 128, "show_progress": False, "adaptive_dt": adaptive, **kwargs})
 
@@ -232,6 +237,13 @@ class TestRestart:
             result = morph_gdf(states, "Population", options=_options(adaptive, n_iter=10, stall_patience=None))
             scores[adaptive] = _score(result.convergence, result.options)
         np.testing.assert_allclose(scores[True], scores[False], rtol=1e-9)
+
+    def test_districts_multiresolution_converges(self, districts):
+        """The coarse level of the districts must not stall at tight tolerances (0.5 % / 1 %)."""
+        options = _options(True, n_iter=300, mean_tol=0.005, max_tol=0.01)
+        workflow = CartogramWorkflow(districts, "Population", options=options)
+        workflow.morph_multiresolution(min_resolution=128, levels=3)
+        assert workflow.last.status == MorphStatus.CONVERGED
 
     def test_multiresolution_converges_on_the_coarse_level(self, states):
         iterations = {}

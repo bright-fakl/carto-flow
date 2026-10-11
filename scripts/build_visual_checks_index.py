@@ -302,7 +302,7 @@ investigation workspace is easy to miss.
    filename.
 
 4. Write the rest of `summary.md` freely (headings, tables, bullet lists,
-   paragraphs, inline code) - it is rendered below the description.
+   paragraphs, inline code, `[text](url)` links - relative links to other pages are `../<directory>/index.html`) - it is rendered below the description.
 
 ## Rebuilding
 
@@ -481,15 +481,32 @@ def _page_shell(title: str, body: str) -> str:
 
 # ---------------------------------------------------------------------------
 # Tiny Markdown -> HTML converter (headings, paragraphs, pipe tables,
-# bullet lists, inline code). Deliberately minimal - not a general parser.
+# bullet lists, inline code, links). Deliberately minimal - not a general parser.
 # ---------------------------------------------------------------------------
+
+
+_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+
+
+def _safe_href(url: str) -> bool:
+    """http(s) links and relative paths; any other scheme (``javascript:``, ``data:``) is not linked."""
+    return bool(re.match(r"https?://", url)) or not re.match(r"[A-Za-z][A-Za-z0-9+.-]*:", url)
 
 
 def _render_inline(text: str) -> str:
     text = html.escape(text)
-    # Inline code: `...`
-    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
-    return text
+    # Code spans are set aside first, so brackets inside them are not read as links.
+    spans: list[str] = []
+
+    def stash(match: re.Match) -> str:
+        spans.append(match.group(1))
+        return f"\x00{len(spans) - 1}\x00"
+
+    text = re.sub(r"`([^`]+)`", stash, text)
+    text = _LINK.sub(
+        lambda m: f'<a href="{m.group(2)}">{m.group(1)}</a>' if _safe_href(m.group(2)) else m.group(0), text
+    )
+    return re.sub(r"\x00(\d+)\x00", lambda m: f"<code>{spans[int(m.group(1))]}</code>", text)
 
 
 def _render_table(lines: list[str]) -> str:

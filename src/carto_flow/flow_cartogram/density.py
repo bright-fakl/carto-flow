@@ -311,13 +311,14 @@ def compute_density_field_from_geometries(
 
 
 @njit(cache=True)
-def _coverage_kernel(u, v, starts, nr, nc, cu, cv):
+def _coverage_kernel(u, v, starts, nr, nc, cu, cv, sign):
     """Exact fraction of each cell covered by oriented rings, by signed area accumulation.
 
     ``u, v`` are ring vertices in cell units (cell (i, j) spans [j, j+1] x [i, i+1] after subtracting
-    the offset ``cu, cv`` of the first cell); ``starts`` gives the ring boundaries. Each edge adds its signed area contribution to the cells it crosses; a
-    cumulative sum along each row then gives the coverage (the method used by scanline font
-    rasterizers).
+    the offset ``cu, cv`` of the first cell); ``starts`` gives the ring boundaries; ``sign`` (+1 or -1) turns
+    each ring into the counter-clockwise exterior convention. Each edge adds its signed area contribution to
+    the cells it crosses; a cumulative sum along each row then gives the coverage (the method used by
+    scanline font rasterizers).
     """
     acc = np.zeros((nr, nc + 2))
     for k in range(len(starts) - 1):
@@ -338,7 +339,7 @@ def _coverage_kernel(u, v, starts, nr, nc, cu, cv):
             for r in range(int(y0), yend):
                 dy = min(r + 1.0, y1) - max(float(r), y0)
                 xn = x + dxdy * dy
-                w = dy * d
+                w = dy * d * sign[k]
                 xa = min(max(min(x, xn), 0.0), float(nc))
                 xb = min(max(max(x, xn), 0.0), float(nc))
                 xaf = np.floor(xa)
@@ -377,7 +378,7 @@ def _coverage_kernel(u, v, starts, nr, nc, cu, cv):
 
 
 @njit(cache=True)
-def _exact_fields(u, v, ring_starts, geom_rings, density, nx, ny, rho, cover, best, mask):
+def _exact_fields(u, v, ring_starts, ring_exterior, geom_rings, density, nx, ny, rho, cover, best, mask):
     """Accumulate exact coverage of every geometry into ``rho``, ``cover``, ``best`` and ``mask``."""
     for g in range(len(geom_rings) - 1):
         ra, rb = geom_rings[g], geom_rings[g + 1]
@@ -393,8 +394,18 @@ def _exact_fields(u, v, ring_starts, geom_rings, density, nx, ny, rho, cover, be
         c0, r0, c1, r1 = max(c0, 0), max(r0, 0), min(max(c1, c0 + 1), nx), min(max(r1, r0 + 1), ny)
         if c1 <= c0 or r1 <= r0:
             continue
+        # Orient every ring by the sign of its shoelace area (exterior positive, holes negative). GEOS orientation
+        # tests (shapely.orient_polygons) can disagree with it for a ring with a small self-intersection, which
+        # would give the whole region negative coverage.
+        sign = np.ones(rb - ra)
+        for r in range(ra, rb):
+            area2 = 0.0
+            for i in range(ring_starts[r], ring_starts[r + 1] - 1):
+                area2 += u[i] * v[i + 1] - u[i + 1] * v[i]
+            if (area2 >= 0.0) != ring_exterior[r]:
+                sign[r - ra] = -1.0
         frac = _coverage_kernel(
-            u[pa:pb], v[pa:pb], ring_starts[ra : rb + 1] - pa, r1 - r0, c1 - c0, float(c0), float(r0)
+            u[pa:pb], v[pa:pb], ring_starts[ra : rb + 1] - pa, r1 - r0, c1 - c0, float(c0), float(r0), sign
         )
         for i in range(r1 - r0):
             for j in range(c1 - c0):
@@ -411,15 +422,17 @@ def _exact_coverage_fields(geometries, density, grid, rho, cover, best, geom_mas
     """Exact coverage of all geometries on the grid (polygon edges integrated per cell, in numba)."""
     arr = np.empty(len(geometries), dtype=object)
     arr[:] = list(geometries)
-    parts, part_g = shapely.get_parts(shapely.orient_polygons(arr), return_index=True)
+    parts, part_g = shapely.get_parts(arr, return_index=True)
     rings, ring_p = shapely.get_rings(parts, return_index=True)
     pts, pt_r = shapely.get_coordinates(rings, return_index=True)
     ring_starts = np.searchsorted(pt_r, np.arange(len(rings) + 1))
+    ring_exterior = np.ones(len(rings), dtype=bool)
+    ring_exterior[1:] = ring_p[1:] != ring_p[:-1]
     geom_rings = np.searchsorted(part_g[ring_p], np.arange(len(arr) + 1))
     u = (pts[:, 0] - (grid.x_coords[0] - 0.5 * grid.dx)) / grid.dx
     v = (pts[:, 1] - (grid.y_coords[0] - 0.5 * grid.dy)) / grid.dy
     ny, nx = rho.shape
-    _exact_fields(u, v, ring_starts, geom_rings, density, nx, ny, rho, cover, best, geom_mask)
+    _exact_fields(u, v, ring_starts, ring_exterior, geom_rings, density, nx, ny, rho, cover, best, geom_mask)
 
 
 def _exact_density(geometries, column_values, grid, mean_density, smooth, return_geometry_mask, return_outside_mask):

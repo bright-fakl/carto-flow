@@ -36,6 +36,8 @@ $$
 e_i^{\%} = \operatorname{sign}(e_i) \cdot \left(2^{|e_i|} - 1\right) \cdot 100
 $$
 
+Both areas are first raised to a floor $\varepsilon = \texttt{error\_floor} \cdot \overline{a^{\text{target}}}$ (default $10^{-3}$ of the mean target area), so that a collapsed or zero-valued region has a finite error. The floor does not depend on the grid, which makes the reported errors comparable between grid sizes and between the levels of a multiresolution morph; regions with a target below the floor count as on target while their area stays below it. `error_floor=0` disables it.
+
 ---
 
 ## Computational Pipeline

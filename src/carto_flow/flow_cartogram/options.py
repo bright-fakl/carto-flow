@@ -187,6 +187,17 @@ class MorphOptions:
     dominates runtime and whether parallelism overhead outweighs its benefit.
     """
 
+    error_floor: float = 1e-3
+    """Smallest area the error metrics resolve, as a fraction of the mean target area.
+
+    Before taking the log2 ratio, both the current and the target area of a region are raised to
+    ``error_floor * mean(target areas)``, so a collapsed or zero-valued region has a finite error and
+    a region below the floor counts as on target while it stays below it. The floor does not depend
+    on the grid, so the reported errors (``mean_error_pct``, ``max_error_pct``, the convergence history
+    and the snapshot errors) are comparable between grid sizes and between the levels of a
+    multiresolution morph. ``0`` disables the floor (a zero area then gives an infinite error).
+    """
+
     # Parallel computation options
     parallel_fft: bool | int = False
     """Control FFTW thread count for the velocity (Poisson solve) phase.
@@ -383,6 +394,7 @@ class MorphOptions:
             "stall_patience",
             "stall_min_improvement",
             "recompute_on_rise",
+            "error_floor",
             "parallel_fft",
             "parallel_density",
         ]
@@ -484,6 +496,9 @@ class MorphOptions:
                 elif value < 0:
                     return "stall_patience must be a non-negative integer or None"
 
+        elif field_name == "error_floor":
+            if not isinstance(value, int | float) or isinstance(value, bool) or not 0 <= value < 1:
+                return "error_floor must be a number in [0, 1)"
         elif field_name == "recompute_on_rise":
             if value is not None and (not isinstance(value, int | float) or isinstance(value, bool) or value < 0):
                 return "recompute_on_rise must be a non-negative number or None"

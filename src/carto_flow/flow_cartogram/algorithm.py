@@ -348,6 +348,7 @@ def morph_geometries(
         # Refinement: target_density provided in scaled units, derive unscaled for algorithm
         unscaled_target_density = target_density * options.area_scale
     target_areas = values_array / unscaled_target_density
+    error_eps = options.error_floor * float(np.mean(target_areas))
 
     # PRE-SCALING (Feature 1 — remove this block to disable)
     if options.prescale_components:
@@ -620,7 +621,7 @@ def morph_geometries(
         # Compute error metrics using the structured MorphErrors object
         if _pt is not None:
             _t0 = _time.perf_counter()
-        error_metrics = compute_error_metrics(current_areas, target_areas, eps=grid.dx * grid.dy)
+        error_metrics = compute_error_metrics(current_areas, target_areas, eps=error_eps)
         if _pt is not None:
             _pt.errors_s += _time.perf_counter() - _t0
 

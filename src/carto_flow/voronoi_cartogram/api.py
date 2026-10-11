@@ -330,9 +330,11 @@ def create_voronoi_cartogram(
         build_kwargs["debug"] = options.debug
         build_kwargs["area_tol"] = options.area_error_tol
         build_kwargs["geometries"] = geometries
-        anchor = backend.generator_anchor
-        if anchor is None:
-            anchor = PREMORPH_GENERATOR_ANCHOR if morph_result is not None else 0.0
+        declared_anchor = backend.generator_anchor
+        if declared_anchor is not None:
+            anchor = declared_anchor
+        elif morph_result is not None:
+            anchor = PREMORPH_GENERATOR_ANCHOR
         build_kwargs["generator_anchor"] = anchor
 
     field = backend.build_field(positions, outer, **build_kwargs)

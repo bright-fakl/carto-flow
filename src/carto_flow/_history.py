@@ -13,6 +13,7 @@ History
 
 from __future__ import annotations
 
+import warnings
 from abc import ABC
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -77,9 +78,14 @@ class History(Generic[S]):
     ----------
     snapshots : list[S]
         Snapshots in chronological order.
+    best_iteration : int or None
+        Iteration of the snapshot that is the result of the run, when that is not
+        the last snapshot (an algorithm that returns its best iterate). ``None``:
+        the last snapshot is the result.
     """
 
     snapshots: list[S] = field(default_factory=list)
+    best_iteration: int | None = None
 
     def add_snapshot(self, snapshot: S) -> None:
         """Append *snapshot* to the history."""
@@ -116,9 +122,37 @@ class History(Generic[S]):
             raise ValueError(f"No snapshot found for iteration {iteration}")
         return snapshot.get_variable(variable_name)
 
-    def latest(self) -> S | None:
-        """Return the most recent snapshot, or None if empty."""
+    def last(self) -> S | None:
+        """Return the last snapshot, or None if empty."""
         return self.snapshots[-1] if self.snapshots else None
+
+    def best(self) -> S | None:
+        """Return the snapshot at ``best_iteration``; the last snapshot if that is unset or not recorded."""
+        if self.best_iteration is not None:
+            snapshot = self.get_snapshot(self.best_iteration)
+            if snapshot is not None:
+                return snapshot
+        return self.last()
+
+    def through_best(self) -> list[S]:
+        """Return the snapshots up to and including the best one, in order."""
+        best = self.best()
+        if best is None:
+            return []
+        return [s for s in self.snapshots if s.iteration <= best.iteration]
+
+    def latest(self) -> S | None:
+        """Return the last snapshot, or None if empty.
+
+        .. deprecated:: 2.1
+            Use :meth:`last`, or :meth:`best` for the result of the run.
+        """
+        warnings.warn(
+            "History.latest() is deprecated; use last(), or best() for the result of the run",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.last()
 
     def variable_summary(self, variable_name: str) -> dict[str, Any]:
         """Return summary statistics for *variable_name* across all snapshots."""

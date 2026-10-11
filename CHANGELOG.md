@@ -7,6 +7,30 @@ All notable changes to carto-flow are documented here. The format follows
 Releases before 2.0.0 have no changelog entry; see the
 [git history](https://github.com/bright-fakl/carto-flow/commits/main) for those.
 
+## [Unreleased]
+
+### Deprecated
+
+- **`Cartogram.latest`, `CartogramWorkflow.latest` and `History.latest()`.**
+  `Cartogram.best` is the snapshot of the returned state and `Cartogram.last`
+  the last stored one; `CartogramWorkflow.last` is the most recent result and
+  `History.last()` the last snapshot. `Cartogram.latest` returns `best`. On a
+  run that does not converge, `best` is the earlier iterate that the run now
+  returns, not the final iterate.
+  ([#110](https://github.com/bright-fakl/carto-flow/pull/110))
+
+### Changed
+
+- **A flow morph that does not converge returns its best iterate** (lowest
+  combined error score), and stops after `stall_patience` consecutive cycles
+  without progress. `History.best_iteration` points at the returned snapshot,
+  the snapshots stay in iteration order, and `animate_morph_history`,
+  `animate_fields` and `animate_workflow_fields` stop at it unless called with
+  `through="last"`. New option `MorphOptions.recompute_on_rise` recomputes the
+  velocity field early when the score rises; `recompute_every` stays the
+  maximum interval.
+  ([#110](https://github.com/bright-fakl/carto-flow/pull/110))
+
 ## [2.0.0] - 2026-09-24
 
 Step-by-step edits for every break below are in the

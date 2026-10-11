@@ -61,9 +61,9 @@ Builds a dyadic grid hierarchy with `levels` grids and runs one morphing pass pe
 
 ```python
 workflow[0]         # original Cartogram
-workflow[-1]        # latest Cartogram (same as workflow.latest)
+workflow[-1]        # last Cartogram (same as workflow.last)
 workflow.original   # same as workflow[0]
-workflow.latest     # same as workflow[-1]
+workflow.last       # same as workflow[-1]
 workflow.is_morphed  # True if any morph runs exist
 
 workflow.pop(n=1)   # remove and return last n Cartograms (cannot remove original)
@@ -111,16 +111,17 @@ Source references (`_source_gdf`, `_value_column`) are stored as private attribu
 |---|---|
 | `ORIGINAL` | Unmorphed placeholder; no algorithm was run |
 | `CONVERGED` | Both `mean_tol` and `max_tol` thresholds were met |
-| `STALLED` | Max error increased for `stall_patience` consecutive iterations |
+| `STALLED` | `stall_patience` consecutive cycles (windows of `max(recompute_every, 10)` iterations) made no progress |
 | `COMPLETED` | `n_iter` iterations reached without converging |
 | `FAILED` | An exception occurred during morphing |
 
 ### Accessing Results
 
-All accessor methods accept an optional `iteration` parameter. When omitted, the value defaults to the latest available snapshot.
+All accessor methods accept an optional `iteration` parameter. When omitted, the value defaults to the best snapshot, the returned state (the last one when the run converged). `animate_morph_history` and the field animations also stop at the best iteration unless called with `through="last"`.
 
 ```python
-cartogram.latest                      # most recent CartogramSnapshot
+cartogram.best                        # CartogramSnapshot of the returned state
+cartogram.last                        # last stored CartogramSnapshot (the final iterate)
 cartogram.get_errors(iteration=None)  # MorphErrors with per-geometry arrays
 cartogram.get_geometry(iteration=None)
 cartogram.get_density(iteration=None)

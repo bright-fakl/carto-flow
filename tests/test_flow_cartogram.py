@@ -120,7 +120,7 @@ class TestZeroValueGeometry:
             warnings.simplefilter("error", RuntimeWarning)
             cartogram = morph_gdf(gdf, "population", options=options)
 
-        final = cartogram.latest
+        final = cartogram.best
         errors = final.errors
         assert np.isfinite(errors.mean_log_error)
         assert np.isfinite(errors.max_log_error)

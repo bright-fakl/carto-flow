@@ -87,7 +87,9 @@ history.get_variable_history('errors')  # list of MorphErrors objects
 
 **Convenience:**
 ```python
-history.latest()          # most recent snapshot
+history.last()            # last stored snapshot
+history.best()            # snapshot at best_iteration (the last one when unset)
+history.through_best()    # snapshots up to and including the best one
 history.get_iterations()  # sorted list of all iteration numbers
 ```
 
@@ -129,6 +131,7 @@ The algorithm loop in `morph_geometries()` controls when snapshots are created:
 - **`CartogramSnapshot`**: created at:
   - every `snapshot_every` iterations (if the option is set; default is `None`, meaning periodic saving is disabled)
   - the final iteration, regardless of termination reason (convergence, stall, or iteration limit)
+  - the best iteration, when the run ends without converging and the best iteration is not the final one (inserted in iteration order; `History.best_iteration` points at it, so `Cartogram.best` is the returned state and `Cartogram.last` the final iterate)
 - **`CartogramInternalsSnapshot`**: created at the same moments as `CartogramSnapshot`, but only if `save_internals=True`.
 
 This design means that a `Cartogram` object always contains at minimum one `CartogramSnapshot` (the final state) and a complete `ConvergenceHistory`.

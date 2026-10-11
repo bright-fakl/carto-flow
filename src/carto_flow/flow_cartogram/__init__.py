@@ -42,14 +42,15 @@ The Cartogram result object contains:
 
 - ``snapshots`` - History of CartogramSnapshot objects with algorithm state
 - ``status`` - MorphStatus enum (CONVERGED, STALLED, COMPLETED, RUNNING, ORIGINAL)
-- ``niterations`` - Number of iterations completed
+- ``niterations`` - Number of iterations run
+- ``best_iteration`` - Iteration of the returned state (best iterate)
 - ``duration`` - Computation time in seconds
 - ``options`` - MorphOptions used for computation
 - ``internals`` - History of internal state (if save_internals=True)
 - ``grid`` - Grid used for computation
 - ``target_density`` - Target equilibrium density
 
-Access final results via ``cartogram.latest`` or convenience methods:
+Access the result via ``cartogram.best`` (the returned snapshot; ``cartogram.last`` is the last stored one) or convenience methods:
 
 - ``cartogram.get_geometry()`` - Morphed geometries
 - ``cartogram.get_landmarks()`` - Morphed landmarks (if provided)

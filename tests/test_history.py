@@ -348,12 +348,12 @@ class TestHistory:
         history = History()
 
         # Empty history
-        assert history.latest() is None
+        assert history.last() is None
 
         # Single snapshot
         snapshot0 = CartogramSnapshot(iteration=0, errors=make_mock_errors(mean_log=0.2))
         history.add_snapshot(snapshot0)
-        assert history.latest() is snapshot0
+        assert history.last() is snapshot0
 
         # Multiple snapshots
         snapshot1 = CartogramSnapshot(iteration=1, errors=make_mock_errors(mean_log=0.15))
@@ -361,8 +361,8 @@ class TestHistory:
         history.add_snapshot(snapshot1)
         history.add_snapshot(snapshot2)
 
-        assert history.latest() is snapshot2
-        assert history.latest().errors.mean_log_error == 0.1
+        assert history.last() is snapshot2
+        assert history.last().errors.mean_log_error == 0.1
 
     def test_variable_summary_scalars(self):
         """Test variable summary for scalar values via density."""
@@ -488,7 +488,7 @@ class TestIntegration:
             assert actual.mean_log_error == pytest.approx(expected, abs=1e-10)
 
         # Test latest snapshot
-        latest = history.latest()
+        latest = history.last()
         assert latest.iteration == 3
         assert latest.errors.mean_log_error == pytest.approx(1.0 / 6.0, abs=1e-10)
 
@@ -659,3 +659,29 @@ class TestConvergenceHistory:
         assert "ConvergenceHistory" in r
         assert "n=2" in r
         assert "1..100" in r
+
+
+class TestBestAndLast:
+    def _history(self):
+        return History(snapshots=[ConcreteSnapshot(1), ConcreteSnapshot(5), ConcreteSnapshot(9)])
+
+    def test_last_and_best_default_to_the_last_snapshot(self):
+        history = self._history()
+        assert history.best() is history.last() is history.snapshots[-1]
+
+    def test_best_follows_the_pointer(self):
+        history = self._history()
+        history.best_iteration = 5
+        assert history.best() is history.snapshots[1]
+        assert history.last() is history.snapshots[2]
+        assert history.through_best() == history.snapshots[:2]
+
+    def test_a_pointer_to_a_missing_iteration_falls_back_to_last(self):
+        history = self._history()
+        history.best_iteration = 4
+        assert history.best() is history.last()
+
+    def test_latest_is_deprecated(self):
+        history = self._history()
+        with pytest.warns(DeprecationWarning, match="last"):
+            assert history.latest() is history.last()

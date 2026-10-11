@@ -993,7 +993,7 @@ def plot_density_field(
             "Cartogram does not contain internals data. Re-run morphing with MorphOptions(save_internals=True)."
         )
 
-    snapshot = cartogram.internals.latest() if iteration is None else cartogram.internals.get_snapshot(iteration)
+    snapshot = cartogram.internals.best() if iteration is None else cartogram.internals.get_snapshot(iteration)
 
     if snapshot is None:
         raise ValueError(f"No internals snapshot found for iteration {iteration}")
@@ -1136,7 +1136,7 @@ def plot_velocity_field(
             "Cartogram does not contain internals data. Re-run morphing with MorphOptions(save_internals=True)."
         )
 
-    snapshot = cartogram.internals.latest() if iteration is None else cartogram.internals.get_snapshot(iteration)
+    snapshot = cartogram.internals.best() if iteration is None else cartogram.internals.get_snapshot(iteration)
 
     if snapshot is None:
         raise ValueError(f"No internals snapshot found for iteration {iteration}")
@@ -1436,7 +1436,7 @@ def plot_workflow_convergence(
 
     # Add tolerance lines from latest options
     if show_tolerance:
-        latest_options = workflow.latest.options
+        latest_options = workflow.last.options
         if latest_options is not None:
             if metric in ("mean", "both") and latest_options.mean_tol is not None:
                 tol_value = latest_options.mean_tol * 100 if use_pct else latest_options.mean_tol

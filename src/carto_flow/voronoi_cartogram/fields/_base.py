@@ -40,23 +40,24 @@ def drop_sliver_holes(geom):
     if not np.isfinite(scale) or scale <= 0.0:
         return geom
     width = 1e-9 * scale
-    parts = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
-    cleaned = []
+    import shapely as sh
+
+    parts = sh.get_parts(geom)
+    has_holes = sh.get_num_interior_rings(parts) > 0
     changed = False
-    for part in parts:
+    for k in np.where(has_holes)[0]:
+        part = parts[k]
         keep = [r for r in part.interiors if Polygon(r).area > width * r.length]
         if len(keep) != len(part.interiors):
             changed = True
-            cleaned.append(Polygon(part.exterior, keep))
-        else:
-            cleaned.append(part)
+            parts[k] = Polygon(part.exterior, keep)
     if not changed:
         return geom
-    if len(cleaned) == 1:
-        return cleaned[0]
+    if len(parts) == 1:
+        return parts[0]
     from shapely.geometry import MultiPolygon
 
-    return MultiPolygon(cleaned)
+    return MultiPolygon(list(parts))
 
 
 # ---------------------------------------------------------------------------

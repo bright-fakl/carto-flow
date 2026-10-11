@@ -94,15 +94,18 @@ This ensures full coverage even for archipelago datasets.
 import carto_flow.voronoi_cartogram as vor
 
 result = vor.create_voronoi_cartogram(
-    gdf, weights="population",
+    gdf,
     backend=vor.RasterBackend(distance_mode="geodesic"),
 )
 ```
 
 !!! note
-    `area_equalizer_rate` applies only to `distance_mode="euclidean"`.
-    The geodesic BFS assigns pixels by wavefront distance, not by a
-    power-diagram metric, so the offset term has no effect and is ignored.
+    `area_equalizer_rate` and `weights` apply only to
+    `distance_mode="euclidean"`. The geodesic BFS assigns pixels by wavefront
+    distance, not by a power-diagram metric, so the offset term has no effect
+    and is ignored. Weights are ignored with a warning, and a weighted run is
+    reported as not converged when its mean area error exceeds
+    `VoronoiOptions.area_error_tol`.
 
 ---
 

@@ -5,8 +5,8 @@ Centroidal Voronoi Tessellation (CVT) cartograms via Lloyd relaxation.
 ## Overview
 
 The `voronoi_cartogram` module places geometry centroids so that each point
-claims an equal-area (or proportionally weighted) Voronoi cell within the
-outer union boundary. The result is a set of non-overlapping tiles that
+claims an equal-area Voronoi cell, or with weights a power-diagram cell of
+weight-proportional area, within the outer union boundary. The result is a set of non-overlapping tiles that
 collectively preserve the topology of the input while making cell areas
 proportional to a data variable.
 
@@ -79,9 +79,9 @@ result.plot(column="Population (Millions)", legend=True)
 # Default: raster nearest-neighbor (10–50× faster than exact)
 result = vor.create_voronoi_cartogram(gdf, weights="value")
 
-# Exact scipy Voronoi + shapely clipping (higher accuracy, slower)
+# Exact scipy Voronoi + shapely clipping (equal-area only: weights are ignored)
 result = vor.create_voronoi_cartogram(
-    gdf, weights="value",
+    gdf,
     backend=vor.ExactBackend(),
 )
 
@@ -98,11 +98,12 @@ result = vor.create_voronoi_cartogram(
 ### Geodesic Labeling
 
 For datasets with complex coastlines or water gaps (where Euclidean
-nearest-neighbor would incorrectly assign pixels across bays or straits):
+nearest-neighbor would incorrectly assign pixels across bays or straits).
+Geodesic labeling is equal-area only: `weights` are ignored with a warning.
 
 ```python
 result = vor.create_voronoi_cartogram(
-    gdf, weights="value",
+    gdf,
     backend=vor.RasterBackend(distance_mode="geodesic"),
 )
 ```

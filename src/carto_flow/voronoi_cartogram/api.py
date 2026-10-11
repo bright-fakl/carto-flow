@@ -48,7 +48,7 @@ def _make_outer_boundary(geometries, spec, *, _union=None):
         r = float(np.linalg.norm(coords - [cx, cy], axis=1).max())
         from shapely.geometry import Point
 
-        return Point(cx, cy).buffer(r, resolution=64)
+        return Point(cx, cy).buffer(r, quad_segs=64)
     if hasattr(spec, "geom_type"):
         return spec
     raise ValueError(f"boundary must be 'union', 'bbox', 'convex_hull', 'circle', or a shapely Geometry; got {spec!r}")
@@ -75,9 +75,12 @@ def create_voronoi_cartogram(
         Input polygons.  One point is placed at each geometry's centroid.
     weights : str, array-like of float, or None
         Per-geometry weights.  Pass a column name (str) to look up values
-        from *gdf*, or a numeric array-like of length ``len(gdf)``.  A
-        heavier point claims territory proportional to its weight.
-        ``None`` = uniform weights.
+        from *gdf*, or a numeric array-like of length ``len(gdf)``.  With
+        :class:`~carto_flow.voronoi_cartogram.backends.RasterBackend`
+        (euclidean distance), cell areas are proportional to the weights
+        within ``options.area_error_tol``, and the cells are power-diagram
+        polygons with straight edges.  ``None`` = uniform weights (plain
+        Voronoi cells).
     backend : ExactBackend, RasterBackend, or None
         Algorithm backend.  Each backend class exposes only the parameters
         relevant to its algorithm:
@@ -263,6 +266,8 @@ def create_voronoi_cartogram(
     }
     if isinstance(backend, RasterBackend):
         build_kwargs["debug"] = options.debug
+        build_kwargs["area_tol"] = options.area_error_tol
+        build_kwargs["geometries"] = geometries
 
     field = backend.build_field(positions, outer, **build_kwargs)
 
@@ -425,8 +430,10 @@ def create_voronoi_cartogram(
     final_cv = errors[-1] if errors else None
     cells = field.get_cells()
 
-    # Per-geometry signed area errors (% deviation from target)
-    boundary_area = outer.area
+    # Per-geometry signed area errors (% deviation from target).  Weighted
+    # targets are shares of the final boundary, which an elastic boundary
+    # may have changed.
+    boundary_area = field._current_boundary.area if weights_arr is not None else outer.area
     _n = len(cells)
     _w = weights_arr
     _total_w = float(_w.sum()) if _w is not None else float(_n)
@@ -436,13 +443,31 @@ def create_voronoi_cartogram(
     actual_areas = np.array([c.area for c in cells], dtype=np.float64)
     area_errors = (actual_areas / target_areas - 1.0) * 100.0  # signed %, shape (G,)
 
+    mean_error = float(np.mean(np.abs(area_errors)))
+    max_error = float(np.max(np.abs(area_errors)))
+    if weights_arr is not None and mean_error > 100.0 * options.area_error_tol:
+        converged = False
+        ignores_weights = isinstance(backend, ExactBackend) or backend.distance_mode == "geodesic"
+        cause = (
+            "this backend configuration ignores weights"
+            if ignores_weights
+            else "the power-diagram offset solve did not reach the tolerance"
+        )
+        warnings.warn(
+            f"Voronoi cell areas deviate from their weight-proportional targets: mean error "
+            f"{mean_error:.2f} %, max error {max_error:.1f} % (area_error_tol="
+            f"{options.area_error_tol:g}; {cause}), so the result is reported as not converged.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
     metrics = {
         "n_iterations": len(errors),
         "converged": converged,
         "initial_area_cv": initial_cv,
         "final_area_cv": final_cv,
-        "mean_area_error_pct": float(np.mean(np.abs(area_errors))),
-        "max_area_error_pct": float(np.max(np.abs(area_errors))),
+        "mean_area_error_pct": mean_error,
+        "max_area_error_pct": max_error,
     }
 
     result = VoronoiCartogram(

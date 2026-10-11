@@ -115,6 +115,16 @@ class VoronoiOptions:
         value are not counted as adjacent.  ``None`` (default) = no extra
         filter beyond the auto-computed ``distance_tolerance`` in
         :func:`~carto_flow.geo_utils.adjacency.find_adjacent_pairs`.
+    area_error_tol : float
+        Area accuracy for weighted runs, as a relative error (``0.01`` =
+        1 %).  With ``weights``, :class:`~carto_flow.voronoi_cartogram.backends.RasterBackend`
+        (euclidean distance) returns exact power-diagram cells and solves
+        their offsets until every cell area is within this relative error of
+        its weight-proportional target.  For every weighted run, the result
+        reports ``metrics["converged"] = False`` and a ``RuntimeWarning``
+        states the mean and maximum errors when the mean absolute relative
+        area error of the output cells exceeds this value.  Not used without
+        ``weights``.  Default ``0.01``.
 
     Examples
     --------
@@ -150,10 +160,13 @@ class VoronoiOptions:
     prescale_components: bool = False
     fix_topology: int | TopologyRepair | None = None
     adj_min_shared_length: float | None = None
+    area_error_tol: float = 0.01
 
     def __post_init__(self) -> None:
         if self.n_iter < 0:
             raise ValueError(f"n_iter must be >= 0, got {self.n_iter}")
+        if not self.area_error_tol > 0:
+            raise ValueError(f"area_error_tol must be > 0, got {self.area_error_tol}")
         if self.area_cv_tol is not None and self.area_cv_tol < 0:
             raise ValueError(f"area_cv_tol must be >= 0 or None, got {self.area_cv_tol}")
         if (

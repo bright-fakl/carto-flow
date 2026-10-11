@@ -369,14 +369,25 @@ class VoronoiCartogram:
         Scalar summary of the run:
 
         - ``"n_iterations"``: number of iterations completed
-        - ``"converged"``: ``True`` if the displacement tolerance was reached
-          before ``n_iter`` was exhausted
+        - ``"converged"``: ``True`` if the displacement tolerance (``tol``)
+          or the area-CV tolerance (``area_cv_tol``) was reached before
+          ``n_iter`` was exhausted and, for weighted runs, the mean absolute
+          relative area error of the output cells does not exceed
+          ``options.area_error_tol``
         - ``"initial_area_cv"``: coefficient of variation of the **input**
           geometry areas before any relaxation (baseline for comparison)
         - ``"final_area_cv"``: coefficient of variation of cell areas at the
-          last iteration (0 = perfect equal-area distribution)
+          last iteration (0 = perfect equal-area distribution).  For
+          ``RasterBackend`` it is computed from the pixel counts of the
+          relaxation grid (divided by the weights when given), before the
+          final cells are built; for ``ExactBackend`` from the unweighted
+          Voronoi cell areas.  Use ``mean_area_error_pct`` to judge the
+          output cells.
         - ``"mean_area_error_pct"``: mean absolute area error (%) across all
-          cells, where error = (actual_area / target_area - 1) x 100.  A
+          cells, where error = (actual_area / target_area - 1) x 100.  The
+          target is an equal share of the boundary area, or with weights a
+          weight-proportional share of the final boundary area (which an
+          elastic boundary may have changed).  A
           degenerate cell (see :attr:`degenerate_cells`) has zero area and so
           contributes an error of -100%.
         - ``"max_area_error_pct"``: maximum absolute area error (%) across all

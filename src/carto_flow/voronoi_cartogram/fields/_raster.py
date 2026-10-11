@@ -8,10 +8,10 @@ from typing import Any, cast
 
 import numpy as np
 from shapely.errors import ShapelyError
-from shapely.geometry import Point, Polygon
-from shapely.ops import unary_union
+from shapely.geometry import Point
 
 from ._base import BaseField, _extract_exact_cells, _keep_polygonal, drop_sliver_holes
+from ._power import ClippedPowerDiagram, PowerFit, nonempty_offsets
 
 # Keep every power-diagram cell non-empty when extracting the final cells
 # (see ``RasterField._nonempty_offsets``).  Module-level constants rather than
@@ -24,6 +24,12 @@ ENSURE_NONEMPTY_POWER_CELLS = True
 # 1 -> 0 at 128) but it perturbs the Lloyd trajectory, and at res 256 it raised
 # the satellite-component count from 16 to 19.  See the PR for the measurement.
 ENSURE_NONEMPTY_POWER_CELLS_IN_RELAXATION = False
+
+# Weighted relaxation: the power offsets leak at
+# ``area_equalizer_rate * min(1, WEIGHTED_OFFSET_LEAK * lag)`` per iteration,
+# where ``lag`` is the median generator-to-centroid distance in units of the
+# mean cell radius.
+WEIGHTED_OFFSET_LEAK = 5.0
 
 # Default coverage_simplify distance tolerance for smoothing raster pixel
 # staircases, expressed in pixel units (multiples of sqrt(dx * dy)) rather
@@ -62,7 +68,22 @@ class RasterField(BaseField):
     labeling : {"euclidean", "geodesic"}
         Pixel labeling algorithm.
     area_eq_weight : float
-        Power-diagram area equalizer learning rate.
+        Power-diagram offset learning rate.  Unweighted: leaky update toward
+        equal areas.  With ``weights``: update toward weight-proportional
+        areas that integrates the area error and leaks only while the
+        generators are still far from their cell centroids.
+    weight_ramp_iters : int
+        With ``weights``, iterations over which the relaxation's target
+        areas are ramped linearly from equal to weight-proportional.
+    area_tol : float
+        With ``weights`` and euclidean labeling, relative area tolerance of
+        the exact power-diagram solve in :meth:`get_cells`.
+    geometries : sequence of shapely Geometry or None
+        Input regions, one per generator.  With ``weights`` and
+        ``boundary_elasticity > 0`` the boundary is driven by the input
+        density (weight per region area), carried along by the boundary flow
+        (see :meth:`_deform_boundary`).  ``None`` falls back to the density
+        of multiplicatively weighted cells.
     debug_geodesic : bool
         When ``True`` and ``labeling="geodesic"``, emit warnings for
         misplaced BFS seeds (cross-water labeling diagnostics).
@@ -99,6 +120,8 @@ class RasterField(BaseField):
         adhesion_boundary=None,
         adhesion_strength: float = 1.0,
         weights=None,
+        area_tol: float = 0.01,
+        geometries=None,
     ) -> None:
         BaseField.__init__(
             self,
@@ -125,19 +148,25 @@ class RasterField(BaseField):
         self._cell_smoothing_px = float(cell_smoothing_px)
         self._power_offsets = np.zeros(len(arr), dtype=np.float64)
         self._debug_geodesic = bool(debug_geodesic)
+        self._area_tol = float(area_tol)
+        # Weighted euclidean runs use additive power offsets fitted to the
+        # weight-proportional areas; the final cells are exact power cells.
+        self._power_weighted = self._weights is not None and not self._geodesic_voronoi
+        self.power_fit: PowerFit | None = None
+        self._power_diagram: ClippedPowerDiagram | None = None
         if self._geodesic_voronoi and self._weights is not None:
-            import warnings
-
             warnings.warn(
-                "RasterBackend: labeling='geodesic' does not support weights; "
-                "weights will be ignored (use labeling='euclidean' with "
-                "area_eq_weight for weighted area-equalised Voronoi)",
+                "RasterBackend: distance_mode='geodesic' does not support weights; the weights "
+                "are ignored and cell areas will not follow them",
                 stacklevel=4,
             )
 
         if self._boundary_elasticity > 0.0:
             self._init_elastic_state(boundary)
         self._precompute_grid()
+        self._mass_xy: np.ndarray | None = None
+        if self._boundary_elasticity > 0.0 and self._power_weighted and geometries is not None:
+            self._init_mass_particles(geometries)
 
     # -- dt helpers ---------------------------------------------------------
 
@@ -220,7 +249,9 @@ class RasterField(BaseField):
             g = _G()
             g.dx = dx  # type: ignore[attr-defined]
             g.dy = dy  # type: ignore[attr-defined]
-            return VelocityComputerFFTW(g)  # type: ignore[arg-type]
+            # Single-threaded: on these small grids multithreaded FFTW plans
+            # are far slower (about 100 ms versus 2 ms per call).
+            return VelocityComputerFFTW(g, threads=1)  # type: ignore[arg-type]
         except (ImportError, Exception):
             return None
 
@@ -258,6 +289,53 @@ class RasterField(BaseField):
                 self._elastic_verts.append(v)
                 self._elastic_current_verts.append(v.copy())
 
+    def _init_mass_particles(self, geometries) -> None:
+        """Seed one particle per active pixel carrying the input density there.
+
+        The density of a pixel inside input region *i* is ``w_i / area_i``;
+        pixels in no region get the mean density.  The particles move with
+        the boundary flow, so their histogram is the input density deformed
+        by the boundary changes made so far.
+        """
+        import shapely as sh
+
+        mask = self._elastic_active_mask
+        xy = np.column_stack([self._grid_pts_x[mask], self._grid_pts_y[mask]]).astype(np.float64)
+        weights = cast(np.ndarray, self._weights)
+        geoms = np.asarray(list(geometries), dtype=object)
+        region_density = weights / np.maximum(sh.area(geoms), 1e-300)
+        mass = np.full(len(xy), float(weights.sum()) / float(self.boundary.area))
+        pi, gi = sh.STRtree(geoms).query(sh.points(xy), predicate="within")
+        mass[pi] = region_density[gi]
+        self._mass_xy = xy
+        self._mass_density = mass
+
+    def _mass_density_grid(self) -> np.ndarray:
+        """Histogram of the particle densities on the grid; the initial mean density outside the boundary.
+
+        Inside the boundary the histogram is scaled so that it holds the total
+        weight, as the cell-based density does: particles that drift just
+        outside the (vertex-sampled) boundary do not drain mass from it.  The
+        interior mean density is then the total weight over the current
+        boundary area, while the exterior keeps the mean over the initial
+        area, so a shrinking boundary is pushed back out and vice versa.
+        """
+        nx, ny = self._grid_nx, self._grid_ny
+        xy = cast(np.ndarray, self._mass_xy)
+        ix = np.clip(np.rint((xy[:, 0] - self._grid_x_coords[0]) / self._grid_dx).astype(np.intp), 0, nx - 1)
+        iy = np.clip(np.rint((xy[:, 1] - self._grid_y_coords[0]) / self._grid_dy).astype(np.intp), 0, ny - 1)
+        rho = np.bincount(iy * nx + ix, weights=self._mass_density, minlength=nx * ny)
+        active = self._elastic_active_mask
+        total = float(cast(np.ndarray, self._weights).sum())
+        inside_mass = float(rho[active].sum()) * self._pixel_area
+        if inside_mass > 0.0:
+            rho[active] *= total / inside_mass
+        # Exterior reference: the mean over the initial active pixels (one
+        # particle each), so that the pixel-count area, not the polygon area,
+        # is what returns to its initial value.
+        rho[~active] = total / (len(xy) * self._pixel_area)
+        return rho.reshape(ny, nx)
+
     # -- Boundary deformation -----------------------------------------------
 
     def _deform_boundary(self) -> None:
@@ -284,6 +362,10 @@ class RasterField(BaseField):
         mask = self._elastic_active_mask
 
         # Re-compute true Voronoi areas (without power offsets) for density field.
+        # Weighted runs with input geometries are driven by the advected input
+        # density instead (the cell areas, which match the weights, are only
+        # reported in the debug state); without geometries, by multiplicatively
+        # weighted cells (distance^2 / w).
         gx_active = self._grid_pts_x[mask]
         gy_active = self._grid_pts_y[mask]
         m_active = int(mask.sum())
@@ -315,6 +397,8 @@ class RasterField(BaseField):
                     )
             else:
                 labels_true = _result
+        elif self._mass_xy is not None:
+            labels_true = self._last_labels_2d.ravel()[np.where(mask)[0]]
         elif self._weights is not None:
             pts32 = self.points.astype(np.float32)
             w32 = self._weights.astype(np.float32)
@@ -348,6 +432,8 @@ class RasterField(BaseField):
         rho_2d = np.full((self._grid_ny, self._grid_nx), target_density, dtype=np.float64)
         valid_pix = labels_2d_true >= 0
         rho_2d[valid_pix] = density[labels_2d_true[valid_pix]]
+        if self._mass_xy is not None:
+            rho_2d = self._mass_density_grid()
 
         if self._density_smooth:
             from scipy.ndimage import gaussian_filter
@@ -375,9 +461,22 @@ class RasterField(BaseField):
         # Advect boundary vertices
         _elastic_current_verts = cast(list, self._elastic_current_verts)
         if bdt > 0.0:
-            for i, cur_verts in enumerate(_elastic_current_verts):
-                _elastic_current_verts[i] = displace_coords_numba(
-                    cur_verts,
+            # One call for all rings (the displacement is pointwise).
+            moved = displace_coords_numba(
+                np.vstack(_elastic_current_verts),
+                self._grid_x_coords,
+                self._grid_y_coords,
+                vx,
+                vy,
+                bdt,
+                self._grid_dx,
+                self._grid_dy,
+            )
+            splits = np.cumsum([len(v) for v in _elastic_current_verts])[:-1]
+            _elastic_current_verts[:] = np.split(moved, splits)
+            if self._mass_xy is not None:
+                self._mass_xy = displace_coords_numba(
+                    self._mass_xy,
                     self._grid_x_coords,
                     self._grid_y_coords,
                     vx,
@@ -411,32 +510,45 @@ class RasterField(BaseField):
         self._debug_vertex_disp = np.linalg.norm(cur_cat - orig_cat, axis=1)
         self._debug_vertex_disp_vec = cur_cat - orig_cat
 
-        # Rebuild boundary from displaced vertices.
-        # Fast path: skip make_valid + unary_union when all polygons are already
-        # valid (common for small displacements with boundary_elasticity << 1).
-        new_polys = [Polygon(np.vstack([v, v[:1]])) for v in _elastic_current_verts]
-        if len(new_polys) == 1 and sh.is_valid(new_polys[0]):
-            new_geom = new_polys[0]
-        elif len(new_polys) > 1 and all(sh.is_valid(p) for p in new_polys):
-            new_geom = unary_union(new_polys)
-        else:
-            # Slow path: fix self-intersections introduced by displacement.
-            valid_parts: list = []
-            for p in new_polys:
-                vp = sh.make_valid(p)
-                if vp.geom_type == "Polygon":
-                    valid_parts.append(vp)
-                else:
-                    polys = [g for g in getattr(vp, "geoms", [vp]) if g.geom_type == "Polygon"]
-                    valid_parts.extend(polys)
-            new_geom = unary_union(valid_parts) if valid_parts else self._current_boundary
-        self._current_boundary = drop_sliver_holes(new_geom)
+        self._current_boundary = drop_sliver_holes(self._rebuild_boundary(_elastic_current_verts))
         sh.prepare(self._current_boundary)
         self._elastic_active_mask = sh.contains_xy(self._current_boundary, self._grid_pts_x, self._grid_pts_y)
         # Keep adhesion snap target aligned with the deformed boundary so that
         # _apply_boundary_adhesion() snaps centroids to the current shape.
         if self._adhesion_strength > 0.0 and self._boundary_idx is not None:
             self._boundary_line = self._current_boundary.boundary
+
+    def _rebuild_boundary(self, rings: list):
+        """Boundary (Multi)Polygon from the displaced rings.
+
+        Rings that displacement made self-intersecting are repaired with
+        ``make_valid``; all polygonal parts are kept (``make_valid`` can nest
+        them in a GeometryCollection).  Parts are unioned only where they
+        overlap or touch; disjoint parts are collected as they are.
+        """
+        import shapely as sh
+
+        coords = np.vstack(rings)
+        ring_index = np.repeat(np.arange(len(rings)), [len(v) for v in rings])
+        polys = sh.polygons(sh.linearrings(coords, indices=ring_index))
+        invalid = ~sh.is_valid(polys)
+        if invalid.any():
+            polys = polys.copy()
+            polys[invalid] = [_keep_polygonal(g) for g in sh.make_valid(polys[invalid])]
+        parts = sh.get_parts(polys)
+        parts = parts[~sh.is_empty(parts) & (sh.get_type_id(parts) == 3)]
+        if len(parts) == 0:
+            return self._current_boundary
+        if len(parts) == 1:
+            return parts[0]
+        left, right = sh.STRtree(parts).query(parts, predicate="intersects")
+        overlapping = np.unique(np.concatenate([left[left != right], right[left != right]]))
+        if len(overlapping) == 0:
+            return sh.multipolygons(parts)
+        merged = sh.get_parts(sh.union_all(parts[overlapping]))
+        rest = np.delete(parts, overlapping)
+        all_parts = np.concatenate([merged[sh.get_type_id(merged) == 3], rest])
+        return all_parts[0] if len(all_parts) == 1 else sh.multipolygons(all_parts)
 
     # -- Cell construction helpers ------------------------------------------
 
@@ -712,25 +824,19 @@ class RasterField(BaseField):
             gx_active = px[active].astype(np.float32)
             gy_active = py[active].astype(np.float32)
             pts32 = self.points.astype(np.float32)
-            use_weights = False  # weights affect target_counts only, not distance formula
-            use_offsets = self._area_eq_weight > 0.0 and self._power_offsets is not None
+            use_offsets = (self._area_eq_weight > 0.0 or self._power_weighted) and self._power_offsets is not None
 
-            if use_weights or use_offsets:
+            if use_offsets:
                 m_active = int(active.sum())
                 chunk = 4096
                 labels_active = np.empty(m_active, dtype=np.int32)
-                w32 = self._weights.astype(np.float32) if use_weights else None
                 lam = self._nonempty_offsets() if ENSURE_NONEMPTY_POWER_CELLS else self._power_offsets
-                lam32 = lam.astype(np.float32) if use_offsets else None
+                lam32 = lam.astype(np.float32)
                 for start in range(0, m_active, chunk):
                     end = min(start + chunk, m_active)
                     dx = gx_active[start:end, None] - pts32[None, :, 0]
                     dy = gy_active[start:end, None] - pts32[None, :, 1]
-                    dist = dx * dx + dy * dy
-                    if use_weights:
-                        dist = dist / cast(np.ndarray, w32)[None, :]
-                    if use_offsets:
-                        dist = dist - cast(np.ndarray, lam32)[None, :]
+                    dist = dx * dx + dy * dy - lam32[None, :]
                     labels_active[start:end] = dist.argmin(axis=1).astype(np.int32)
             else:
                 pts_active = np.column_stack([gx_active.astype(np.float64), gy_active.astype(np.float64)])
@@ -772,28 +878,11 @@ class RasterField(BaseField):
     def _nonempty_offsets(self, max_passes: int = 5) -> np.ndarray:
         """Raise power offsets until every seed owns at least its own position.
 
-        A seed's power cell is ``{x : |x - p_i|^2 - lambda_i <= |x - p_j|^2 - lambda_j}``.
-        When ``lambda_i`` falls far enough below a neighbor's, that set becomes
-        empty: the cell degrades to a Point, and because a pixel-less seed takes
-        its own position as the Lloyd target, it is frozen there and can never
-        win territory back.  ``lambda_i >= max_j(lambda_j - d_ij^2)`` is the
-        weakest condition that keeps ``p_i`` itself inside cell *i*, so clamping
-        the offsets from below by that value is enough to keep every power cell
-        non-empty.  Raising one offset raises other seeds' floors, hence the
-        (cheap, usually single-pass) repetition.
+        A seed whose power cell is empty degrades to a Point and, because a
+        pixel-less seed takes its own position as the Lloyd target, is frozen
+        there.  See :func:`~carto_flow.voronoi_cartogram.fields._power.nonempty_offsets`.
         """
-        pts = self.points
-        sq = np.einsum("ij,ij->i", pts, pts)
-        d2 = sq[:, None] + sq[None, :] - 2.0 * (pts @ pts.T)
-        np.fill_diagonal(d2, np.inf)
-        offsets = self._power_offsets
-        for _ in range(max_passes):
-            floor = (offsets[None, :] - d2).max(axis=1)
-            raised = np.maximum(offsets, floor)
-            if np.array_equal(raised, offsets):
-                break
-            offsets = raised
-        return offsets
+        return nonempty_offsets(self.points, self._power_offsets, max_passes)
 
     # -- Lloyd step ---------------------------------------------------------
 
@@ -860,19 +949,7 @@ class RasterField(BaseField):
                     )
             else:
                 labels = np.asarray(_result, dtype=np.intp)
-        elif self._weights is not None:
-            if self._weight_ramp_iters > 0:
-                ramp = min(iteration / self._weight_ramp_iters, 1.0)
-                w_ramp = (1.0 - ramp) + ramp * self._weights
-                w32 = w_ramp.astype(np.float32)
-            else:
-                w32 = self._weights.astype(np.float32)
-            for start in range(0, m, chunk):
-                end = min(start + chunk, m)
-                dx = gx[start:end, None] - pts32[None, :, 0]
-                dy = gy[start:end, None] - pts32[None, :, 1]
-                labels[start:end] = ((dx * dx + dy * dy) / w32[None, :]).argmin(axis=1)
-        elif area_eq_weight > 0.0:
+        elif area_eq_weight > 0.0 or self._power_weighted:
             lam32 = self._power_offsets.astype(np.float32)
             for start in range(0, m, chunk):
                 end = min(start + chunk, m)
@@ -889,7 +966,24 @@ class RasterField(BaseField):
         target = np.column_stack([sum_x / safe, sum_y / safe])
         target[counts == 0] = self.points[counts == 0]
 
-        if area_eq_weight > 0.0 and self._weights is None and not self._geodesic_voronoi:
+        if self._power_weighted:
+            # Offset update toward weight-proportional pixel counts.  The
+            # offsets integrate the count error; while the generators are still
+            # far from their cell centroids they also leak, which damps the
+            # interplay between offsets and Lloyd moves (a pure integrator
+            # oscillates when many generators start clustered).  Once the
+            # generators settle the leak vanishes and the counts converge.
+            if self._weight_ramp_iters > 0:
+                ramp = min(iteration / self._weight_ramp_iters, 1.0)
+                shares = (1.0 - ramp) + ramp * self._weights
+            else:
+                shares = self._weights
+            target_counts = shares / shares.sum() * m
+            lag = float(np.median(np.linalg.norm(target - self.points, axis=1))) / self._cell_radius
+            leak = area_eq_weight * min(1.0, WEIGHTED_OFFSET_LEAK * lag)
+            self._power_offsets *= 1.0 - leak
+            self._power_offsets += area_eq_weight * 2.0 * self._pixel_area * (target_counts - counts)
+        elif area_eq_weight > 0.0 and self._weights is None and not self._geodesic_voronoi:
             target_counts = float(m) / G
             self._power_offsets *= 1.0 - area_eq_weight
             self._power_offsets += area_eq_weight * 2.0 * self._pixel_area * (target_counts - counts)
@@ -935,10 +1029,27 @@ class RasterField(BaseField):
         mean = float(np.mean(normalized))
         return 0.0 if mean == 0 else float(np.std(normalized) / mean)
 
+    def _fit_power_cells(self) -> np.ndarray:
+        """Exact power cells whose areas match the weights (see :class:`ClippedPowerDiagram`).
+
+        Starts from the relaxation's offsets and fits them to the current
+        boundary; the relaxation state is not modified.  The fit is stored in
+        :attr:`power_fit`.
+        """
+        boundary = self._current_boundary
+        if self._power_diagram is None or self._power_diagram.boundary is not boundary:
+            self._power_diagram = ClippedPowerDiagram(boundary)
+        weights = cast(np.ndarray, self._weights)
+        targets = weights / weights.sum() * float(boundary.area)
+        self.power_fit = self._power_diagram.fit(self.points, targets, self._power_offsets, rtol=self._area_tol)
+        return self.power_fit.cells
+
     def get_cells(self) -> np.ndarray:
+        if self._power_weighted:
+            return self._fit_power_cells()
         # Plain euclidean (no weights, no power-diagram): exact Voronoi is pixel-perfect.
-        # Geodesic, weighted, or area_eq_weight>0 all require raster upsampling because
-        # the cell boundaries are not standard Voronoi bisectors.
+        # Geodesic or area_eq_weight>0 require raster upsampling because the
+        # cell boundaries are not standard Voronoi bisectors.
         if not self._geodesic_voronoi and self._area_eq_weight == 0.0 and self._weights is None:
             return _extract_exact_cells(self.points, self._current_boundary)
         # Geodesic / power-weighted: exact Voronoi gives wrong cell shapes;

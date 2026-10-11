@@ -2,8 +2,9 @@
 Voronoi Cartogram with Elastic Boundary
 ========================================
 
-Population cartogram of US States where the outer boundary deforms to
-reduce area errors at the periphery.
+Population cartogram of US States, once inside the fixed outer boundary and
+once with an elastic outer boundary that deforms with the population density.
+In both, cell areas are proportional to population.
 """
 
 # %%

@@ -158,16 +158,18 @@ class MorphOptions:
     dt: float = 0.2
     n_iter: int = 500
     recompute_every: int | None = 10
-    """Maximum number of iterations a computed velocity field is reused (None: never refreshed on the clock)."""
-    refresh_on_rise: float | None = 0.01
-    """Relative rise of the score that triggers an early refresh of the velocity field.
+    """Maximum number of iterations a computed velocity field is reused; ``recompute_on_rise`` can recompute it earlier
+    (None: not recomputed on the clock)."""
+    recompute_on_rise: float | None = 0.01
+    """Relative rise of the score that triggers an early recompute of the velocity field.
 
-    If None, the field is refreshed only every ``recompute_every`` iterations. Otherwise (default 0.01) it is also
-    refreshed before the next iteration whenever the score ``max(mean_error / mean_tol,
+    This adds to ``recompute_every`` and does not replace it. If None, the field is recomputed only every
+    ``recompute_every`` iterations. Otherwise (default 0.01) it is also
+    recomputed before the next iteration whenever the score ``max(mean_error / mean_tol,
     max_error / max_tol)`` (log2 errors) rose by more than this fraction (0.0 for any rise, 0.01 for
     1%) compared with the previous iteration, provided the field has been used for at least one
-    iteration. ``recompute_every`` stays the maximum interval between refreshes. The window used for
-    stall detection does not depend on when refreshes happen.
+    iteration. ``recompute_every`` stays the maximum interval between recomputes. The window used for
+    stall detection does not depend on when recomputes happen.
     """
     snapshot_every: int | None = None
     mean_tol: float = 0.05  # Percentage tolerance, e.g., 0.05 = 5%
@@ -237,10 +239,10 @@ class MorphOptions:
     stall_patience: int | None = 4
     """Number of consecutive cycles without progress that ends the run as stalled.
 
-    The velocity field is reused between refreshes, so the error follows a sawtooth. Stall
+    The velocity field is reused between recomputes, so the error follows a sawtooth. Stall
     detection therefore judges windows of ``max(recompute_every, 10)`` iterations ("cycles",
     10 iterations if ``recompute_every`` is below 10 or None), counted from the first iteration
-    and independent of when refreshes actually happen (also with ``refresh_on_rise``). For each
+    and independent of when recomputes actually happen (also with ``recompute_on_rise``). For each
     completed window the minimum of the mean-error ratio ``mean_error / mean_tol`` and the minimum
     of the max-error ratio ``max_error / max_tol`` (log2 errors, as in the convergence test) are
     recorded; a ratio below 1 means that component is satisfied. A component counts toward
@@ -401,7 +403,7 @@ class MorphOptions:
             "prescale_components",
             "stall_patience",
             "stall_min_improvement",
-            "refresh_on_rise",
+            "recompute_on_rise",
             "parallel_fft",
             "parallel_density",
         ]
@@ -498,14 +500,14 @@ class MorphOptions:
         # Stall detection options
         elif field_name == "stall_patience":
             if value is not None:
-                if not isinstance(value, int):
+                if not isinstance(value, int) or isinstance(value, bool):
                     return "stall_patience must be an integer or None"
                 elif value < 0:
                     return "stall_patience must be a non-negative integer or None"
 
-        elif field_name == "refresh_on_rise":
+        elif field_name == "recompute_on_rise":
             if value is not None and (not isinstance(value, int | float) or isinstance(value, bool) or value < 0):
-                return "refresh_on_rise must be a non-negative number or None"
+                return "recompute_on_rise must be a non-negative number or None"
         elif field_name == "stall_min_improvement":
             if not isinstance(value, int | float) or isinstance(value, bool) or not 0 <= value < 1:
                 return "stall_min_improvement must be a number in [0, 1)"

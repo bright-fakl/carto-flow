@@ -11,9 +11,9 @@ def cycle_length(recompute_every: int | None) -> int:
 
     A cycle is a window of ``recompute_every`` iterations, counted from the first
     iteration, but never shorter than ``MIN_CYCLE_LENGTH`` iterations, so that
-    frequent refreshes do not make a cycle a single noisy iteration. Without a
-    refresh interval (``None``) cycles have the minimum length. Cycles do not
-    depend on when refreshes actually happen.
+    frequent recomputes do not make a cycle a single noisy iteration. Without a
+    recompute interval (``None``) cycles have the minimum length. Cycles do not
+    depend on when recomputes actually happen.
     """
     return max(recompute_every or 0, MIN_CYCLE_LENGTH)
 

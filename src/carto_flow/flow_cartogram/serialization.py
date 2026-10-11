@@ -73,7 +73,6 @@ def save_cartogram(
         "status": cartogram.status.value if hasattr(cartogram.status, "value") else str(cartogram.status),
         "niterations": cartogram.niterations,
         "best_iteration": cartogram.best_iteration,
-        "stop_reason": cartogram.stop_reason.value if cartogram.stop_reason is not None else None,
         "duration": cartogram.duration,
         "target_density": cartogram.target_density,
     }
@@ -176,7 +175,7 @@ def load_cartogram(path: str | Path) -> "Cartogram":
     from .errors import MorphErrors
     from .grid import Grid
     from .history import CartogramSnapshot, ConvergenceHistory, History
-    from .options import MorphStatus, StopReason
+    from .options import MorphStatus
 
     path = Path(path)
     with open(path) as f:
@@ -252,18 +251,12 @@ def load_cartogram(path: str | Path) -> "Cartogram":
     except ValueError:
         status = MorphStatus.COMPLETED
 
-    try:
-        stop_reason = StopReason(data["stop_reason"]) if data.get("stop_reason") else None
-    except ValueError:
-        stop_reason = None
-
     return Cartogram(
         snapshots=history,
         convergence=conv,
         status=status,
         niterations=niterations,
         best_iteration=data.get("best_iteration"),
-        stop_reason=stop_reason,
         duration=data.get("duration", 0.0),
         target_density=data.get("target_density"),
         grid=grid,

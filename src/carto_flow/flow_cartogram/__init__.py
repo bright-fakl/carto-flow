@@ -25,8 +25,6 @@ MorphOptions
     Configuration dataclass with validation and quality presets.
 MorphStatus
     Enum indicating morphing outcome (CONVERGED, STALLED, COMPLETED, ORIGINAL).
-StopReason
-    Enum naming the rule that ended a run (CONVERGED, STALL_PATIENCE, ITERATION_LIMIT).
 
 Notes
 -----
@@ -46,7 +44,6 @@ The Cartogram result object contains:
 - ``status`` - MorphStatus enum (CONVERGED, STALLED, COMPLETED, RUNNING, ORIGINAL)
 - ``niterations`` - Number of iterations run
 - ``best_iteration`` - Iteration of the returned state (best iterate)
-- ``stop_reason`` - StopReason enum: which rule ended the run
 - ``duration`` - Computation time in seconds
 - ``options`` - MorphOptions used for computation
 - ``internals`` - History of internal state (if save_internals=True)
@@ -168,7 +165,6 @@ from .options import (
     MorphOptionsError,
     MorphOptionsValidationError,
     MorphStatus,
-    StopReason,
 )
 from .plot_results import (
     CartogramComparisonResult,
@@ -214,7 +210,6 @@ __all__ = [
     "MorphStatus",
     "Multiplicative",
     "Pipeline",
-    "StopReason",
     "Tensor",
     "VelocityFieldResult",
     "VelocityModulator",

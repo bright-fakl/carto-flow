@@ -56,7 +56,7 @@ class MorphStatus(str, Enum):
         Algorithm stopped because ``stall_patience`` consecutive cycles
         (windows of ``max(recompute_every, 10)`` iterations) made no progress
     COMPLETED : str
-        Algorithm completed all iterations without converging
+        Algorithm ran all ``n_iter`` iterations without converging or stalling
     RUNNING : str
         Algorithm is still running (intermediate status)
     FAILED : str
@@ -69,27 +69,6 @@ class MorphStatus(str, Enum):
     COMPLETED = "completed"
     RUNNING = "running"
     FAILED = "failed"
-
-    def __str__(self) -> str:
-        return self.value
-
-
-class StopReason(str, Enum):
-    """Rule that ended a morphing run.
-
-    Attributes
-    ----------
-    CONVERGED : str
-        Both ``mean_tol`` and ``max_tol`` were met.
-    STALL_PATIENCE : str
-        ``stall_patience`` consecutive cycles (windows of ``max(recompute_every, 10)`` iterations) made no progress.
-    ITERATION_LIMIT : str
-        ``n_iter`` iterations were run without another rule firing.
-    """
-
-    CONVERGED = "converged"
-    STALL_PATIENCE = "stall_patience"
-    ITERATION_LIMIT = "iteration_limit"
 
     def __str__(self) -> str:
         return self.value

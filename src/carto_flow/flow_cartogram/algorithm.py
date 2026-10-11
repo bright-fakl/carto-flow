@@ -42,7 +42,7 @@ from .history import (
     ConvergenceHistory,
     History,
 )
-from .options import MorphOptions, MorphStatus, StopReason
+from .options import MorphOptions, MorphStatus
 from .recompute import score_rose, should_recompute
 from .stall import StallMonitor, cycle_length
 from .velocity import VelocityComputerFFTW
@@ -264,7 +264,6 @@ def morph_geometries(
         - niterations: Number of iterations run
         - best_iteration: Iteration of the returned state (the best iterate by
           the combined convergence score; equals ``niterations`` when converged)
-        - stop_reason: StopReason enum saying which rule ended the run
         - duration: Computation time in seconds
         - options: MorphOptions used for computation
         - internals: History of internal state (if save_internals=True)
@@ -459,7 +458,6 @@ def morph_geometries(
     stall_monitor = StallMonitor(
         options.stall_patience, options.stall_min_improvement, cycle_length(options.recompute_every)
     )
-    stop_reason = StopReason.ITERATION_LIMIT
     n_done = 0
 
     def _snapshot(iteration, errors, areas):
@@ -650,9 +648,6 @@ def morph_geometries(
         stalled = stall_monitor.update(step, mean_error / log2_mean_tol, max_error / log2_max_tol)
         n_done = step + 1
 
-        stop_reason = (
-            StopReason.CONVERGED if converged else StopReason.STALL_PATIENCE if stalled else StopReason.ITERATION_LIMIT
-        )
         status = (
             MorphStatus.CONVERGED
             if converged
@@ -733,7 +728,6 @@ def morph_geometries(
         status=status,
         niterations=n_done,
         best_iteration=best_step + 1,
-        stop_reason=stop_reason,
         duration=elapsed,
         options=options,
         grid=grid,

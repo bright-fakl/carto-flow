@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import carto_flow.data as data
-from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, StopReason, morph_gdf
+from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, morph_gdf
 from carto_flow.flow_cartogram.anisotropy import DirectionalTensor
 from carto_flow.flow_cartogram.recompute import score_rose, should_recompute
 from carto_flow.flow_cartogram.stall import MIN_CYCLE_LENGTH, StallMonitor, cycle_length
@@ -46,7 +46,6 @@ class TestStrongAnisotropyConverges:
     def test_converges_within_400_iterations(self, states, modulator):
         result = morph_gdf(states, "Population", options=_strong_anisotropy_options(modulator))
         assert result.status == MorphStatus.CONVERGED
-        assert result.stop_reason == StopReason.CONVERGED
         assert result.niterations <= 400
         assert result.best_iteration == result.niterations
 
@@ -57,7 +56,6 @@ class TestConvergedRunsUnchanged:
         assert result.status == MorphStatus.CONVERGED
         assert result.niterations == 113
         assert result.best_iteration == 113
-        assert result.stop_reason == StopReason.CONVERGED
         assert result.snapshots.get_iterations() == [113]
 
     def test_grid_512(self, states):
@@ -87,7 +85,6 @@ class TestBestIterate:
         best = int(np.argmin(score)) + 1
 
         assert result.status == MorphStatus.COMPLETED
-        assert result.stop_reason == StopReason.ITERATION_LIMIT
         assert result.niterations == 60
         assert result.best_iteration == best
         assert best < 60
@@ -130,7 +127,6 @@ class TestBestIterate:
         result.save(tmp_path / "c.json")
         loaded = type(result).load(tmp_path / "c.json")
         assert loaded.best_iteration == result.best_iteration
-        assert loaded.stop_reason == result.stop_reason
         assert loaded.latest.iteration == result.best_iteration
 
 
@@ -251,7 +247,6 @@ class TestStallPatience:
         score = _score(result.convergence, options)
 
         assert result.status == MorphStatus.STALLED
-        assert result.stop_reason == StopReason.STALL_PATIENCE
         assert result.niterations < options.n_iter
         # Stops at the end of a cycle, and returns the best iterate.
         assert result.niterations % options.recompute_every == 0
@@ -263,7 +258,6 @@ class TestStallPatience:
         options = MorphOptions(**self.OPTIONS, stall_patience=None)
         result = morph_gdf(states, "Population", options=options)
         assert result.niterations == 60
-        assert result.stop_reason == StopReason.ITERATION_LIMIT
 
     @pytest.mark.parametrize("recompute_every", [1, 2, 5, 10])
     def test_horizontal_anisotropy_converges_for_any_recompute_interval(self, states, recompute_every):

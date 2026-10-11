@@ -198,15 +198,16 @@ class MorphOptions:
     multiresolution morph. ``0`` disables the floor (a zero area then gives an infinite error).
     """
 
-    density_rasterization: str = "center"
+    density_rasterization: str = "exact"
     """How the density is rasterized onto the grid.
 
-    - ``"center"`` (default): each cell takes the density of the geometry that contains its center.
-      Every region is quantized to whole cells, and a region smaller than a cell that contains no
-      cell center is invisible to the flow.
-    - ``"exact"``: each cell takes the area-weighted mean density over the cell, so every region
-      takes part in proportion to its area and the integral of the density over the grid equals the
-      total value. Costs about as much as ``"center"``. ``parallel_density`` is ignored.
+    - ``"exact"`` (default): each cell takes the area-weighted mean density over the cell, so every
+      region takes part in proportion to its area and the integral of the density over the grid
+      equals the total value. Costs about as much as ``"center"`` (less from grid 256 up).
+      ``parallel_density`` is ignored.
+    - ``"center"``: each cell takes the density of the geometry that contains its center. Every
+      region is quantized to whole cells, and a region smaller than a cell that contains no cell
+      center is invisible to the flow.
     """
 
     # Parallel computation options

@@ -11,13 +11,6 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
-- **`MorphOptions.density_rasterization="exact"`** rasterizes the density by the
-  area each region covers in a cell instead of by the region at the cell center.
-  Regions smaller than a cell take part in the flow, and the coarse level of a
-  multiresolution morph no longer plateaus on them (states from grid 128: 63
-  iterations against 134; districts: 123 against 231). The default stays
-  `"center"`.
-  ([#119](https://github.com/bright-fakl/carto-flow/pull/119))
 - **`create_voronoi_cartogram(..., premorph=True | MorphOptions)`** first morphs
   the regions with the flow cartogram by the same weights and runs the Voronoi
   relaxation on the morphed regions; the flow result is kept in
@@ -33,6 +26,16 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **The density is rasterized by the area each region covers in a cell by
+  default** (`MorphOptions.density_rasterization="exact"`) instead of by the
+  region at the cell center; `"center"` restores the previous behavior. Regions
+  smaller than a cell take part in the flow, the coarse level of a multiresolution
+  morph no longer plateaus on them (states from grid 128: 63 iterations against
+  134; districts: 123 against 231), and rasterization is faster from grid 256 up.
+  Results change slightly: the default states run converges in 112 iterations
+  instead of 113, and its maximum area error at grid 256 is 0.78 % instead of
+  4.36 %.
+  ([#119](https://github.com/bright-fakl/carto-flow/pull/119))
 - **Flow-cartogram error metrics floor areas relative to the mean target area,
   not at one grid cell.** `MorphOptions.error_floor` (default `1e-3`) replaces the
   floor of `grid.dx * grid.dy`, so the reported errors (`mean_error_pct`,

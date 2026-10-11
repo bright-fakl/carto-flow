@@ -157,7 +157,7 @@ def compute_density_field_from_geometries(
     return_outside_mask=False,  # Deprecated for backward compatibility
     use_parallel=False,
     n_jobs=None,
-    rasterization="center",
+    rasterization="exact",
 ):
     """Compute density field directly from geometries (no dataframe dependency).
 
@@ -187,14 +187,14 @@ def compute_density_field_from_geometries(
     n_jobs : int, optional
         Number of parallel jobs to use for density field calculation. If None,
         uses all available cores.
-    rasterization : {"center", "exact"}, default="center"
-        ``"center"``: each cell takes the density of the geometry that contains its center, and
-        the mean density outside all geometries. ``"exact"``: each cell takes the area-weighted
-        mean of the geometry densities over the cell (the uncovered part at the mean density), so
-        a geometry smaller than a cell contributes in proportion to its area and the integral of
-        the density over the grid equals the total value. With ``"exact"``, ``geometry_mask`` holds
-        the geometry that covers most of the cell, or -1 if that geometry covers less than half of
-        it, and ``use_parallel`` and ``n_jobs`` are ignored.
+    rasterization : {"exact", "center"}, default="exact"
+        ``"exact"``: each cell takes the area-weighted mean of the geometry densities over the cell
+        (the uncovered part at the mean density), so a geometry smaller than a cell contributes in
+        proportion to its area and the integral of the density over the grid equals the total value.
+        With ``"exact"``, ``geometry_mask`` holds the geometry that covers most of the cell, or -1 if
+        that geometry covers less than half of it, and ``use_parallel`` and ``n_jobs`` are ignored.
+        ``"center"``: each cell takes the density of the geometry that contains its center, and the
+        mean density outside all geometries.
 
     Returns
     -------

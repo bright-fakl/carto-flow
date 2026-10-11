@@ -54,9 +54,9 @@ class TestConvergedRunsUnchanged:
     def test_default_options(self, states):
         result = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
         assert result.status == MorphStatus.CONVERGED
-        assert result.niterations == 113
-        assert result.best_iteration == 113
-        assert result.snapshots.get_iterations() == [113]
+        assert result.niterations == 112
+        assert result.best_iteration == 112
+        assert result.snapshots.get_iterations() == [112]
 
     def test_grid_512(self, states):
         result = morph_gdf(states, "Population", options=MorphOptions(show_progress=False, grid_size=512))
@@ -132,7 +132,9 @@ class TestBestIterate:
 
 class TestWorkflowContinuation:
     def test_refinement_continues_from_the_best_iterate(self, states):
-        options = MorphOptions(**TestBestIterate.OPTIONS)
+        # The margin of the final comparison is small and tuned on center sampling.
+        scenario = {**TestBestIterate.OPTIONS, "density_rasterization": "center"}
+        options = MorphOptions(**scenario)
         workflow = CartogramWorkflow(states, "Population", options=options)
         first = workflow.morph()
         assert first.best_iteration < first.niterations
@@ -140,7 +142,7 @@ class TestWorkflowContinuation:
 
         # The exported geometry is the best iterate, and it is the start of the next run.
         assert workflow.to_geodataframe().geometry.iloc[0].equals(best_geometry[0])
-        second = workflow.morph(options=MorphOptions(**{**TestBestIterate.OPTIONS, "n_iter": 1, "recompute_every": 1}))
+        second = workflow.morph(options=MorphOptions(**{**scenario, "n_iter": 1, "recompute_every": 1}))
         start_error = first.get_errors().mean_log_error
         final_error = first.get_errors(first.niterations).mean_log_error
         assert abs(second.convergence.mean_log_errors[0] - start_error) < abs(
@@ -242,7 +244,10 @@ class TestStallPatience:
     OPTIONS: ClassVar[dict] = {"show_progress": False, "n_iter": 60, "dt": 0.6, "mean_tol": 0.001, "max_tol": 0.002}
 
     def test_preset_balanced_stalls_on_a_diverging_step(self, states):
-        options = MorphOptions.preset_balanced().copy_with(dt=0.6, show_progress=False, recompute_on_rise=None)
+        # The diverging step is tuned on center sampling; this test is about the stall rule, not the rasterizer.
+        options = MorphOptions.preset_balanced().copy_with(
+            dt=0.6, show_progress=False, recompute_on_rise=None, density_rasterization="center"
+        )
         result = morph_gdf(states, "Population", options=options)
         score = _score(result.convergence, options)
 
@@ -328,7 +333,7 @@ class TestRecomputeOnRise:
     def test_no_change_when_the_score_never_rises(self, states):
         off = morph_gdf(states, "Population", options=MorphOptions(show_progress=False, recompute_on_rise=None))
         on = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
-        assert on.niterations == off.niterations == 113
+        assert on.niterations == off.niterations == 112
 
     def test_default_is_one_percent(self):
         assert MorphOptions().recompute_on_rise == 0.01

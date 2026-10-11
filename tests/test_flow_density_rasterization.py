@@ -56,7 +56,7 @@ class TestExactCoverage:
         """A region with no cell center inside is invisible to center sampling and counted by exact coverage."""
         grid = _grid()
         tiny = box(3.1, 3.1, 3.4, 3.4)  # cell centers are at x.5
-        centre = compute_density_field_from_geometries([tiny], [1.0], grid, mean_density=0.0)
+        centre = compute_density_field_from_geometries([tiny], [1.0], grid, mean_density=0.0, rasterization="center")
         exact = compute_density_field_from_geometries([tiny], [1.0], grid, mean_density=0.0, rasterization="exact")
         assert centre.sum() == 0.0
         assert exact.sum() * grid.dx * grid.dy == pytest.approx(1.0, rel=1e-12)
@@ -88,8 +88,8 @@ class TestExactCoverage:
 
 
 class TestOption:
-    def test_default_is_center(self):
-        assert MorphOptions().density_rasterization == "center"
+    def test_default_is_exact(self):
+        assert MorphOptions().density_rasterization == "exact"
 
     @pytest.mark.parametrize("value", ["fast", None, True, 2])
     def test_invalid_value_is_rejected(self, value):
@@ -106,20 +106,23 @@ def states():
 
 
 class TestMorph:
-    def test_center_is_unchanged_by_default(self, states):
+    def test_default_is_the_exact_run(self, states):
         """The default run is the same with the option spelled out."""
-        a = morph_gdf(states, "Population", options=MorphOptions(show_progress=False, grid_size=64, n_iter=20))
-        b = morph_gdf(
-            states,
-            "Population",
-            options=MorphOptions(show_progress=False, grid_size=64, n_iter=20, density_rasterization="center"),
-        )
+        options = MorphOptions(show_progress=False, grid_size=64, n_iter=20)
+        a = morph_gdf(states, "Population", options=options)
+        b = morph_gdf(states, "Population", options=options.copy_with(density_rasterization="exact"))
         assert [g.wkb for g in a.get_geometry()] == [g.wkb for g in b.get_geometry()]
+
+    def test_center_is_still_available(self, states):
+        options = MorphOptions(show_progress=False, grid_size=64, n_iter=20)
+        exact = morph_gdf(states, "Population", options=options)
+        center = morph_gdf(states, "Population", options=options.copy_with(density_rasterization="center"))
+        assert [g.wkb for g in exact.get_geometry()] != [g.wkb for g in center.get_geometry()]
 
     def test_exact_lowers_the_area_error(self, states):
         """Center sampling quantizes every region to whole cells; exact coverage removes that (grid 256, states)."""
         base = MorphOptions(show_progress=False, grid_size=256, n_iter=300)
-        center = morph_gdf(states, "Population", options=base)
-        exact = morph_gdf(states, "Population", options=base.copy_with(density_rasterization="exact"))
+        center = morph_gdf(states, "Population", options=base.copy_with(density_rasterization="center"))
+        exact = morph_gdf(states, "Population", options=base)
         assert exact.status == MorphStatus.CONVERGED
         assert exact.get_errors().max_error_pct < 0.5 * center.get_errors().max_error_pct

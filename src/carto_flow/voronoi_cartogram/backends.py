@@ -388,7 +388,7 @@ class RasterBackend:
         :func:`~carto_flow.voronoi_cartogram.create_voronoi_cartogram`; on a
         fixed original outline, where cells have to move to reach their
         areas, it does not keep regions closer to their original locations.
-        ``None`` (default): ``0.5`` with ``premorph``, else ``0``.
+        ``None`` (default): ``0.25`` with ``premorph``, else ``0``.
 
     Examples
     --------

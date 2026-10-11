@@ -206,7 +206,7 @@ Key parameters:
 | `area_equalizer_rate` | 0.1 | Power-diagram offset learning rate |
 | `boundary` | `None` | `AdhesiveBoundary` or `ElasticBoundary` |
 | `adjacency_spring` | 0.0 | Spring strength preserving adjacency |
-| `generator_anchor` | `None` | Pull of the generators toward their starting positions; `None` = 0.5 with `premorph`, else 0 |
+| `generator_anchor` | `None` | Pull of the generators toward their starting positions; `None` = 0.25 with `premorph`, else 0 |
 
 **Pure FFT-flow mode**: pass `relaxation=0.0` together with `ElasticBoundary` to skip Lloyd relaxation entirely and drive movement solely from area-pressure via the FFT velocity field.
 
@@ -334,7 +334,7 @@ power diagram can realize any target areas for any generator positions; the
 anchor only trades cell compactness for staying close to the starting layout.
 `a = 0` is plain Lloyd relaxation, `a = 1` keeps the generators at their
 starting positions. With `premorph`, `generator_anchor=None` (the default)
-uses `a = 0.5`; otherwise it uses 0, the plain relaxation. With an
+uses `a = 0.25`; otherwise it uses 0, the plain relaxation. With an
 `ElasticBoundary` the starting positions are moved with the boundary flow.
 
 The anchor keeps regions near their morphed locations at the cost of less

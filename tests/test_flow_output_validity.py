@@ -60,31 +60,34 @@ def _vertex_counts(geometries):
 
 
 class TestMorphOutput:
-    def test_the_default_keeps_the_computed_geometries_and_warns(self, minorities):
-        """Keyframe animations interpolate vertex by vertex, so the exported geometries keep the vertices of the input."""
+    @pytest.fixture(scope="class")
+    def result(self, minorities):
         gdf, _ = minorities
         options = MorphOptions(grid_size=512, show_progress=False, snapshot_every=1)
         with pytest.warns(UserWarning, match="not valid polygons"):
-            result = morph_gdf(gdf, "Minorities", options=options)
+            return morph_gdf(gdf, "Minorities", options=options)
+
+    def test_the_morph_warns_and_lists_the_invalid_regions(self, result):
         assert len(result.invalid_regions) >= 1
+        assert tuple(invalid_indices(list(result.get_geometry()))) == result.invalid_regions
+
+    def test_the_default_keeps_the_vertices_of_the_input(self, minorities, result):
+        """Keyframe animations interpolate vertex by vertex, so the geometries keep the vertices of the input."""
+        gdf, _ = minorities
         counts = _vertex_counts(gdf.geometry)
         assert _vertex_counts(result.get_geometry()) == counts
         assert _vertex_counts(result.snapshots[0].geometry) == counts
         assert _vertex_counts(result.to_geodataframe().geometry) == counts
 
-    def test_with_repair_the_exported_geometries_are_valid(self, minorities):
-        gdf, _ = minorities
-        options = MorphOptions(grid_size=512, show_progress=False, repair_output=True)
-        result = morph_gdf(gdf, "Minorities", options=options)
-        assert shapely.is_valid(result.to_geodataframe().geometry.values).all()
+    def test_repair_makes_the_geometries_valid(self, result):
+        assert shapely.is_valid(result.get_geometry(repair=True)).all()
+        assert shapely.is_valid(result.to_geodataframe(repair=True).geometry.values).all()
+        # the stored geometries are not changed
         assert len(invalid_indices(list(result.get_geometry()))) == len(result.invalid_regions)
 
-    def test_the_repair_changes_the_areas_little(self, minorities):
-        gdf, _ = minorities
-        options = MorphOptions(grid_size=512, show_progress=False, repair_output=True)
-        result = morph_gdf(gdf, "Minorities", options=options)
+    def test_the_repair_changes_the_areas_little(self, result):
         a = np.array([g.area for g in result.get_geometry()])
-        b = np.array([g.area for g in result.to_geodataframe().geometry])
+        b = np.array([g.area for g in result.get_geometry(repair=True)])
         assert np.max(np.abs(b / a - 1)) < 3e-3
 
     def test_valid_runs_have_no_invalid_regions_and_do_not_warn(self, recwarn):
@@ -92,11 +95,7 @@ class TestMorphOutput:
         result = morph_gdf(states, "Population", options=MorphOptions(grid_size=128, show_progress=False))
         assert result.invalid_regions == ()
         assert not [w for w in recwarn if "not valid polygons" in str(w.message)]
-
-    def test_the_option_is_validated(self):
-        with pytest.raises(ValueError, match="repair_output"):
-            MorphOptions(repair_output="yes")
-        assert MorphOptions().repair_output is False
+        assert result.get_geometry(repair=True) is not None
 
 
 class TestPartition:

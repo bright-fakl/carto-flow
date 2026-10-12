@@ -222,15 +222,17 @@ def _normalize_coordinates(coords, format_type=None):
 # ============================================================================
 
 
-def _check_output(snapshot, repair: bool) -> tuple[int, ...]:
-    """Indices of the invalid regions of the returned snapshot; warned about unless ``repair`` (applied on export)."""
+def _check_output(snapshot) -> tuple[int, ...]:
+    """Indices of the invalid regions of the returned snapshot; warns if there are any."""
     if snapshot is None or snapshot.geometry is None:
         return ()
     invalid = invalid_indices(snapshot.geometry)
-    if len(invalid) and not repair:
+    if len(invalid):
         warnings.warn(
             f"{len(invalid)} output regions are not valid polygons (self-intersecting boundary), "
-            f"first indices {invalid[:5].tolist()}; use repair_output=True to repair them in to_geodataframe (this changes the vertices).",
+            f"first indices {invalid[:5].tolist()}. Cartogram.to_geodataframe(repair=True) and "
+            "Cartogram.get_geometry(repair=True) make them valid but add vertices; do not repair geometries "
+            "that are animated between cartograms.",
             UserWarning,
             stacklevel=3,
         )
@@ -734,7 +736,7 @@ def morph_geometries(
             _pt.snapshot_s += _time.perf_counter() - _t0
 
     snapshots.best_iteration = best_step + 1
-    invalid_regions = _check_output(snapshots.get_snapshot(best_step + 1), options.repair_output)
+    invalid_regions = _check_output(snapshots.get_snapshot(best_step + 1))
     if internals is not None:
         # The field that produced the best iterate is the last one computed at or before it.
         recorded = [snap.iteration for snap in internals.snapshots if snap.iteration <= best_step + 1]

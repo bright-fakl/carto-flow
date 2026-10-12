@@ -14,11 +14,12 @@ Releases before 2.0.0 have no changelog entry; see the
 - **A flow cartogram warns when regions of the result are invalid, and
   `Cartogram.invalid_regions` lists them.** A region that is much narrower than a grid
   cell somewhere could be pinched during the morph until its boundary crossed itself,
-  and nothing in the result said so. **`MorphOptions.repair_output=True`** makes those regions valid in
-  `Cartogram.to_geodataframe` (`shapely.make_valid`, zero-area parts dropped; a
-  region can become a MultiPolygon and its vertices no longer correspond to the
-  input), so it is off by default: animations between cartograms need the vertices
-  of the input in every geometry. ([#125](https://github.com/bright-fakl/carto-flow/pull/125))
+  and nothing in the result said so. **`Cartogram.get_geometry(repair=True)`** and
+  **`Cartogram.to_geodataframe(repair=True)`** make those regions valid
+  (`shapely.make_valid`, zero-area parts dropped; a region can become a MultiPolygon
+  and its vertices no longer correspond to the input), so the default is `False`:
+  animations between cartograms need the vertices of the input in every geometry.
+  ([#125](https://github.com/bright-fakl/carto-flow/pull/125))
 - **`create_voronoi_cartogram(..., premorph=True | MorphOptions)`** first morphs
   the regions with the flow cartogram by the same weights and runs the Voronoi
   relaxation on the morphed regions; the flow result is kept in

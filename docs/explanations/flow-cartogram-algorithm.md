@@ -185,6 +185,8 @@ A region whose target area is a few grid cells or fewer is not represented by th
 - the smallest target region covers fewer than 2.5 cells at the coarsest grid (the message gives the smallest `min_resolution` that satisfies this), or
 - more than 1 % of the target regions are smaller than one cell at the finest grid, which a morph is unlikely to resolve.
 
+`morph_gdf` and `CartogramWorkflow.morph` apply the same two conditions to the grid they use, and name the smallest `grid_size` that satisfies the first. A multiresolution morph checks the ladder once, not at each level.
+
 `min_resolution="auto"` takes the smallest power of two from 64 to 512 at which the smallest target region covers 2.5 cells (512 if none does). `levels="auto"` doubles the coarsest resolution up to a finest grid of 2048. The morph ends at the first level that converges, so on inputs without small regions only the coarsest level runs.
 
 ---

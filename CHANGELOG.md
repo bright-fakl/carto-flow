@@ -11,8 +11,8 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
-- **`multiresolution_morph` and `CartogramWorkflow.morph_multiresolution` warn when the
-  grid cannot resolve the smallest regions, and accept `min_resolution="auto"` and
+- **`morph_gdf`, `multiresolution_morph` and the workflow morph methods warn when the
+  grid cannot resolve the smallest regions; the multiresolution methods accept `min_resolution="auto"` and
   `levels="auto"`.** The warning appears when the smallest target region covers fewer
   than 2.5 cells at the coarsest grid or more than 1 % of the regions are smaller than
   one cell at the finest grid. `"auto"` takes the smallest power of two from 64 to 512

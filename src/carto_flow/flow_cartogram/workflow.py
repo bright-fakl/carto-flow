@@ -41,7 +41,7 @@ from .errors import compute_error_metrics
 from .grid import build_multilevel_grids
 from .history import CartogramSnapshot, History
 from .options import MorphOptions, MorphStatus
-from .resolution import auto_levels, auto_start, check_resolution
+from .resolution import auto_levels, auto_start, check_grid, check_resolution
 
 __all__ = ["CartogramWorkflow"]
 
@@ -239,6 +239,9 @@ class CartogramWorkflow:
         >>> workflow.morph(options=MorphOptions.preset_fast())
         >>> workflow.morph(mean_tol=0.01, n_iter=200)
         """
+        return self._morph(options, overrides, check=True)
+
+    def _morph(self, options: MorphOptions | None, overrides: dict, check: bool) -> Cartogram:
         # Determine effective options
         if options is not None:
             effective_options = copy.deepcopy(options)
@@ -258,6 +261,17 @@ class CartogramWorkflow:
         original_areas = np.array(self._original_gdf.area)
         scaled_areas = original_areas * effective_options.area_scale
         target_density = float(np.sum(values) / np.sum(scaled_areas))
+
+        if check:
+            bounds = effective_options._calculate_bounds_from_geometries(latest.geometry)  # type: ignore[union-attr]
+            grid = effective_options.get_grid(bounds)
+            check_grid(
+                grid,
+                bounds,
+                np.sum(original_areas) * values / np.sum(values),
+                effective_options.grid_margin,
+                effective_options.grid_square,
+            )
 
         result = morph_geometries(
             geometries=latest.geometry,  # type: ignore[union-attr]
@@ -357,7 +371,7 @@ class CartogramWorkflow:
                 # suppress it on refinement levels where geometry is already scaled.
                 level_options.prescale_components = False  # type: ignore[union-attr]
 
-            result = self.morph(options=level_options)
+            result = self._morph(level_options, {}, check=False)
 
             if result.status == MorphStatus.CONVERGED:
                 break

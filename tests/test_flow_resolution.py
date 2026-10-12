@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from carto_flow import data
-from carto_flow.flow_cartogram import MorphOptions, multiresolution_morph
+from carto_flow.flow_cartogram import MorphOptions, morph_gdf, multiresolution_morph
 from carto_flow.flow_cartogram.resolution import (
     MAX_RESOLUTION,
     MAX_START,
@@ -132,3 +132,24 @@ def test_levels_auto_with_explicit_resolution(states):
 def test_warning_when_no_grid_up_to_the_maximum_resolves_the_smallest_region():
     with pytest.warns(UserWarning, match=r"no grid up to 2048 does"):
         check_resolution(BOUNDS, _targets(0.001), 512, 3)
+
+
+def test_single_resolution_morph_warns_for_a_too_coarse_grid(districts):
+    with pytest.warns(UserWarning, match=r"covers 0\.68 cells at the grid \(64\).*grid_size=128") as record:
+        morph_gdf(districts, "Population", options=MorphOptions(show_progress=False, grid_size=64, n_iter=10))
+    assert sum("Grid resolution" in str(r.message) for r in record) == 1
+    assert record[0].filename == __file__
+
+
+def test_single_resolution_morph_without_small_regions_does_not_warn(states):
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message="Grid resolution")
+        morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
+
+
+def test_ladder_warns_once(districts):
+    with pytest.warns(UserWarning, match="Grid resolution") as record:
+        multiresolution_morph(
+            districts, "Population", min_resolution=64, levels=3, options=MorphOptions(show_progress=False)
+        )
+    assert sum("Grid resolution" in str(r.message) for r in record) == 1

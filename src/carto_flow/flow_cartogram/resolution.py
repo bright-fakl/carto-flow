@@ -61,35 +61,61 @@ def auto_levels(min_resolution: int) -> int:
     return max(int(math.log2(MAX_RESOLUTION / min_resolution)) + 1, 1)
 
 
-def check_resolution(
-    bounds: Any, target_areas: Any, min_resolution: int, levels: int, margin: float = 0.5, square: bool = True
-) -> None:
-    """Warn when the coarsest grid is too coarse for the smallest target region or the finest
-    grid leaves more than ``SUBCELL_SHARE`` of the regions below one cell."""
-    targets = _positive(target_areas)
-    if targets.size == 0:
-        return
-    smallest = float(targets.min())
-    cell = _cell_area(bounds, min_resolution, margin, square)
-    finest = min_resolution * 2 ** (levels - 1)
-    finest_cell = cell / 4 ** (levels - 1)
+def _messages(
+    targets: np.ndarray, cell: float, finest_cell: float, coarse_label: str, fine_label: str, suggestion: str
+) -> list[str]:
     messages = []
+    smallest = float(targets.min())
     if smallest / cell < MIN_CELLS:
-        needed = smallest_resolution(bounds, targets, margin, square)
-        suggestion = (
-            f"min_resolution={needed}"
-            if needed is not None and needed <= MAX_RESOLUTION
-            else f"no grid up to {MAX_RESOLUTION} does"
-        )
         messages.append(
-            f"the smallest target region covers {smallest / cell:.2g} cells at the coarsest grid "
-            f"({min_resolution}); at least {MIN_CELLS:g} cells are needed to resolve it ({suggestion})"
+            f"the smallest target region covers {smallest / cell:.2g} cells at {coarse_label}; "
+            f"at least {MIN_CELLS:g} cells are needed to resolve it ({suggestion})"
         )
     below = int(np.sum(targets / finest_cell < 1.0))
     if below > SUBCELL_SHARE * targets.size:
         messages.append(
             f"{below} of {targets.size} target regions ({100 * below / targets.size:.0f} %) are smaller than one "
-            f"cell at the finest grid ({finest}); they cannot be resolved and the morph is unlikely to converge"
+            f"cell at {fine_label}; they cannot be resolved and the morph is unlikely to converge"
         )
+    return messages
+
+
+def _suggestion(name: str, bounds: Any, targets: np.ndarray, margin: float, square: bool) -> str:
+    needed = smallest_resolution(bounds, targets, margin, square)
+    if needed is not None and needed <= MAX_RESOLUTION:
+        return f"{name}={needed}"
+    return f"no grid up to {MAX_RESOLUTION} does"
+
+
+def check_resolution(
+    bounds: Any, target_areas: Any, min_resolution: int, levels: int, margin: float = 0.5, square: bool = True
+) -> None:
+    """Warn when the coarsest grid of a ladder is too coarse for the smallest target region or the
+    finest grid leaves more than ``SUBCELL_SHARE`` of the regions below one cell."""
+    targets = _positive(target_areas)
+    if targets.size == 0:
+        return
+    cell = _cell_area(bounds, min_resolution, margin, square)
+    messages = _messages(
+        targets,
+        cell,
+        cell / 4 ** (levels - 1),
+        f"the coarsest grid ({min_resolution})",
+        f"the finest grid ({min_resolution * 2 ** (levels - 1)})",
+        _suggestion("min_resolution", bounds, targets, margin, square),
+    )
     if messages:
         warnings.warn("Grid resolution: " + "; ".join(messages) + ".", UserWarning, stacklevel=4)
+
+
+def check_grid(grid: Any, bounds: Any, target_areas: Any, margin: float = 0.5, square: bool = True) -> None:
+    """Warn when ``grid`` is too coarse for the smallest target region or leaves more than
+    ``SUBCELL_SHARE`` of the regions below one cell."""
+    targets = _positive(target_areas)
+    if targets.size == 0:
+        return
+    label = f"the grid ({max(grid.sx, grid.sy)})"
+    cell = float(grid.dx * grid.dy)
+    messages = _messages(targets, cell, cell, label, label, _suggestion("grid_size", bounds, targets, margin, square))
+    if messages:
+        warnings.warn("Grid resolution: " + "; ".join(messages) + ".", UserWarning, stacklevel=5)

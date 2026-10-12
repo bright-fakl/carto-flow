@@ -32,7 +32,7 @@ def districts():
 
 
 def _options(adaptive, **kwargs):
-    return MorphOptions(**{"grid_size": 128, "show_progress": False, "adaptive_dt": adaptive, **kwargs})
+    return MorphOptions(**{"grid": 128, "show_progress": False, "adaptive_dt": adaptive, **kwargs})
 
 
 def _score(conv, options):

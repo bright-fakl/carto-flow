@@ -59,7 +59,7 @@ class TestConvergedRunsUnchanged:
         assert result.snapshots.get_iterations() == [112]
 
     def test_grid_512(self, states):
-        result = create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False, grid_size=512))
+        result = create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False, grid=512))
         assert result.status == MorphStatus.CONVERGED
         assert result.niterations == 214
         assert result.best_iteration == result.niterations

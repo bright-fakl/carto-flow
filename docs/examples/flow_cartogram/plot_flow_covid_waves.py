@@ -70,7 +70,7 @@ for week in keyframe_weeks:
     cartogram = flow.create_flow_cartogram(
         df,
         "cases_per_100k",
-        options=flow.MorphOptions(grid_size=flow.LadderSpec(min_resolution=128, levels=4), show_progress=False),
+        options=flow.MorphOptions(grid=flow.LadderSpec(min_resolution=128, levels=4), show_progress=False),
     )
     cartograms.append(cartogram)
 

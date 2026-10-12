@@ -66,7 +66,7 @@ _ROUNDS = 10
 @pytest.mark.parametrize("grid_size", _GRID_SIZES)
 @pytest.mark.parametrize("overrides", _PARALLEL_CASES)
 def test_parallel_options(benchmark, us_states_gdf, overrides, grid_size):
-    options = MorphOptions(**_FIXED, grid_size=grid_size, **overrides)
+    options = MorphOptions(**_FIXED, grid=grid_size, **overrides)
     runs = BenchmarkRuns()
 
     def run():
@@ -87,7 +87,7 @@ def test_parallel_options(benchmark, us_states_gdf, overrides, grid_size):
 # ---------------------------------------------------------------------------
 
 # No benchmark=True — Group B is about total wall time, not phase breakdown.
-_CONVERGENCE_OPTS = MorphOptions(n_iter=500, grid_size=512, show_progress=False, mean_tol=0.005, max_tol=0.01)
+_CONVERGENCE_OPTS = MorphOptions(n_iter=500, grid=512, show_progress=False, mean_tol=0.005, max_tol=0.01)
 
 
 def test_single_resolution_convergence(benchmark, us_states_gdf):
@@ -148,7 +148,7 @@ _CONGRESSIONAL_FIXED = {
 @pytest.mark.parametrize("grid_size", _CONGRESSIONAL_GRID_SIZES)
 @pytest.mark.parametrize("overrides", _PARALLEL_CASES)
 def test_congressional_districts(benchmark, us_congressional_districts_gdf, overrides, grid_size):
-    options = MorphOptions(**_CONGRESSIONAL_FIXED, grid_size=grid_size, **overrides)
+    options = MorphOptions(**_CONGRESSIONAL_FIXED, grid=grid_size, **overrides)
 
     runs = BenchmarkRuns()
 
@@ -206,7 +206,7 @@ def _load_states_at(case):
 _VERTEX_FIXED = {
     "n_iter": 100,
     "show_progress": False,
-    "grid_size": 512,
+    "grid": 512,
     "mean_tol": 0.02,
     "max_tol": 0.05,
     "stall_patience": None,

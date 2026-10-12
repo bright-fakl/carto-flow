@@ -86,15 +86,15 @@ workflow.pop()                             # Undo if needed
 ```python
 from carto_flow.flow_cartogram import LadderSpec, MorphOptions, create_flow_cartogram
 
-options = MorphOptions(grid_size=LadderSpec(min_resolution=128, levels=3))
+options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
 cartogram = create_flow_cartogram(gdf, "population", options=options)
 ```
 
-`MorphOptions(grid_size="auto")` chooses the ladder from the data.
+`MorphOptions(grid="auto")` chooses the ladder from the data.
 
 ```python
 # One grid, with its margin and squareness
-options = MorphOptions(grid_size=GridSpec(size=512, margin=0.25, square=True))
+options = MorphOptions(grid=GridSpec(size=512, margin=0.25, square=True))
 ```
 
 ### With Displacement Field Output

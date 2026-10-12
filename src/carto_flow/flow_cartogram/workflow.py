@@ -38,7 +38,7 @@ import numpy as np
 from .algorithm import morph_geometries
 from .cartogram import Cartogram
 from .errors import compute_error_metrics
-from .grid import LadderSpec, build_multilevel_grids
+from .grid import Grid, LadderSpec, build_multilevel_grids
 from .history import CartogramSnapshot, History
 from .options import MorphOptions, MorphStatus
 from .resolution import auto_levels, auto_start, check_grid, check_resolution
@@ -202,7 +202,7 @@ class CartogramWorkflow:
             niterations=0,
             duration=0.0,
             options=options,
-            grid=options.grid,
+            grid=options.grid if isinstance(options.grid, Grid) else None,
             _source_gdf=self._original_gdf,
             _source_landmarks_gdf=self._original_landmarks_gdf,
             _value_column=self._column,
@@ -376,7 +376,7 @@ class CartogramWorkflow:
             options_list = [copy.deepcopy(opt) for opt in options]
 
         for level, (grid, level_options) in enumerate(zip(grids, options_list, strict=False)):
-            level_options.grid_size = None  # type: ignore[union-attr]
+            level_options.grid = None  # type: ignore[union-attr]
             level_options.grid = grid  # type: ignore[union-attr]
             level_options.progress_message = (  # type: ignore[union-attr]
                 f"{'Refining' if self.is_morphed else 'Morphing'} with {grid.sx}x{grid.sy} grid"

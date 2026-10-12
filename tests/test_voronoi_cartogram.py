@@ -1039,7 +1039,7 @@ class TestPremorphAndGeneratorAnchor:
         result = create_voronoi_cartogram(
             gdf, weights="population", premorph=opts, backend=_FAST_RASTER, options=_FAST_OPTIONS
         )
-        assert result.premorph.options.grid_size == opts.grid_size == 128
+        assert result.premorph.options.grid == opts.grid == 128
         with pytest.raises(TypeError, match="premorph"):
             create_voronoi_cartogram(gdf, premorph="yes", backend=_FAST_RASTER, options=_FAST_OPTIONS)
 

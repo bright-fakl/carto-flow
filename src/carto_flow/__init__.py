@@ -56,7 +56,7 @@ Multi-resolution cartogram with refinement:
     >>> from carto_flow import CartogramWorkflow, LadderSpec, MorphOptions, create_flow_cartogram
     >>>
     >>> # Multi-resolution morphing (returns final Cartogram)
-    >>> options = MorphOptions(grid_size=LadderSpec(min_resolution=128, levels=3))
+    >>> options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
     >>> cartogram = create_flow_cartogram(gdf, 'population', options=options)
     >>> print(f"Status: {cartogram.status}, Error: {cartogram.get_errors().mean_error_pct:.1f}%")
     >>>

@@ -116,6 +116,6 @@ def check_grid(grid: Any, bounds: Any, target_areas: Any, margin: float = 0.5, s
         return
     label = f"the grid ({max(grid.sx, grid.sy)})"
     cell = float(grid.dx * grid.dy)
-    messages = _messages(targets, cell, cell, label, label, _suggestion("grid_size", bounds, targets, margin, square))
+    messages = _messages(targets, cell, cell, label, label, _suggestion("grid", bounds, targets, margin, square))
     if messages:
         warnings.warn("Grid resolution: " + "; ".join(messages) + ".", UserWarning, stacklevel=5)

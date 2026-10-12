@@ -24,7 +24,7 @@ CartogramWorkflow
 MorphOptions
     Configuration dataclass with validation and quality presets.
 GridSpec, LadderSpec
-    Grid specifications for MorphOptions.grid_size: one grid, or a ladder of resolutions.
+    Grid specifications for MorphOptions.grid: one grid, or a ladder of resolutions.
 MorphStatus
     Enum indicating morphing outcome (CONVERGED, STALLED, COMPLETED, ORIGINAL).
 
@@ -92,13 +92,13 @@ Create a population cartogram:
 Multi-resolution morphing for better convergence:
 
 >>> from carto_flow.flow_cartogram import LadderSpec, create_flow_cartogram
->>> options = MorphOptions(grid_size=LadderSpec(min_resolution=128, levels=3))
+>>> options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
 >>> cartogram = create_flow_cartogram(gdf, "population", options=options)
 
 Custom configuration:
 
 >>> options = MorphOptions(
-...     grid_size=512,
+...     grid=512,
 ...     n_iter=100,
 ...     dt=0.5,
 ...     mean_tol=0.01,

@@ -21,7 +21,7 @@ Examples
 >>> gdf_result = cartogram.to_geodataframe()
 >>>
 >>> # A ladder of resolutions, chosen from the data
->>> cartogram = create_flow_cartogram(gdf, 'population', options=MorphOptions(grid_size="auto"))
+>>> cartogram = create_flow_cartogram(gdf, 'population', options=MorphOptions(grid="auto"))
 >>> print(f"Status: {cartogram.status}")
 """
 
@@ -51,7 +51,7 @@ def create_flow_cartogram(
     Generate a flow cartogram from a GeoDataFrame.
 
     Returns a Cartogram with rich methods for visualization, export, and
-    analysis. ``options.grid_size`` selects the resolution: an integer or
+    analysis. ``options.grid`` selects the resolution: an integer or
     ``GridSpec`` for one grid, a ``LadderSpec`` or ``"auto"`` for a ladder of
     resolutions that is run from coarse to fine and ends at the first level
     that converges. For refinement and history, use CartogramWorkflow directly.
@@ -87,10 +87,10 @@ def create_flow_cartogram(
     >>> cartogram.plot()
     >>>
     >>> # A ladder of resolutions, chosen from the data
-    >>> cartogram = create_flow_cartogram(gdf, 'population', options=MorphOptions(grid_size="auto"))
+    >>> cartogram = create_flow_cartogram(gdf, 'population', options=MorphOptions(grid="auto"))
     >>>
     >>> # An explicit ladder: 128, 256 and 512 points along the long axis
-    >>> options = MorphOptions(grid_size=LadderSpec(min_resolution=128, levels=3))
+    >>> options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
     >>> cartogram = create_flow_cartogram(gdf, 'population', options=options)
     >>>
     >>> # Get density in people per km² (assuming CRS in meters)
@@ -157,7 +157,7 @@ def multiresolution_morph(
     Multi-resolution cartogram generation.
 
     .. deprecated:: 2.1
-        Use :func:`create_flow_cartogram` with ``MorphOptions(grid_size=LadderSpec(...))``.
+        Use :func:`create_flow_cartogram` with ``MorphOptions(grid=LadderSpec(...))``.
         Per-level option lists are available through ``CartogramWorkflow.morph_multiresolution``.
 
     Progressively refines the cartogram at increasing grid resolutions
@@ -210,7 +210,7 @@ def multiresolution_morph(
 
     warnings.warn(
         "multiresolution_morph is deprecated and will be removed in the next major release; use "
-        "create_flow_cartogram with MorphOptions(grid_size=LadderSpec(...)).",
+        "create_flow_cartogram with MorphOptions(grid=LadderSpec(...)).",
         DeprecationWarning,
         stacklevel=2,
     )

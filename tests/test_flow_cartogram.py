@@ -35,7 +35,7 @@ class TestLongSegmentWarning:
     """morph_geometries warns about long straight segments (Phase 0.5)."""
 
     def test_warns_for_coarse_square(self):
-        # A single large square has 1000-unit edges. Default grid_size=256
+        # A single large square has 1000-unit edges. Default grid=256
         # over these bounds gives cells far smaller than 1000/4, so the
         # warning should fire.
         square = [box(0, 0, 1000, 1000)]
@@ -68,7 +68,7 @@ class TestFlowCartogram:
     def test_flow_cartogram_with_parameters(self, gdf):
         """Test flow cartogram with custom parameters."""
         options = MorphOptions(
-            grid_size=64,
+            grid=64,
             n_iter=100,
             mean_tol=1e-3,
         )
@@ -79,7 +79,7 @@ class TestFlowCartogram:
     def test_flow_cartogram_different_grid_sizes(self, gdf):
         """Test flow cartogram with different grid sizes."""
         for grid_size in [32, 64, 128]:
-            options = MorphOptions(grid_size=grid_size)
+            options = MorphOptions(grid=grid_size)
             cartogram = create_flow_cartogram(gdf, "population", options=options)
             assert cartogram is not None
             assert len(cartogram.get_geometry()) == len(gdf)
@@ -101,7 +101,7 @@ class TestZeroValueGeometry:
     def test_zero_value_does_not_emit_divide_by_zero_warnings(self, gdf):
         gdf = gdf.copy()
         gdf.loc[gdf.index[0], "population"] = 0.0
-        options = MorphOptions(n_iter=20, grid_size=32)
+        options = MorphOptions(n_iter=20, grid=32)
 
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)
@@ -114,7 +114,7 @@ class TestZeroValueGeometry:
         gdf = gdf.copy()
         zero_idx = gdf.index[0]
         gdf.loc[zero_idx, "population"] = 0.0
-        options = MorphOptions(n_iter=100, grid_size=64, mean_tol=1e-2, max_tol=1e-1)
+        options = MorphOptions(n_iter=100, grid=64, mean_tol=1e-2, max_tol=1e-1)
 
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)
@@ -138,7 +138,7 @@ class TestZeroValueGeometry:
         """
         geoms = [box(0, 0, 1, 1), box(1, 0, 1.001, 1)]
         values = [1.0, 1000.0]
-        options = MorphOptions(n_iter=5, recompute_every=1, grid_size=32, show_progress=False)
+        options = MorphOptions(n_iter=5, recompute_every=1, grid=32, show_progress=False)
 
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)

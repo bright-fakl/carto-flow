@@ -12,13 +12,13 @@ Releases before 2.0.0 have no changelog entry; see the
 ### Added
 
 - **`create_flow_cartogram(gdf, column, *, landmarks, options, displacement_coords, density_per)`
-  is the entry point of the flow cartogram, and `MorphOptions.grid_size` selects the
+  is the entry point of the flow cartogram, and `MorphOptions.grid` selects the
   resolution.** An int or `(nx, ny)` is one grid; `GridSpec(size, margin, square)` is one
   grid with its margin and squareness; `LadderSpec(min_resolution, levels, margin, square)`
   and `"auto"` run a ladder of resolutions from coarse to fine. The ladder is run by
   `create_flow_cartogram` and `CartogramWorkflow.morph`, so callers that take a
   `MorphOptions` (the Voronoi `premorph=`, the mosaic layout's `morph_options`) accept it
-  without special code. An explicit `grid` cannot be combined with a ladder.
+  without special code. A prebuilt `Grid` is also a `grid` value.
 - **`morph_gdf`, `multiresolution_morph` and the workflow morph methods warn when the
   grid cannot resolve the smallest regions; the multiresolution methods accept `min_resolution="auto"` and
   `levels="auto"`.** The warning appears when the smallest target region covers fewer
@@ -130,12 +130,14 @@ Releases before 2.0.0 have no changelog entry; see the
   ([#126](https://github.com/bright-fakl/carto-flow/pull/126))
 
 - **`morph_gdf` and `multiresolution_morph`** are deprecated and will be removed in the
-  next major release; use `create_flow_cartogram`, with `MorphOptions(grid_size=LadderSpec(...))`
+  next major release; use `create_flow_cartogram`, with `MorphOptions(grid=LadderSpec(...))`
   for a ladder of resolutions. Per-level option lists remain available through
   `CartogramWorkflow.morph_multiresolution`.
-- **`MorphOptions.grid_margin` and `MorphOptions.grid_square`** are deprecated; put the
-  margin and squareness in a `GridSpec` or `LadderSpec` passed as `grid_size`. Both now
-  default to `None` (0.5 and `False` for an int or tuple `grid_size`).
+- **`MorphOptions.grid_size`, `grid_margin` and `grid_square`** are deprecated:
+  `grid_size` is an alias of `grid` (which now also takes an int, a tuple, `GridSpec`,
+  `LadderSpec`, `"auto"` or a `Grid`), and the margin and squareness belong in a `GridSpec`
+  or `LadderSpec`. `grid_margin` and `grid_square` default to `None` (0.5 and `False` for an
+  int or tuple `grid`).
 
 - **`Cartogram.latest`, `CartogramWorkflow.latest` and `History.latest()`.**
   `Cartogram.best` is the snapshot of the returned state and `Cartogram.last`

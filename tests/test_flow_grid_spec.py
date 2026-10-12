@@ -1,4 +1,4 @@
-"""GridSpec and LadderSpec in MorphOptions.grid_size, create_flow_cartogram and the deprecated entry points."""
+"""GridSpec and LadderSpec in MorphOptions.grid, create_flow_cartogram and the deprecated entry points."""
 
 import warnings
 
@@ -48,33 +48,33 @@ def test_ladder_spec_rejects_invalid_values(kwargs):
 
 
 def test_grid_spec_builds_the_grid_of_its_size_margin_and_square():
-    options = _quiet(grid_size=GridSpec(64, margin=0.2, square=True))
+    options = _quiet(grid=GridSpec(64, margin=0.2, square=True))
     expected = Grid.from_bounds(BOUNDS, 64, 0.2, True)
     grid = options.get_grid(BOUNDS)
     assert (grid.sx, grid.sy, grid.dx, grid.dy) == (expected.sx, expected.sy, expected.dx, expected.dy)
 
 
 def test_int_grid_size_keeps_margin_half_and_rectangular_cells():
-    grid = _quiet(grid_size=64).get_grid(BOUNDS)
+    grid = _quiet(grid=64).get_grid(BOUNDS)
     expected = Grid.from_bounds(BOUNDS, 64, 0.5, False)
     assert (grid.sx, grid.sy) == (expected.sx, expected.sy)
 
 
 def test_auto_is_a_ladder_with_automatic_levels():
-    assert _quiet(grid_size="auto").grid_spec == LadderSpec()
+    assert _quiet(grid="auto").grid_spec == LadderSpec()
 
 
 def test_other_strings_are_rejected():
     with pytest.raises(MorphOptionsValidationError):
-        _quiet(grid_size="fine")
+        _quiet(grid="fine")
 
 
 def test_legacy_margin_and_square_are_deprecated_but_honored():
     with pytest.warns(DeprecationWarning, match="grid_margin is deprecated"):
-        options = _quiet(grid_size=64, grid_margin=0.1)
+        options = _quiet(grid=64, grid_margin=0.1)
     assert options.grid_spec == GridSpec(64, 0.1, False)
     with pytest.warns(DeprecationWarning, match="grid_square is deprecated"):
-        options = _quiet(grid_size=64, grid_square=True)
+        options = _quiet(grid=64, grid_square=True)
     assert options.grid_spec == GridSpec(64, 0.5, True)
 
 
@@ -82,25 +82,42 @@ def test_defaults_do_not_warn():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         _quiet()
-        _quiet(grid_size=GridSpec(64))
+        _quiet(grid=GridSpec(64))
 
 
-def test_explicit_grid_cannot_be_combined_with_a_ladder():
+def test_prebuilt_grid_is_returned_as_is():
     grid = Grid.from_bounds(BOUNDS, 64)
-    with pytest.raises(MorphOptionsValidationError, match="ladder"):
-        _quiet(grid=grid, grid_size="auto")
-    with pytest.raises(MorphOptionsValidationError, match="ladder"):
-        _quiet(grid=grid, grid_size=LadderSpec())
-    assert _quiet(grid=grid, grid_size=64).get_grid(BOUNDS) is grid
+    options = _quiet(grid=grid)
+    assert options.get_grid(BOUNDS) is grid
+    assert options.grid_spec is None
+
+
+def test_grid_size_is_a_deprecated_alias_of_grid():
+    with pytest.warns(DeprecationWarning, match="grid_size is deprecated"):
+        options = _quiet(grid_size=64)
+    assert options.grid == 64
+    assert options.grid_size is None
+    with pytest.warns(DeprecationWarning, match="grid_size is deprecated"):
+        options.grid_size = LadderSpec()
+    assert options.grid == LadderSpec()
+    with pytest.warns(DeprecationWarning, match="grid_size is deprecated"):
+        copy = options.copy_with(grid_size=128)
+    assert copy.grid == 128
+    assert options.grid == LadderSpec()
+
+
+def test_invalid_grid_size_alias_is_rejected():
+    with pytest.warns(DeprecationWarning), pytest.raises(MorphOptionsValidationError):
+        _quiet(grid_size=-1)
 
 
 def test_a_ladder_has_no_single_grid():
     with pytest.raises(ValueError, match="ladder"):
-        _quiet(grid_size=LadderSpec()).get_grid(BOUNDS)
+        _quiet(grid=LadderSpec()).get_grid(BOUNDS)
 
 
 def test_create_flow_cartogram_runs_a_ladder(states):
-    options = _quiet(grid_size=LadderSpec(min_resolution=64, levels=2, square=True), n_iter=30, recompute_every=5)
+    options = _quiet(grid=LadderSpec(min_resolution=64, levels=2, square=True), n_iter=30, recompute_every=5)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         cartogram = create_flow_cartogram(states, "Population", options=options)
@@ -108,7 +125,7 @@ def test_create_flow_cartogram_runs_a_ladder(states):
 
 
 def test_workflow_morph_runs_a_ladder_and_stores_each_level(states):
-    options = _quiet(grid_size=LadderSpec(min_resolution=64, levels=2), n_iter=20, recompute_every=5)
+    options = _quiet(grid=LadderSpec(min_resolution=64, levels=2), n_iter=20, recompute_every=5)
     workflow = CartogramWorkflow(states, "Population", options=options)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

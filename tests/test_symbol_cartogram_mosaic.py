@@ -567,7 +567,7 @@ class TestZeroTileCount:
             result = compute(
                 gdf,
                 morph=True,
-                morph_options=MorphOptions(n_iter=5, recompute_every=1, grid_size=32, show_progress=False),
+                morph_options=MorphOptions(n_iter=5, recompute_every=1, grid=32, show_progress=False),
             )
 
         metrics = result.metrics.algorithm
@@ -1548,7 +1548,7 @@ class TestMorphLadder:
 
         gdf = grid_gdf(3, 3, COUNTS_3X3)
         options = MorphOptions(
-            n_iter=5, recompute_every=1, grid_size=LadderSpec(min_resolution=16, levels=2), show_progress=False
+            n_iter=5, recompute_every=1, grid=LadderSpec(min_resolution=16, levels=2), show_progress=False
         )
         result = compute(gdf, morph=True, morph_options=options)
         np.testing.assert_array_equal(tile_counts_per_geometry(result), COUNTS_3X3)

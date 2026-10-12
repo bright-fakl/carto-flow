@@ -37,7 +37,7 @@ class TestGridIndependence:
         """The same geometry and targets give the same reported error on every grid (issue 87)."""
         results = [
             CartogramWorkflow(
-                districts, "Population", options=MorphOptions(grid_size=n, show_progress=False)
+                districts, "Population", options=MorphOptions(grid=n, show_progress=False)
             ).original.get_errors()
             for n in (64, 128, 256, 512)
         ]

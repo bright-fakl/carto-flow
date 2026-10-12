@@ -32,11 +32,11 @@ def warmup_numba(us_states_gdf):
     create_flow_cartogram(
         us_states_gdf,
         "Population",
-        options=MorphOptions(grid_size=64, n_iter=2, show_progress=False, recompute_every=1),
+        options=MorphOptions(grid=64, n_iter=2, show_progress=False, recompute_every=1),
     )
     # Also warm up the serial displacement JIT variant (compiled separately from parallel)
     create_flow_cartogram(
         us_states_gdf,
         "Population",
-        options=MorphOptions(grid_size=64, n_iter=2, show_progress=False, recompute_every=1),
+        options=MorphOptions(grid=64, n_iter=2, show_progress=False, recompute_every=1),
     )

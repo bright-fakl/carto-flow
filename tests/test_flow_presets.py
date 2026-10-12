@@ -37,11 +37,11 @@ class TestPresets:
 
     def test_balanced_has_the_default_values(self):
         balanced, default = MorphOptions.preset_balanced(), MorphOptions()
-        for field in ("grid_size", "n_iter", "dt", "mean_tol", "max_tol"):
+        for field in ("grid", "n_iter", "dt", "mean_tol", "max_tol"):
             assert getattr(balanced, field) == getattr(default, field)
 
     def test_the_presets_get_finer_and_stricter(self):
         fast, balanced, high = (PRESETS[k]() for k in ("fast", "balanced", "high_quality"))
-        assert fast.grid_size < balanced.grid_size < high.grid_size
+        assert fast.grid < balanced.grid < high.grid
         assert fast.mean_tol > balanced.mean_tol > high.mean_tol
         assert fast.max_tol > balanced.max_tol > high.max_tol

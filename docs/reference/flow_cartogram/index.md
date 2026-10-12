@@ -86,11 +86,13 @@ workflow.pop()                             # Undo if needed
 ```python
 from carto_flow.flow_cartogram import LadderSpec, MorphOptions, create_flow_cartogram
 
-options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
+# The coarsest grid is chosen from the smallest region; the morph ends at the first converged level
+options = MorphOptions(grid="auto")
 cartogram = create_flow_cartogram(gdf, "population", options=options)
-```
 
-`MorphOptions(grid="auto")` chooses the ladder from the data.
+# An explicit ladder: 128, 256 and 512 points along the long axis
+options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
+```
 
 ```python
 # One grid, with its margin and squareness

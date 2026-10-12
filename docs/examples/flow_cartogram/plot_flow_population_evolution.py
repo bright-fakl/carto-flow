@@ -110,7 +110,9 @@ for year in years:
     cartogram = flow.create_flow_cartogram(
         df,
         year,
-        options=flow.MorphOptions(grid=flow.LadderSpec(min_resolution=128, levels=4), show_progress=False),
+        # grid="auto" starts at the coarsest grid that resolves the smallest region and refines
+        # until the tolerances are met.
+        options=flow.MorphOptions(grid="auto", show_progress=False),
     )
     cartograms.append(cartogram)
 

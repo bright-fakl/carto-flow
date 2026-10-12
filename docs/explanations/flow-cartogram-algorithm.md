@@ -176,6 +176,17 @@ Cell centers, edges, and spacings are computed lazily on first access and cached
 
 This hierarchy is used by `CartogramWorkflow.morph_multiresolution()` to run morphing sequentially from coarse to fine, with each level starting from the geometry produced by the previous level.
 
+### Choosing the resolution
+
+A region whose target area is a few grid cells or fewer is not represented by the density field, and its area error is held at the cell size however many iterations run. For a grid with cell area $c$, the size of the smallest target region in cells is $a^{\text{target}}_{\min} / c$; it grows by a factor of four per level. Regions with a target of zero are not counted.
+
+`multiresolution_morph` and `CartogramWorkflow.morph_multiresolution` warn before the first level when
+
+- the smallest target region covers fewer than 2.5 cells at the coarsest grid (the message gives the smallest `min_resolution` that satisfies this), or
+- more than 1 % of the target regions are smaller than one cell at the finest grid, which a morph is unlikely to resolve.
+
+`min_resolution="auto"` takes the smallest power of two from 64 to 512 at which the smallest target region covers 2.5 cells (512 if none does). `levels="auto"` doubles the coarsest resolution up to a finest grid of 2048. The morph ends at the first level that converges, so on inputs without small regions only the coarsest level runs.
+
 ---
 
 ## Density and Velocity Modulators

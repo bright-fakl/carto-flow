@@ -41,6 +41,7 @@ from .errors import compute_error_metrics
 from .grid import build_multilevel_grids
 from .history import CartogramSnapshot, History
 from .options import MorphOptions, MorphStatus
+from .resolution import auto_levels, auto_start, check_resolution
 
 __all__ = ["CartogramWorkflow"]
 
@@ -277,8 +278,8 @@ class CartogramWorkflow:
 
     def morph_multiresolution(
         self,
-        min_resolution: int = 128,
-        levels: int = 3,
+        min_resolution: int | Literal["auto"] = 128,
+        levels: int | Literal["auto"] = 3,
         margin: float = 0.5,
         square: bool = True,
         options: MorphOptions | list[MorphOptions] | None = None,
@@ -290,11 +291,14 @@ class CartogramWorkflow:
 
         Parameters
         ----------
-        min_resolution : int, default=128
+        min_resolution : int or "auto", default=128
             Resolution of the coarsest (first) grid level. Each subsequent
             level doubles this, up to ``min_resolution * 2^(levels-1)``.
-        levels : int, default=3
-            Number of resolution levels.
+            ``"auto"`` takes the smallest power of two from 64 to 512 at which
+            the smallest target region covers at least 2.5 cells (512 if none does).
+        levels : int or "auto", default=3
+            Number of resolution levels. ``"auto"`` doubles up to a finest grid
+            of 2048; the morph ends at the first level that converges.
         margin : float, default=0.5
             Margin around data bounds for grid creation.
         square : bool, default=True
@@ -315,8 +319,17 @@ class CartogramWorkflow:
         >>> for cartogram in workflow:
         ...     print(cartogram.status, cartogram.get_errors().mean_error_pct)
         """
+        bounds = self._original_gdf.total_bounds
+        values = np.asarray(self._original_gdf[self._column], dtype=float)
+        areas = np.asarray(self._original_gdf.area)
+        targets = areas.sum() * values / values.sum()
+        if min_resolution == "auto":
+            min_resolution = auto_start(bounds, targets, margin, square)
+        if levels == "auto":
+            levels = auto_levels(min_resolution)
+        check_resolution(bounds, targets, min_resolution, levels, margin, square)
         grids = build_multilevel_grids(
-            self._original_gdf.total_bounds,
+            bounds,
             min_resolution,
             levels,
             margin=margin,

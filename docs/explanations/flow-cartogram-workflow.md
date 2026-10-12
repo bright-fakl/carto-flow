@@ -55,6 +55,8 @@ Runs one complete morphing pass. The input geometry for the pass is taken from t
 
 Builds a dyadic grid hierarchy with `levels` grids and runs one morphing pass per grid level, from coarsest to finest. Each pass's output geometry is the input to the next. Each pass appends a separate `Cartogram` to `_results`. Execution stops early if the coarser-level result has already converged.
 
+`min_resolution="auto"` and `levels="auto"` choose the ladder from the data (see [Choosing the resolution](flow-cartogram-algorithm.md#choosing-the-resolution)). Before the first pass, the workflow warns when the coarsest grid cannot resolve the smallest target region or when many regions are below one cell at the finest grid.
+
 `prescale_components` is applied only at the first (coarsest) level; subsequent levels disable it automatically to avoid rescaling already-morphed geometry.
 
 ### Access and State Management

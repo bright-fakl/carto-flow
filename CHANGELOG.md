@@ -116,7 +116,7 @@ Releases before 2.0.0 have no changelog entry; see the
   error of 42 %, 13 % and 49 %. The limits are now 150 (`preset_fast`), 500
   (`preset_balanced`, the same values as `MorphOptions()`) and 1000
   (`preset_high_quality`), and all three converge on the states and congressional
-  districts. ([#PR](https://github.com/bright-fakl/carto-flow/pull/PR))
+  districts. ([#127](https://github.com/bright-fakl/carto-flow/pull/127))
 - **`partition_geometries` returned empty or wrong parts for invalid input
   polygons without an error:** invalid geometries are now repaired with
   `shapely.make_valid` and a warning names the rows.

@@ -6,7 +6,7 @@ Two groups:
 Group A — parallelism & bounding-box filter (fixed iterations)
     All cases run exactly n_iter=100 iterations so wall-time comparisons are clean.
 
-Group B — create_flow_cartogram vs multiresolution_morph (convergence)
+Group B — single vs multi-resolution (convergence)
     Both run to convergence.  niterations and status are stored in extra_info
     to explain any timing difference.
 
@@ -90,7 +90,7 @@ def test_parallel_options(benchmark, us_states_gdf, overrides, grid_size):
 _CONVERGENCE_OPTS = MorphOptions(n_iter=500, grid_size=512, show_progress=False, mean_tol=0.005, max_tol=0.01)
 
 
-def test_morph_gdf_convergence(benchmark, us_states_gdf):
+def test_single_resolution_convergence(benchmark, us_states_gdf):
     def run():
         return create_flow_cartogram(us_states_gdf, "Population", options=_CONVERGENCE_OPTS)
 

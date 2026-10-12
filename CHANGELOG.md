@@ -110,6 +110,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **The `MorphOptions` presets stopped before converging.** Their iteration limits
+  (30, 100 and 300) date from before the stall rule, the exact rasterization and the
+  adaptive step: on the bundled states the three presets ended with a mean area
+  error of 42 %, 13 % and 49 %. The limits are now 150 (`preset_fast`), 500
+  (`preset_balanced`, the same values as `MorphOptions()`) and 1000
+  (`preset_high_quality`), and all three converge on the states and congressional
+  districts. ([#PR](https://github.com/bright-fakl/carto-flow/pull/PR))
 - **`partition_geometries` returned empty or wrong parts for invalid input
   polygons without an error:** invalid geometries are now repaired with
   `shapely.make_valid` and a warning names the rows.

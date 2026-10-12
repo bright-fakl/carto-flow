@@ -217,7 +217,15 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `prescale_components` | `False` | Pre-scale connected components to target area |
 | `save_internals` | `False` | Save density/velocity grids in `Cartogram.internals` |
 
-Three preset factory methods are available: `MorphOptions.preset_fast()`, `.preset_balanced()`, and `.preset_high_quality()`.
+Three preset factory methods are available:
+
+| Preset | `grid_size` | `dt` | `mean_tol` / `max_tol` | `n_iter` | Use |
+|---|---|---|---|---|---|
+| `MorphOptions.preset_fast()` | 128 | 0.3 | 0.15 / 0.25 | 150 | Preview of a map; the regions are only approximately on target and a coarse grid does not resolve many small regions |
+| `MorphOptions.preset_balanced()` | 256 | 0.2 | 0.05 / 0.10 | 500 | The same values as `MorphOptions()`; the setting for most uses |
+| `MorphOptions.preset_high_quality()` | 512 | 0.1 | 0.01 / 0.03 | 1000 | Publication quality: a small step and strict tolerances |
+
+All three converge on the bundled states and congressional districts. None converges on inputs with many regions smaller than a grid cell, such as the 3,108 counties (see the [Limitations](#limitations)).
 
 ---
 

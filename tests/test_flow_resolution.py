@@ -127,3 +127,8 @@ def test_levels_auto_with_explicit_resolution(states):
         states, "Population", min_resolution=256, levels="auto", options=MorphOptions(show_progress=False)
     )
     assert cartogram.options.grid.sx == 256
+
+
+def test_warning_when_no_grid_up_to_the_maximum_resolves_the_smallest_region():
+    with pytest.warns(UserWarning, match=r"no grid up to 2048 does"):
+        check_resolution(BOUNDS, _targets(0.001), 512, 3)

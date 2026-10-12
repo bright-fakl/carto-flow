@@ -76,7 +76,11 @@ def check_resolution(
     messages = []
     if smallest / cell < MIN_CELLS:
         needed = smallest_resolution(bounds, targets, margin, square)
-        suggestion = f"min_resolution={needed}" if needed is not None else "a much finer grid"
+        suggestion = (
+            f"min_resolution={needed}"
+            if needed is not None and needed <= MAX_RESOLUTION
+            else f"no grid up to {MAX_RESOLUTION} does"
+        )
         messages.append(
             f"the smallest target region covers {smallest / cell:.2g} cells at the coarsest grid "
             f"({min_resolution}); at least {MIN_CELLS:g} cells are needed to resolve it ({suggestion})"

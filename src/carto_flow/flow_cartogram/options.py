@@ -173,6 +173,16 @@ class MorphOptions:
 
     False: constant ``dt``.
     """
+    repair_output: bool = True
+    """Repair invalid (self-intersecting) output regions.
+
+    Narrow channels of a region can close during the morph so that its boundary crosses itself, and
+    the returned geometry is then not a valid polygon. With ``repair_output`` the returned
+    geometries are made valid (:func:`shapely.make_valid`, zero-area parts dropped; a region can
+    become a MultiPolygon and its area changes slightly). The stored iterations (``snapshots``) are
+    not repaired. ``Cartogram.invalid_regions`` lists the repaired
+    regions. With False the output is returned as computed and a warning names the invalid regions.
+    """
     snapshot_every: int | None = None
     mean_tol: float = 0.05  # Percentage tolerance, e.g., 0.05 = 5%
     max_tol: float = 0.10  # Percentage tolerance, e.g., 0.10 = 10%
@@ -427,6 +437,7 @@ class MorphOptions:
             "benchmark",
             "prescale_components",
             "adaptive_dt",
+            "repair_output",
             "stall_patience",
             "stall_min_improvement",
             "recompute_on_rise",
@@ -549,6 +560,8 @@ class MorphOptions:
         # Outer-boundary distortion reduction options
         elif field_name == "adaptive_dt" and not isinstance(value, bool):
             return "adaptive_dt must be a boolean"
+        elif field_name == "repair_output" and not isinstance(value, bool):
+            return "repair_output must be a boolean"
         elif field_name == "prescale_components" and not isinstance(value, bool):
             return "prescale_components must be a boolean"
 

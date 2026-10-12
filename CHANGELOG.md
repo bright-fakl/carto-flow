@@ -11,6 +11,14 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`MorphOptions.repair_output`** (default `True`) makes the returned regions of a
+  flow cartogram valid polygons, and **`Cartogram.invalid_regions`** lists the
+  regions that were invalid. A narrow channel of a region could close during the
+  morph so that its boundary crossed itself, and nothing in the result said so; the
+  repair is `shapely.make_valid` with zero-area parts dropped (a region can become a
+  MultiPolygon, its area changes slightly). The stored iterations are not repaired.
+  With `False` the output is returned as computed and a warning names the invalid
+  regions. ([#85](https://github.com/bright-fakl/carto-flow/issues/85))
 - **`create_voronoi_cartogram(..., premorph=True | MorphOptions)`** first morphs
   the regions with the flow cartogram by the same weights and runs the Voronoi
   relaxation on the morphed regions; the flow result is kept in
@@ -101,6 +109,10 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **`partition_geometries` returned empty or wrong parts for invalid input
+  polygons without an error:** invalid geometries are now repaired with
+  `shapely.make_valid` and a warning names the rows.
+  ([#85](https://github.com/bright-fakl/carto-flow/issues/85))
 - **A region whose ring has a small self-intersection could be missing from the
   density field of the exact rasterizer:** the ring was judged counter-clockwise
   although its signed area was negative, so the region got negative coverage and

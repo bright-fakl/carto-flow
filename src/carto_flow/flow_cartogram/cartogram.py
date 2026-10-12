@@ -71,6 +71,9 @@ class Cartogram:
         Target equilibrium density.
     internals : History, optional
         Internal computation data (if save_internals=True).
+    invalid_regions : tuple of int
+        Indices of the regions whose returned geometry was not a valid polygon (a self-intersecting
+        boundary). They have been repaired if ``MorphOptions.repair_output`` is True (the default).
 
     Examples
     --------
@@ -93,6 +96,7 @@ class Cartogram:
     target_density: float | None = None
     internals: Optional["History[CartogramInternalsSnapshot]"] = None
     benchmark: Optional["Benchmark"] = None
+    invalid_regions: tuple[int, ...] = ()
 
     # Source references for GeoDataFrame reconstruction (not shown in repr)
     _source_gdf: Any | None = field(default=None, repr=False)

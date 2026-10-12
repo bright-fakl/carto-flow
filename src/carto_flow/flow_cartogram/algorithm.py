@@ -32,6 +32,7 @@ from ..geo_utils.geometry import (
     reconstruct_geometries,
     unpack_geometries,
 )
+from ..geo_utils.validity import invalid_indices, repair_polygons
 from .cartogram import Cartogram
 from .density import DensityModulator, compute_density_field_from_geometries
 from .displacement import displace_coords_numba, max_abs_velocity, max_velocity_magnitude
@@ -219,6 +220,25 @@ def _normalize_coordinates(coords, format_type=None):
 # ============================================================================
 # Core Algorithm
 # ============================================================================
+
+
+def _check_output(snapshot, repair: bool) -> tuple[int, ...]:
+    """Indices of the invalid regions of the returned snapshot; repaired in place if ``repair``, else warned about."""
+    if snapshot is None or snapshot.geometry is None:
+        return ()
+    invalid = invalid_indices(snapshot.geometry)
+    if len(invalid) == 0:
+        return ()
+    if repair:
+        snapshot.geometry = repair_polygons(snapshot.geometry, invalid)
+    else:
+        warnings.warn(
+            f"{len(invalid)} output regions are not valid polygons (self-intersecting boundary), "
+            f"first indices {invalid[:5].tolist()}; set repair_output=True to repair them.",
+            UserWarning,
+            stacklevel=3,
+        )
+    return tuple(int(i) for i in invalid)
 
 
 def morph_geometries(
@@ -718,6 +738,7 @@ def morph_geometries(
             _pt.snapshot_s += _time.perf_counter() - _t0
 
     snapshots.best_iteration = best_step + 1
+    invalid_regions = _check_output(snapshots.get_snapshot(best_step + 1), options.repair_output)
     if internals is not None:
         # The field that produced the best iterate is the last one computed at or before it.
         recorded = [snap.iteration for snap in internals.snapshots if snap.iteration <= best_step + 1]
@@ -755,6 +776,7 @@ def morph_geometries(
         target_density=target_density,
         internals=internals,
         benchmark=_pt,
+        invalid_regions=invalid_regions,
     )
     if _pt is not None:
         _pt.status = str(status)

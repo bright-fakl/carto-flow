@@ -16,6 +16,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 
+from ..geo_utils.validity import invalid_indices, repair_polygons
 from .shrinking import shrink
 from .splitting import split
 
@@ -287,6 +288,18 @@ def partition_geometries(
         if "geometry" not in gdf.columns:
             raise ValueError("DataFrame must contain a 'geometry' column with Shapely geometries")
         gdf = gpd.GeoDataFrame(gdf, geometry="geometry")
+
+    # Repair invalid (self-intersecting) polygons: they would give empty or wrong parts without an error
+    invalid = invalid_indices(gdf.geometry.values)
+    if len(invalid):
+        warnings.warn(
+            f"{len(invalid)} geometries are not valid polygons (first rows {gdf.index[invalid[:5]].tolist()}); "
+            "they are repaired with shapely.make_valid before partitioning.",
+            UserWarning,
+            stacklevel=2,
+        )
+        gdf = gdf.copy()
+        gdf.geometry = repair_polygons(list(gdf.geometry.values), invalid)
 
     # Normalize columns parameter to list
     column_list = [columns] if isinstance(columns, str) else list(columns)

@@ -7,6 +7,7 @@ concrete field class is in use.
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -23,6 +24,17 @@ __all__ = [
     "RasterBackend",
     "RelaxationSchedule",
 ]
+
+
+def _warn_internal(owner: str, name: str) -> None:
+    """Warn that a tuning setting is internal and will stop being accepted in the next major release."""
+    warnings.warn(
+        f"{owner}.{name} is an internal tuning setting: a non-default value is deprecated and will no longer be "
+        "accepted in the next major release. The default is the tested value.",
+        DeprecationWarning,
+        stacklevel=4,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Relaxation schedule
@@ -105,6 +117,9 @@ def _resolve_relaxation(
 class AdhesiveBoundary:
     """Snap boundary centroids toward the outer boundary after each Lloyd step.
 
+    Deprecated: dominated by :class:`ElasticBoundary` and ``generator_anchor``; it will be removed in the
+    next major release.
+
     Parameters
     ----------
     strength : float
@@ -118,6 +133,12 @@ class AdhesiveBoundary:
     def __post_init__(self) -> None:
         if not (0.0 <= self.strength <= 1.0):
             raise ValueError(f"AdhesiveBoundary.strength must be in [0, 1], got {self.strength}")
+        warnings.warn(
+            "AdhesiveBoundary is deprecated and will be removed in the next major release; use ElasticBoundary "
+            "(or generator_anchor with premorph) instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
 
 
 @dataclass
@@ -130,21 +151,21 @@ class ElasticBoundary:
     comes from the input density (weight per input region area) carried
     along by the boundary flow, so the boundary moves outward next to regions
     whose weight share exceeds their area share and inward next to sparse
-    ones.  Set ``relaxation=0.0`` in :class:`RasterBackend`
-    for pure FFT-flow mode (no Lloyd centroid updates).
+    ones.
 
     Parameters
     ----------
     strength : float
-        Deformation strength in ``[0, 1]``.  ``0`` = rigid hard-clip.
+        Deformation strength in ``[0, 1]``.  ``0`` = rigid hard-clip; ``0.02`` to ``0.05`` gives a smooth outline.
     step_scale : float
-        Boundary advection speed as a fraction of the centroid advection
-        speed, in ``(0, 1]``.  ``1.0`` = boundary and centroids co-advect at
-        the same rate.  Values < 1 make the boundary move more slowly.
+        Internal tuning setting (a non-default value is deprecated). Boundary advection speed as a
+        fraction of the centroid advection speed, in ``(0, 1]``.  ``1.0`` = boundary and centroids
+        co-advect at the same rate.
     density_smooth : float or None
-        Gaussian smoothing sigma applied to the density field before solving
-        the FFT velocity field.  ``None`` = no smoothing.
+        Internal tuning setting (a non-default value is deprecated). Gaussian smoothing sigma applied
+        to the density field before solving the FFT velocity field.  ``None`` = no smoothing.
     min_boundary_points : int or None
+        Internal tuning setting (a non-default value is deprecated).
         Minimum number of vertices to distribute along the boundary for elastic
         deformation tracking.  Simple shapes such as ``"bbox"`` or
         ``"convex_hull"`` have only a handful of corners after internal
@@ -153,7 +174,8 @@ class ElasticBoundary:
         simplification, which preserves the original behavior for complex union
         boundaries.
     adhesion_strength : float
-        Snap strength for boundary-touching centroids in ``[0, 1]``.
+        Deprecated (a non-zero value warns; it will be removed in the next major release). Snap strength
+        for boundary-touching centroids in ``[0, 1]``.
         ``0`` (default) = no snapping.  When ``> 0``, centroids whose original
         geometry touches the outer boundary are pulled toward the *current*
         deformed boundary after each elastic step — combining the elastic shape
@@ -177,6 +199,18 @@ class ElasticBoundary:
             raise ValueError(f"ElasticBoundary.min_boundary_points must be >= 4, got {self.min_boundary_points}")
         if not (0.0 <= self.adhesion_strength <= 1.0):
             raise ValueError(f"ElasticBoundary.adhesion_strength must be in [0, 1], got {self.adhesion_strength}")
+        if self.step_scale != 1.0:
+            _warn_internal("ElasticBoundary", "step_scale")
+        if self.density_smooth is not None:
+            _warn_internal("ElasticBoundary", "density_smooth")
+        if self.min_boundary_points is not None:
+            _warn_internal("ElasticBoundary", "min_boundary_points")
+        if self.adhesion_strength != 0.0:
+            warnings.warn(
+                "ElasticBoundary.adhesion_strength is deprecated and will be removed in the next major release.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +225,8 @@ class ExactBackend:
     Parameters
     ----------
     relaxation : float, str, RelaxationSchedule, or callable
-        Relaxation factor schedule.  Accepted forms:
+        Internal tuning setting (a non-default value is deprecated).  Relaxation factor schedule.
+        Accepted forms:
 
         * **float** — constant factor at every iteration.  ``1.0`` = standard
           Lloyd; values above 1 overshoot (faster convergence).
@@ -205,9 +240,8 @@ class ExactBackend:
         blended into each Lloyd step.  ``0`` = pure Lloyd.  Values of 0.1-0.3
         gently prevent neighboring centroids from drifting apart.
     boundary : AdhesiveBoundary or None
-        Boundary snap behavior.  ``None`` = off.  Pass
-        :class:`AdhesiveBoundary` to snap boundary centroids toward the outer
-        boundary after each step.
+        Deprecated (:class:`AdhesiveBoundary` will be removed in the next major release).
+        ``None`` = off.
 
     Notes
     -----
@@ -222,7 +256,7 @@ class ExactBackend:
     >>> from carto_flow import create_voronoi_cartogram, ExactBackend, VoronoiOptions
     >>> result = create_voronoi_cartogram(
     ...     gdf,
-    ...     backend=ExactBackend(relaxation=RelaxationSchedule(start=1.9, decay=0.95)),
+    ...     backend=ExactBackend(),
     ...     options=VoronoiOptions(n_iter=100),
     ... )
     """
@@ -234,6 +268,8 @@ class ExactBackend:
 
     def __post_init__(self) -> None:
         _resolve_relaxation(self.relaxation)  # validate early
+        if not (isinstance(self.relaxation, str) and self.relaxation == "overrelax"):
+            _warn_internal("ExactBackend", "relaxation")
         if self.adjacency_spring < 0:
             raise ValueError(f"adjacency_spring must be >= 0, got {self.adjacency_spring}")
         if self.intra_group_spring is not None and self.intra_group_spring < 0:
@@ -301,10 +337,12 @@ class RasterBackend:
         shorter dimension is scaled proportionally.  200-400 is a good
         starting point.
     relaxation : float, str, RelaxationSchedule, or callable
-        Relaxation factor schedule (see :class:`ExactBackend`).
+        Internal tuning setting (a non-default value is deprecated).  Relaxation factor schedule (see
+        :class:`ExactBackend`).
     adjacency_spring : float
         Spring force strength for input-adjacent centroids (see
-        :class:`ExactBackend`).
+        :class:`ExactBackend`).  With ``premorph`` the starting layout already keeps adjacent regions
+        together and the spring has little effect.
     intra_group_spring : float or None
         Spring force strength applied to centroids that belong to the **same
         group** (as specified via ``group_by`` in
@@ -316,14 +354,13 @@ class RasterBackend:
         within the same state/region spatially cohesive.  ``None`` (default)
         disables the intra-group spring; ``adjacency_spring`` then applies to
         all adjacent pairs regardless of group membership.
-    boundary : AdhesiveBoundary, ElasticBoundary, or None
+    boundary : ElasticBoundary or None
         Boundary behavior.  ``None`` = rigid hard-clip (default).
 
-        * :class:`AdhesiveBoundary` — snap boundary centroids toward the outer
-          boundary after each step.
         * :class:`ElasticBoundary` — deform the outer boundary each iteration
-          via an FFT velocity field.  Set ``relaxation=0.0`` for pure
-          FFT-flow mode (no Lloyd centroid updates).
+          via an FFT velocity field.
+        * :class:`AdhesiveBoundary` (deprecated) — snap boundary centroids toward the outer
+          boundary after each step.
     distance_mode : {"euclidean", "geodesic"}
         Pixel-to-centroid distance algorithm.
 
@@ -338,7 +375,7 @@ class RasterBackend:
             not follow them, and the run is reported as not converged when
             the mean area error exceeds ``VoronoiOptions.area_error_tol``.
     area_equalizer_rate : float
-        Learning rate for the power-diagram offsets ``λᵢ``
+        Internal tuning setting (a non-default value is deprecated).  Learning rate for the power-diagram offsets ``λᵢ``
         (``distance_mode="euclidean"`` only).  Each iteration the offsets
         are moved in proportion to each cell's pixel-area deficit.  Without
         ``weights`` the update is leaky and drives the cells toward equal
@@ -351,19 +388,19 @@ class RasterBackend:
         offsets).  Default ``0.1``.  Ignored when
         ``distance_mode="geodesic"``.
     weight_ramp_iters : int
-        Number of iterations over which the target areas used during
+        Internal tuning setting (a non-default value is deprecated).  Number of iterations over which the target areas used during
         relaxation are ramped linearly from equal to weight-proportional.
         Avoids starving small cells early on when weight ratios are large
         (e.g. US state populations).  The final cells always use the full
         weights.  ``0`` = no ramp.  Default ``10``.
     output_resolution : int or None
-        Upsampled grid resolution used only for final cell extraction when
+        Internal tuning setting (a non-default value is deprecated).  Upsampled grid resolution used only for final cell extraction when
         ``distance_mode="geodesic"`` or ``area_equalizer_rate > 0`` without
         weights.  Ignored for plain euclidean with ``area_equalizer_rate=0``
         and for weighted euclidean runs (exact polygons).  ``None`` = 4x
         ``resolution``.
     cell_smoothing_px : float
-        Tolerance for smoothing pixel staircases on extracted cells, in
+        Internal tuning setting (a non-default value is deprecated).  Tolerance for smoothing pixel staircases on extracted cells, in
         final-grid pixels (the extraction grid is ``output_resolution`` or
         4x ``resolution``). Resolution-independent by construction. For
         cartographic generalisation in map units, apply
@@ -407,8 +444,7 @@ class RasterBackend:
     ...     gdf,
     ...     backend=RasterBackend(
     ...         resolution=300,
-    ...         relaxation=0.0,
-    ...         boundary=ElasticBoundary(strength=0.3, step_scale=0.8),
+    ...         boundary=ElasticBoundary(strength=0.05),
     ...         distance_mode="geodesic",
     ...     ),
     ... )
@@ -447,6 +483,16 @@ class RasterBackend:
             raise ValueError(f"area_equalizer_rate must be >= 0, got {self.area_equalizer_rate}")
         if self.generator_anchor is not None and not (0.0 <= self.generator_anchor <= 1.0):
             raise ValueError(f"generator_anchor must be in [0, 1], got {self.generator_anchor}")
+        if not (isinstance(self.relaxation, str) and self.relaxation == "overrelax"):
+            _warn_internal("RasterBackend", "relaxation")
+        if self.area_equalizer_rate != 0.1:
+            _warn_internal("RasterBackend", "area_equalizer_rate")
+        if self.weight_ramp_iters != 10:
+            _warn_internal("RasterBackend", "weight_ramp_iters")
+        if self.output_resolution is not None:
+            _warn_internal("RasterBackend", "output_resolution")
+        if self.cell_smoothing_px != 3.0:
+            _warn_internal("RasterBackend", "cell_smoothing_px")
 
     def build_field(
         self,

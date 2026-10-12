@@ -32,7 +32,8 @@ def _make_outer_boundary(geometries, spec, *, _union=None):
         ``"union"`` / ``None`` — union of input geometries (default).
         ``"bbox"`` — axis-aligned bounding box of the union.
         ``"convex_hull"`` — convex hull of the union.
-        ``"circle"`` — minimum enclosing circle (discretised with 64 segments).
+        ``"circle"`` — circle centered at the mean of the convex hull vertices, with the radius that encloses
+        the union (discretised with 64 segments).
         shapely Geometry — used directly.
     _union : shapely.Geometry or None
         Pre-computed union, to avoid recomputing when the caller already has it.
@@ -126,9 +127,8 @@ def create_voronoi_cartogram(
         relevant to its algorithm:
 
         * :class:`~carto_flow.voronoi_cartogram.backends.RasterBackend`
-          (default) — raster NN Lloyd; 10-50x faster than exact.  Set
-          ``boundary=ElasticBoundary(...)`` with ``relaxation=0.0`` for pure
-          FFT-flow mode (no Lloyd).
+          (default) — raster NN Lloyd; 10-50x faster than exact.  Pass
+          ``boundary=ElasticBoundary(...)`` to let the outline adapt.
         * :class:`~carto_flow.voronoi_cartogram.backends.ExactBackend`
           — exact scipy Voronoi + shapely clipping.
 
@@ -148,7 +148,8 @@ def create_voronoi_cartogram(
         * ``"union"`` *(default)* — union of all input geometries.
         * ``"bbox"`` — axis-aligned bounding box of the union.
         * ``"convex_hull"`` — convex hull of the union.
-        * ``"circle"`` — minimum enclosing circle of the union (64-segment
+        * ``"circle"`` — circle centered at the mean of the convex hull vertices
+          of the union, with the radius that encloses it (64-segment
           approximation).
         * shapely Geometry — used directly as the outer boundary.
 
@@ -285,6 +286,13 @@ def create_voronoi_cartogram(
     positions: np.ndarray = np.array(_pos_list, dtype=np.float64)
 
     topo = options._topology_repair()
+    if topo is not None and weights is not None:
+        warnings.warn(
+            "fix_topology with weights makes the run much slower and can move generators away from their "
+            "weighted positions; it suits unweighted runs.",
+            UserWarning,
+            stacklevel=2,
+        )
     adj_pairs: list[tuple[int, int]] | None = None
     intra_adj_pairs: list[tuple[int, int]] | None = None
     need_adj = backend.adjacency_spring > 0 or backend.intra_group_spring is not None or topo is not None

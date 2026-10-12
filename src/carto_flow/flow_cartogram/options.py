@@ -176,8 +176,8 @@ class MorphOptions:
     repair_output: bool = False
     """Repair invalid (self-intersecting) regions when the cartogram is exported.
 
-    Narrow channels of a region can close during the morph so that its boundary crosses itself, and
-    the computed geometry is then not a valid polygon. The morph warns and ``Cartogram.invalid_regions``
+    A region that is much narrower than a grid cell somewhere (a thin neck) can be pinched during the
+    morph until its boundary crosses itself, and the computed geometry is then not a valid polygon. The morph warns and ``Cartogram.invalid_regions``
     lists the regions. With ``repair_output`` the geometries of ``Cartogram.to_geodataframe`` are made
     valid (:func:`shapely.make_valid`, zero-area parts dropped; a region can become a MultiPolygon and
     its area changes slightly). The repair adds vertices, so the repaired regions no longer correspond

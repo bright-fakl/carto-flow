@@ -12,9 +12,9 @@ Releases before 2.0.0 have no changelog entry; see the
 ### Added
 
 - **A flow cartogram warns when regions of the result are invalid, and
-  `Cartogram.invalid_regions` lists them.** A narrow channel of a region could close
-  during the morph so that its boundary crossed itself, and nothing in the result
-  said so. **`MorphOptions.repair_output=True`** makes those regions valid in
+  `Cartogram.invalid_regions` lists them.** A region that is much narrower than a grid
+  cell somewhere could be pinched during the morph until its boundary crossed itself,
+  and nothing in the result said so. **`MorphOptions.repair_output=True`** makes those regions valid in
   `Cartogram.to_geodataframe` (`shapely.make_valid`, zero-area parts dropped; a
   region can become a MultiPolygon and its vertices no longer correspond to the
   input), so it is off by default: animations between cartograms need the vertices

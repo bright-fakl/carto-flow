@@ -306,7 +306,7 @@ Deprecated, to be removed in the next major release: `AdhesiveBoundary` and `Ela
 ## Flow Pre-morph and Generator Anchor
 
 `create_voronoi_cartogram(..., premorph=True)` first morphs the regions with
-the flow cartogram (`carto_flow.flow_cartogram.morph_gdf`) by the same weights,
+the flow cartogram (`carto_flow.flow_cartogram.create_flow_cartogram`) by the same weights,
 then runs the Voronoi relaxation on the morphed regions: the generators start
 at the morphed centroids, and the boundary (`"union"` by default) is the union
 of the morphed regions. The flow cartogram has already given each region about

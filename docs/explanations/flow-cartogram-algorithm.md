@@ -174,20 +174,20 @@ Cell centers, edges, and spacings are computed lazily on first access and cached
 
 `build_multilevel_grids(min_resolution, levels, margin, square)` returns a dyadic hierarchy of `Grid` objects. Each successive level doubles the resolution on the longest axis. The coarsest grid has `min_resolution` points; there are `levels` grids total.
 
-This hierarchy is used by `CartogramWorkflow.morph_multiresolution()` to run morphing sequentially from coarse to fine, with each level starting from the geometry produced by the previous level.
+This hierarchy is used by a `LadderSpec` in `MorphOptions.grid` (through `create_flow_cartogram` or `CartogramWorkflow.morph`) and by `CartogramWorkflow.morph_multiresolution()` to run morphing sequentially from coarse to fine, with each level starting from the geometry produced by the previous level.
 
 ### Choosing the resolution
 
 A region whose target area is a few grid cells or fewer is not represented by the density field, and its area error is held at the cell size however many iterations run. For a grid with cell area $c$, the size of the smallest target region in cells is $a^{\text{target}}_{\min} / c$; it grows by a factor of four per level. Regions with a target of zero are not counted.
 
-`multiresolution_morph` and `CartogramWorkflow.morph_multiresolution` warn before the first level when
+`create_flow_cartogram` and `CartogramWorkflow` warn before the first level of a ladder when
 
 - the smallest target region covers fewer than 2.5 cells at the coarsest grid (the message gives the smallest `min_resolution` that satisfies this), or
 - more than 1 % of the target regions are smaller than one cell at the finest grid, which a morph is unlikely to resolve.
 
-`morph_gdf` and `CartogramWorkflow.morph` apply the same two conditions to the grid they use, and name the smallest `grid_size` that satisfies the first. A multiresolution morph checks the ladder once, not at each level.
+The same two conditions apply to a single grid, and the message names the smallest `grid` that satisfies the first. A ladder is checked once, not at each level.
 
-`min_resolution="auto"` takes the smallest power of two from 64 to 512 at which the smallest target region covers 2.5 cells (512 if none does). `levels="auto"` doubles the coarsest resolution up to a finest grid of 2048. The morph ends at the first level that converges, so on inputs without small regions only the coarsest level runs.
+`LadderSpec(min_resolution="auto", levels="auto")`, also written `grid="auto"`, takes the smallest power of two from 64 to 512 at which the smallest target region covers 2.5 cells (512 if none does) as the coarsest resolution and doubles up to a finest grid of 2048. The morph ends at the first level that converges, so on inputs without small regions only the coarsest level runs.
 
 ---
 
@@ -219,10 +219,8 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `max_tol` | 0.1 | Convergence threshold for max area error (fraction) |
 | `stall_patience` | 4 | Stall after N consecutive cycles (windows) without progress; `None` = disabled |
 | `stall_min_improvement` | 0.02 | Relative improvement of a violated component's cycle minimum that counts as progress |
-| `grid` | `None` | Pre-constructed `Grid`; takes precedence over size/margin/square |
-| `grid_size` | 100 | Grid points on longest axis |
-| `grid_margin` | 0.5 | Fractional padding around input bounds |
-| `grid_square` | `True` | Enforce square cells |
+| `grid` | 256 | Grid points on the longest axis (int or `(nx, ny)`); `GridSpec(size, margin, square)` for one grid with margin and squareness; `LadderSpec(min_resolution, levels, margin, square)` or `"auto"` for a ladder of resolutions; a prebuilt `Grid`; `None` = 100 |
+| `grid_size`, `grid_margin`, `grid_square` | `None` | Deprecated; `grid_size` is an alias of `grid`, and margin (0.5) and squareness (`False`) belong in a `GridSpec` or `LadderSpec` |
 | `Dx`, `Dy` | 1.0 | Anisotropy factors for the FFT solver |
 | `anisotropy` | `None` | `VelocityModulator` applied after the FFT solve |
 | `density_mod` | `None` | `DensityModulator` applied after rasterization |
@@ -232,7 +230,7 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 
 Three preset factory methods are available:
 
-| Preset | `grid_size` | `dt` | `mean_tol` / `max_tol` | `n_iter` | Use |
+| Preset | `grid` | `dt` | `mean_tol` / `max_tol` | `n_iter` | Use |
 |---|---|---|---|---|---|
 | `MorphOptions.preset_fast()` | 128 | 0.3 | 0.15 / 0.25 | 150 | Preview of a map; the regions are only approximately on target and a coarse grid does not resolve many small regions |
 | `MorphOptions.preset_balanced()` | 256 | 0.2 | 0.05 / 0.10 | 500 | The same values as `MorphOptions()`; the setting for most uses |

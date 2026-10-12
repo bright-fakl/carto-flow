@@ -40,7 +40,7 @@ import carto_flow.data as examples
 us_states = examples.load_us_census(population=True)
 
 # compute flow cartogram
-result = flow.morph_gdf(
+result = flow.create_flow_cartogram(
     us_states, 'Population'
 )
 

@@ -12,9 +12,9 @@ Shape Morphing (Cartogram Generation)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Core cartogram algorithms for deforming polygons based on data values:
 
-- morph_gdf: GeoDataFrame-based cartogram generation interface
+- create_flow_cartogram: GeoDataFrame-based flow cartogram generation interface (morph_gdf is deprecated)
 - morph_geometries: Low-level interface working with shapely geometries
-- multiresolution_morph: Multi-resolution morphing with progressive refinement
+- multiresolution_morph: Deprecated; use create_flow_cartogram with a LadderSpec
 - Cartogram: Result class with morphed geometries and rich interface
 - CartogramWorkflow: Workflow class for iterative refinement
 - MorphOptions: Configuration options for morphing algorithms
@@ -41,22 +41,23 @@ Examples
 Basic cartogram creation:
 
     >>> import geopandas as gpd
-    >>> from carto_flow import morph_gdf, MorphOptions
+    >>> from carto_flow import create_flow_cartogram, MorphOptions
     >>>
     >>> # Load geographic data
     >>> gdf = gpd.read_file('regions.geojson')
     >>>
     >>> # Create population-based cartogram
-    >>> cartogram = morph_gdf(gdf, 'population', options=MorphOptions.preset_balanced())
+    >>> cartogram = create_flow_cartogram(gdf, 'population', options=MorphOptions.preset_balanced())
     >>> cartogram.plot()
     >>> gdf_result = cartogram.to_geodataframe()
 
 Multi-resolution cartogram with refinement:
 
-    >>> from carto_flow import CartogramWorkflow, multiresolution_morph
+    >>> from carto_flow import CartogramWorkflow, LadderSpec, MorphOptions, create_flow_cartogram
     >>>
     >>> # Multi-resolution morphing (returns final Cartogram)
-    >>> cartogram = multiresolution_morph(gdf, 'population', resolution=512, levels=3)
+    >>> options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
+    >>> cartogram = create_flow_cartogram(gdf, 'population', options=options)
     >>> print(f"Status: {cartogram.status}, Error: {cartogram.get_errors().mean_error_pct:.1f}%")
     >>>
     >>> # Workflow approach with iterative refinement
@@ -79,9 +80,12 @@ Multi-resolution cartogram with refinement:
 from .flow_cartogram import (
     Cartogram,
     CartogramWorkflow,
+    GridSpec,
+    LadderSpec,
     MorphOptions,
     MorphStatus,
     anisotropy,
+    create_flow_cartogram,
     density,
     displacement,
     grid,
@@ -136,6 +140,8 @@ __all__ = [
     "CartogramWorkflow",
     # Geometry optimization
     "GeometryCoordinateInfo",
+    "GridSpec",
+    "LadderSpec",
     "MorphOptions",
     "MorphStatus",
     "SymbolCartogram",
@@ -145,6 +151,7 @@ __all__ = [
     "anisotropy",
     "compute_complex_polygon_areas_numba",
     "compute_polygon_area_numba",
+    "create_flow_cartogram",
     "create_symbol_cartogram",
     "density",
     "displacement",

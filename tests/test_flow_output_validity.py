@@ -8,7 +8,7 @@ import shapely
 from shapely.geometry import MultiPolygon, Polygon
 
 from carto_flow import data
-from carto_flow.flow_cartogram import MorphOptions, morph_gdf
+from carto_flow.flow_cartogram import MorphOptions, create_flow_cartogram
 from carto_flow.geo_utils.validity import invalid_indices, repair_polygons
 from carto_flow.proportional_cartogram import partition_geometries
 
@@ -63,9 +63,9 @@ class TestMorphOutput:
     @pytest.fixture(scope="class")
     def result(self, minorities):
         gdf, _ = minorities
-        options = MorphOptions(grid_size=512, show_progress=False, snapshot_every=1)
+        options = MorphOptions(grid=512, show_progress=False, snapshot_every=1)
         with pytest.warns(UserWarning, match="not valid polygons"):
-            return morph_gdf(gdf, "Minorities", options=options)
+            return create_flow_cartogram(gdf, "Minorities", options=options)
 
     def test_the_morph_warns_and_lists_the_invalid_regions(self, result):
         assert len(result.invalid_regions) >= 1
@@ -92,7 +92,7 @@ class TestMorphOutput:
 
     def test_valid_runs_have_no_invalid_regions_and_do_not_warn(self, recwarn):
         states = data.load_us_census(population=True).reset_index(drop=True)
-        result = morph_gdf(states, "Population", options=MorphOptions(grid_size=128, show_progress=False))
+        result = create_flow_cartogram(states, "Population", options=MorphOptions(grid=128, show_progress=False))
         assert result.invalid_regions == ()
         assert not [w for w in recwarn if "not valid polygons" in str(w.message)]
         assert result.get_geometry(repair=True) is not None

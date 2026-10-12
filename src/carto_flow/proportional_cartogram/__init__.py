@@ -85,9 +85,9 @@ Different shrinking modes:
 
 Combining with cartograms for multi-dimensional visualizations:
 
->>> from carto_flow.flow_cartogram import morph_gdf, MorphOptions
+>>> from carto_flow.flow_cartogram import create_flow_cartogram, MorphOptions
 >>> from carto_flow.proportional_cartogram import partition_geometries, plot_partitions
->>> result = morph_gdf(gdf, "total_gdp", options=MorphOptions.preset_balanced())
+>>> result = create_flow_cartogram(gdf, "total_gdp", options=MorphOptions.preset_balanced())
 >>> cartogram = result.geometries
 >>> partitioned = partition_geometries(
 ...     cartogram,

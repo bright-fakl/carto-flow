@@ -3,7 +3,7 @@ Flow Cartogram
 ==============
 
 A flow-based cartogram where US State areas are proportional to population.
-Uses `carto_flow.flow_cartogram.morph_gdf`.
+Uses `carto_flow.flow_cartogram.create_flow_cartogram`.
 """
 
 # %%
@@ -19,7 +19,7 @@ import carto_flow.flow_cartogram as flow
 us_states = examples.load_us_census(population=True)
 
 # compute flow cartogram
-result = flow.morph_gdf(us_states, "Population", options=flow.MorphOptions(show_progress=False))
+result = flow.create_flow_cartogram(us_states, "Population", options=flow.MorphOptions(show_progress=False))
 
 # %%
 # Plot the cartogram.

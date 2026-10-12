@@ -20,17 +20,19 @@ Examples
 >>> options = MorphOptions.preset_fast()
 >>>
 >>> # Or customize parameters
->>> options = MorphOptions(grid_size=256, n_iter=100, mean_tol=0.05)
+>>> options = MorphOptions(grid=256, n_iter=100, mean_tol=0.05)
 """
 
+import warnings
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
+
+from .grid import Grid, GridSpec, LadderSpec
 
 if TYPE_CHECKING:
     from .anisotropy import VelocityModulator
     from .density import DensityModulator
-    from .grid import Grid
 
 __all__ = [
     "MorphOptions",
@@ -110,14 +112,20 @@ class MorphOptions:
     consistency for cartogram generation algorithms. Validation occurs during
     construction, direct attribute assignment, and when creating modified copies.
 
-    Grid specification (in order of precedence):
-        1. grid: Pre-constructed Grid object (highest precedence)
-        2. grid_size + grid_margin + grid_square: Construction parameters
-        3. Default: 100x100 grid if nothing specified
+    Grid specification (``grid``):
+        - an int or ``(nx, ny)``: one grid of that many points, built from the bounds of the data
+          with a margin of 0.5 and rectangular cells
+        - ``GridSpec(size, margin, square)``: one grid with its margin and squareness
+        - ``LadderSpec(min_resolution, levels, margin, square)`` or ``"auto"`` (``LadderSpec()``): a ladder of
+          resolutions that ``create_flow_cartogram`` and ``CartogramWorkflow.morph`` run from coarse to fine
+        - a ``Grid``: a prebuilt grid in data coordinates
+        - ``None``: a 100 x 100 grid
 
     Note
     ----
-    When 'grid' is provided, 'grid_size', 'grid_margin', and 'grid_square' are ignored.
+    ``grid_size`` is a deprecated alias of ``grid``. ``grid_margin`` and ``grid_square`` are deprecated:
+    they apply to an int or tuple ``grid`` (defaults 0.5 and False); put them in a ``GridSpec`` or
+    ``LadderSpec`` instead.
 
     Validation
     ----------
@@ -128,10 +136,10 @@ class MorphOptions:
     """
 
     # Grid construction parameters
-    grid: Optional["Grid"] = None  # For advanced users
-    grid_size: int | tuple[int | None, int | None] | None = 256
-    grid_margin: float = 0.5
-    grid_square: bool = False
+    grid: int | tuple[int | None, int | None] | GridSpec | LadderSpec | Grid | Literal["auto"] | None = 256
+    grid_size: int | tuple[int | None, int | None] | GridSpec | LadderSpec | Literal["auto"] | None = None
+    grid_margin: float | None = None
+    grid_square: bool | None = None
 
     # Computation options
     dt: float = 0.2
@@ -237,7 +245,7 @@ class MorphOptions:
     parallel_fft: bool | int = False
     """Control FFTW thread count for the velocity (Poisson solve) phase.
 
-    FFT parallelism benefits emerge at grid_size ≥ 1024 (~1.2x) and become
+    FFT parallelism benefits emerge at grid ≥ 1024 (~1.2x) and become
     substantial at ≥ 2048 (~1.8-2x). At smaller grids, thread-launch overhead
     exceeds the benefit. Displacement and area phases always run serially.
 
@@ -251,7 +259,7 @@ class MorphOptions:
 
     Whether threading helps depends on geometry count and grid size:
 
-    - Few large geometries (e.g. ~50 states, grid_size ≥ 1024): ~1.4x speedup
+    - Few large geometries (e.g. ~50 states, grid ≥ 1024): ~1.4x speedup
     - Many small geometries (e.g. ~430 districts): threading is slower because
       Future-submission overhead exceeds per-geometry work
 
@@ -312,12 +320,31 @@ class MorphOptions:
         if isinstance(self.grid, Grid):
             # Grid object provided - use it, ignore other grid params
             return self.grid
-        elif self.grid_size is not None:
-            # Use grid construction parameters
-            return Grid.from_bounds(bounds, self.grid_size, self.grid_margin, self.grid_square)
-        else:
-            # Default grid
-            return Grid.from_bounds(bounds, size=100)
+        spec = self.grid_spec
+        if isinstance(spec, LadderSpec):
+            raise ValueError(  # noqa: TRY004
+                "grid describes a ladder of resolutions; run it with create_flow_cartogram or CartogramWorkflow.morph"
+            )
+        if spec is not None:
+            return Grid.from_bounds(bounds, spec.size, spec.margin, spec.square)
+        # Default grid
+        return Grid.from_bounds(bounds, size=100)
+
+    @property
+    def grid_spec(self) -> "GridSpec | LadderSpec | None":
+        """``grid`` as a ``GridSpec`` or ``LadderSpec`` (None when ``grid`` is None or a ``Grid``)."""
+        size = self.grid
+        if size is None or isinstance(size, Grid):
+            return None
+        if isinstance(size, (GridSpec, LadderSpec)):
+            return size
+        if isinstance(size, str):
+            return LadderSpec()
+        return GridSpec(
+            tuple(size) if isinstance(size, list) else size,
+            0.5 if self.grid_margin is None else self.grid_margin,
+            False if self.grid_square is None else self.grid_square,
+        )
 
     def copy_with(self, **kwargs) -> "MorphOptions":
         """Create a copy of this MorphOptions instance with specified options overridden.
@@ -369,12 +396,38 @@ class MorphOptions:
 
     def __post_init__(self):
         """Validate options after dataclass initialization."""
+        if self.grid_size is not None:
+            self._warn_grid_size()
+            self.grid = self.grid_size
+            self.grid_size = None
         self._validate()
+        for name in ("grid_margin", "grid_square"):
+            if getattr(self, name) is not None:
+                warnings.warn(
+                    f"MorphOptions.{name} is deprecated and will be removed in the next major release; "
+                    "pass a GridSpec or LadderSpec as grid instead.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
         # Mark that validation has been initialized
         super().__setattr__("_validation_initialized", True)
 
+    @staticmethod
+    def _warn_grid_size() -> None:
+        warnings.warn(
+            "MorphOptions.grid_size is deprecated and will be removed in the next major release; use grid.",
+            DeprecationWarning,
+            stacklevel=4,
+        )
+
     def __setattr__(self, name: str, value) -> None:
         """Validate individual fields when assigned directly."""
+        if name == "grid_size" and hasattr(self, "_validation_initialized"):
+            # Deprecated alias: assign to grid
+            if value is None:
+                return
+            self._warn_grid_size()
+            name = "grid"
         # Only validate after full initialization to avoid recursion during __init__
         # Check if we're fully initialized by looking for a marker attribute
         if (
@@ -407,7 +460,7 @@ class MorphOptions:
 
         # Validate each field using the single validation method
         field_names = [
-            "grid_size",
+            "grid",
             "grid_margin",
             "grid_square",
             "dt",
@@ -446,14 +499,14 @@ class MorphOptions:
     def _validate_field_value(self, field_name: str, value) -> str | None:
         """Single source of truth for field validation logic."""
         # Grid parameters
-        if field_name == "grid_size":
+        if field_name == "grid":
             if value is not None:
-                return self._validate_grid_size(value)
+                return self._validate_grid(value)
         elif field_name == "grid_margin":
-            if not isinstance(value, (int, float)) or value < 0:
+            if value is not None and (not isinstance(value, (int, float)) or value < 0):
                 return "grid_margin must be a non-negative number"
         elif field_name == "grid_square":
-            if not isinstance(value, bool):
+            if value is not None and not isinstance(value, bool):
                 return "grid_square must be a boolean"
         elif field_name == "density_rasterization":
             if value not in ("center", "exact"):
@@ -568,17 +621,21 @@ class MorphOptions:
 
         return errors
 
-    def _validate_grid_size(self, grid_size) -> str | None:
-        """Validate grid_size parameter format and values."""
-        if isinstance(grid_size, int):
-            if grid_size <= 0:
-                return "grid_size as int must be positive"
-        elif isinstance(grid_size, (tuple, list)) and len(grid_size) == 2:
-            for i, size in enumerate(grid_size):
+    def _validate_grid(self, grid) -> str | None:
+        """Validate the grid specification."""
+        if isinstance(grid, (Grid, GridSpec, LadderSpec)):
+            return None
+        if isinstance(grid, str):
+            return None if grid == "auto" else "grid as a string must be 'auto'"
+        if isinstance(grid, int):
+            if grid <= 0:
+                return "grid as int must be positive"
+        elif isinstance(grid, (tuple, list)) and len(grid) == 2:
+            for i, size in enumerate(grid):
                 if size is not None and (not isinstance(size, int) or size <= 0):
-                    return f"grid_size[{i}] must be a positive integer or None"
+                    return f"grid[{i}] must be a positive integer or None"
         else:
-            return "grid_size must be a positive integer or tuple of (int, int)"
+            return "grid must be a positive integer, a tuple of (int, int), a GridSpec, a LadderSpec, 'auto' or a Grid"
 
         return None
 
@@ -657,10 +714,10 @@ class MorphOptions:
         Examples
         --------
         >>> options = MorphOptions.preset_fast()
-        >>> result = morph_gdf(gdf, 'population', options=options)
+        >>> result = create_flow_cartogram(gdf, 'population', options=options)
         """
         return cls(
-            grid_size=128,
+            grid=128,
             n_iter=150,
             dt=0.3,
             mean_tol=0.15,
@@ -684,10 +741,10 @@ class MorphOptions:
         Examples
         --------
         >>> options = MorphOptions.preset_balanced()
-        >>> result = morph_gdf(gdf, 'population', options=options)
+        >>> result = create_flow_cartogram(gdf, 'population', options=options)
         """
         return cls(
-            grid_size=256,
+            grid=256,
             n_iter=500,
             dt=0.2,
             mean_tol=0.05,
@@ -712,10 +769,10 @@ class MorphOptions:
         Examples
         --------
         >>> options = MorphOptions.preset_high_quality()
-        >>> result = morph_gdf(gdf, 'population', options=options)
+        >>> result = create_flow_cartogram(gdf, 'population', options=options)
         """
         return cls(
-            grid_size=512,
+            grid=512,
             n_iter=1000,
             dt=0.1,
             mean_tol=0.01,

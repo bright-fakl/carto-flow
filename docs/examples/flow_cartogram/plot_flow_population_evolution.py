@@ -107,12 +107,10 @@ for year in years:
         sf = scale_factors[year]
         df.geometry = df.geometry.scale(xfact=sf, yfact=sf, origin=origin)
 
-    cartogram = flow.multiresolution_morph(
+    cartogram = flow.create_flow_cartogram(
         df,
         year,
-        min_resolution=128,
-        levels=4,
-        options=flow.MorphOptions(show_progress=False),
+        options=flow.MorphOptions(grid=flow.LadderSpec(min_resolution=128, levels=4), show_progress=False),
     )
     cartograms.append(cartogram)
 

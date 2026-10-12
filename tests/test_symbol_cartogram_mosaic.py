@@ -567,7 +567,7 @@ class TestZeroTileCount:
             result = compute(
                 gdf,
                 morph=True,
-                morph_options=MorphOptions(n_iter=5, recompute_every=1, grid_size=32, show_progress=False),
+                morph_options=MorphOptions(n_iter=5, recompute_every=1, grid=32, show_progress=False),
             )
 
         metrics = result.metrics.algorithm
@@ -1538,3 +1538,17 @@ class TestSymbolsFillTilesWithoutOverlap:
         symbol_area = np.median(shapely.area(np.asarray(cart.to_geodataframe().geometry)))
         tile_area = np.median(shapely.area(np.asarray(cart.layout_result.tiles_gdf.geometry)))
         assert symbol_area == pytest.approx(tile_area, rel=1e-6)
+
+
+class TestMorphLadder:
+    """``morph_options`` is passed to the flow entry point, so a ladder of resolutions works."""
+
+    def test_ladder_in_morph_options(self):
+        from carto_flow.flow_cartogram import LadderSpec, MorphOptions
+
+        gdf = grid_gdf(3, 3, COUNTS_3X3)
+        options = MorphOptions(
+            n_iter=5, recompute_every=1, grid=LadderSpec(min_resolution=16, levels=2), show_progress=False
+        )
+        result = compute(gdf, morph=True, morph_options=options)
+        np.testing.assert_array_equal(tile_counts_per_geometry(result), COUNTS_3X3)

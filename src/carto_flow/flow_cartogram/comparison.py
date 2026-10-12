@@ -17,11 +17,11 @@ compute_displacement_vectors
 
 Examples
 --------
->>> from carto_flow.flow_cartogram import morph_gdf
+>>> from carto_flow.flow_cartogram import create_flow_cartogram
 >>> from carto_flow.flow_cartogram.comparison import compare_results
 >>>
 >>> # Compare original to morphed
->>> result = morph_gdf(gdf, 'population')
+>>> result = create_flow_cartogram(gdf, 'population')
 >>> comparison = compare_results(gdf, result)
 >>> print(f"Mean displacement: {comparison.mean_displacement:.2f}")
 """
@@ -137,14 +137,14 @@ def compare_results(
     --------
     Compare original GeoDataFrame to morphed result:
 
-    >>> result = morph_gdf(gdf, 'population')
+    >>> result = create_flow_cartogram(gdf, 'population')
     >>> comparison = compare_results(gdf, result)
     >>> print(f"Mean displacement: {comparison.mean_displacement:.2f}")
 
     Compare two different morphing results:
 
-    >>> result1 = morph_gdf(gdf, 'population', options=MorphOptions.preset_fast())
-    >>> result2 = morph_gdf(gdf, 'population', options=MorphOptions.preset_high_quality())
+    >>> result1 = create_flow_cartogram(gdf, 'population', options=MorphOptions.preset_fast())
+    >>> result2 = create_flow_cartogram(gdf, 'population', options=MorphOptions.preset_high_quality())
     >>> comparison = compare_results(result1, result2)
     """
     # Extract geometries from either GeoDataFrame or Cartogram

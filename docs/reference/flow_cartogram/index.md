@@ -23,7 +23,7 @@ graph TD
 
 | Sub-module | Description |
 |------------|-------------|
-| **[API](api.md)** | High-level functions (`morph_gdf`, `multiresolution_morph`) |
+| **[API](api.md)** | High-level functions (`create_flow_cartogram`) |
 | **[Options](options.md)** | Configuration options and status enums |
 | **[Cartogram](cartogram.md)** | Cartogram result class with visualization and export |
 | **[Workflow](workflow.md)** | Workflow class for iterative refinement |
@@ -61,9 +61,9 @@ graph TD
 ### Basic Cartogram Generation
 
 ```python
-from carto_flow.flow_cartogram import morph_gdf, MorphOptions
+from carto_flow.flow_cartogram import create_flow_cartogram, MorphOptions
 
-cartogram = morph_gdf(gdf, "population",
+cartogram = create_flow_cartogram(gdf, "population",
                       options=MorphOptions.preset_balanced())
 cartogram.plot()
 print(f"Status: {cartogram.status}")
@@ -84,10 +84,17 @@ workflow.pop()                             # Undo if needed
 ### Multi-Resolution Cartogram
 
 ```python
-from carto_flow.flow_cartogram import multiresolution_morph
+from carto_flow.flow_cartogram import LadderSpec, MorphOptions, create_flow_cartogram
 
-cartogram = multiresolution_morph(gdf, "population",
-                                  resolution=512, levels=3)
+options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
+cartogram = create_flow_cartogram(gdf, "population", options=options)
+```
+
+`MorphOptions(grid="auto")` chooses the ladder from the data.
+
+```python
+# One grid, with its margin and squareness
+options = MorphOptions(grid=GridSpec(size=512, margin=0.25, square=True))
 ```
 
 ### With Displacement Field Output
@@ -100,7 +107,7 @@ y = np.linspace(0, 80, 40)
 X, Y = np.meshgrid(x, y)
 displacement_coords = np.column_stack([X.ravel(), Y.ravel()])
 
-cartogram = morph_gdf(gdf, "population",
+cartogram = create_flow_cartogram(gdf, "population",
                       displacement_coords=displacement_coords)
 displaced = cartogram.get_coords()
 ```
@@ -108,11 +115,11 @@ displaced = cartogram.get_coords()
 ### Visualization and Export
 
 ```python
-from carto_flow.flow_cartogram import morph_gdf, MorphOptions
+from carto_flow.flow_cartogram import create_flow_cartogram, MorphOptions
 from carto_flow.flow_cartogram.visualization import plot_comparison, plot_convergence
 from carto_flow.flow_cartogram.animation import animate_morph_history, save_animation
 
-cartogram = morph_gdf(gdf, "population",
+cartogram = create_flow_cartogram(gdf, "population",
                       options=MorphOptions(save_internals=True))
 
 plot_comparison(gdf, cartogram)
@@ -131,18 +138,18 @@ Modulators are chained with `+` and passed as `MorphOptions(anisotropy=...)`.
 
 ```python
 from carto_flow.flow_cartogram import (
-    morph_gdf, MorphOptions,
+    create_flow_cartogram, MorphOptions,
     BoundaryDecay, BoundaryNormalDecay, DirectionalTensor, VelocitySmooth,
 )
 
 # Suppress outward boundary drift while preserving tangential flow
 mod = BoundaryNormalDecay(decay_length=50_000) + VelocitySmooth(sigma=20_000)
-cartogram = morph_gdf(gdf, "population",
+cartogram = create_flow_cartogram(gdf, "population",
                       options=MorphOptions(anisotropy=mod))
 
 # Simple multiplicative falloff combined with a radial directional bias
 mod = BoundaryDecay(decay_length=80_000) + DirectionalTensor.radial(Dpar=2.0)
-cartogram = morph_gdf(gdf, "population",
+cartogram = create_flow_cartogram(gdf, "population",
                       options=MorphOptions(anisotropy=mod))
 ```
 
@@ -152,10 +159,10 @@ Density modulators adjust the density field before velocity computation each ite
 They are passed as `MorphOptions(density_mod=...)`.
 
 ```python
-from carto_flow.flow_cartogram import morph_gdf, MorphOptions, DensityBorderExtension, DensitySmooth
+from carto_flow.flow_cartogram import create_flow_cartogram, MorphOptions, DensityBorderExtension, DensitySmooth
 
 mod = DensityBorderExtension(extension_width=50_000, transition_width=200_000) + DensitySmooth(sigma=20_000)
-cartogram = morph_gdf(gdf, "population",
+cartogram = create_flow_cartogram(gdf, "population",
                       options=MorphOptions(density_mod=mod))
 ```
 

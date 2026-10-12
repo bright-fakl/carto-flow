@@ -38,7 +38,7 @@ import numpy as np
 from .algorithm import morph_geometries
 from .cartogram import Cartogram
 from .errors import compute_error_metrics
-from .grid import build_multilevel_grids
+from .grid import Grid, LadderSpec, build_multilevel_grids
 from .history import CartogramSnapshot, History
 from .options import MorphOptions, MorphStatus
 from .resolution import auto_levels, auto_start, check_grid, check_resolution
@@ -202,7 +202,7 @@ class CartogramWorkflow:
             niterations=0,
             duration=0.0,
             options=options,
-            grid=options.grid,
+            grid=options.grid if isinstance(options.grid, Grid) else None,
             _source_gdf=self._original_gdf,
             _source_landmarks_gdf=self._original_landmarks_gdf,
             _value_column=self._column,
@@ -239,10 +239,14 @@ class CartogramWorkflow:
         >>> workflow.morph(options=MorphOptions.preset_fast())
         >>> workflow.morph(mean_tol=0.01, n_iter=200)
         """
-        return self._morph(options, overrides, check=True)
+        effective_options = self._effective_options(options, overrides)
+        spec = effective_options.grid_spec
+        if isinstance(spec, LadderSpec):
+            return self._run_ladder(spec, effective_options)
+        return self._morph(effective_options, check=True)
 
-    def _morph(self, options: MorphOptions | None, overrides: dict, check: bool) -> Cartogram:
-        # Determine effective options
+    def _effective_options(self, options: MorphOptions | None, overrides: dict) -> MorphOptions:
+        """Options of a pass: the given ones, or the previous ones with the overrides applied."""
         if options is not None:
             effective_options = copy.deepcopy(options)
         else:
@@ -252,7 +256,10 @@ class CartogramWorkflow:
                     setattr(effective_options, key, value)
                 else:
                     raise AttributeError(f"MorphOptions has no attribute '{key}'")
+        return effective_options
 
+    def _morph(self, effective_options: MorphOptions, check: bool) -> Cartogram:
+        """One morphing pass with resolved options; ``check`` warns about the grid resolution."""
         latest = self._results[-1].best
         values = np.array(self._original_gdf[self._column])
 
@@ -265,12 +272,13 @@ class CartogramWorkflow:
         if check:
             bounds = effective_options._calculate_bounds_from_geometries(latest.geometry)  # type: ignore[union-attr]
             grid = effective_options.get_grid(bounds)
+            spec = effective_options.grid_spec
             check_grid(
                 grid,
                 bounds,
                 np.sum(original_areas) * values / np.sum(values),
-                effective_options.grid_margin,
-                effective_options.grid_square,
+                getattr(spec, "margin", 0.5),
+                getattr(spec, "square", False),
             )
 
         result = morph_geometries(
@@ -333,6 +341,13 @@ class CartogramWorkflow:
         >>> for cartogram in workflow:
         ...     print(cartogram.status, cartogram.get_errors().mean_error_pct)
         """
+        spec = LadderSpec(min_resolution, levels, margin, square)
+        return self._run_ladder(spec, options)
+
+    def _run_ladder(self, spec: LadderSpec, options: MorphOptions | list[MorphOptions] | None) -> Cartogram:
+        """Run the levels of ``spec`` from coarse to fine, one pass each, ending at the first converged level."""
+        margin, square = spec.margin, spec.square
+        min_resolution, levels = spec.min_resolution, spec.levels
         bounds = self._original_gdf.total_bounds
         values = np.asarray(self._original_gdf[self._column], dtype=float)
         areas = np.asarray(self._original_gdf.area)
@@ -361,6 +376,7 @@ class CartogramWorkflow:
             options_list = [copy.deepcopy(opt) for opt in options]
 
         for level, (grid, level_options) in enumerate(zip(grids, options_list, strict=False)):
+            level_options.grid = None  # type: ignore[union-attr]
             level_options.grid = grid  # type: ignore[union-attr]
             level_options.progress_message = (  # type: ignore[union-attr]
                 f"{'Refining' if self.is_morphed else 'Morphing'} with {grid.sx}x{grid.sy} grid"
@@ -371,7 +387,7 @@ class CartogramWorkflow:
                 # suppress it on refinement levels where geometry is already scaled.
                 level_options.prescale_components = False  # type: ignore[union-attr]
 
-            result = self._morph(level_options, {}, check=False)
+            result = self._morph(level_options, check=False)  # type: ignore[arg-type]
 
             if result.status == MorphStatus.CONVERGED:
                 break

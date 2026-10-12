@@ -9,7 +9,7 @@ import shapely
 
 import carto_flow.data as data
 import carto_flow.flow_cartogram.algorithm as algorithm
-from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, morph_gdf
+from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, create_flow_cartogram
 from carto_flow.flow_cartogram.stepsize import (
     DEAD_BAND_FRACTION,
     FLOOR,
@@ -32,7 +32,7 @@ def districts():
 
 
 def _options(adaptive, **kwargs):
-    return MorphOptions(**{"grid_size": 128, "show_progress": False, "adaptive_dt": adaptive, **kwargs})
+    return MorphOptions(**{"grid": 128, "show_progress": False, "adaptive_dt": adaptive, **kwargs})
 
 
 def _score(conv, options):
@@ -158,7 +158,7 @@ class TestDeadBand:
             return original(window, score, dead_band, enabled)
 
         monkeypatch.setattr(algorithm, "StepController", recording)
-        morph_gdf(
+        create_flow_cartogram(
             states, "Population", options=_options(True, n_iter=2, recompute_every=2, mean_tol=0.002, max_tol=max_tol)
         )
         return seen[0]
@@ -181,8 +181,8 @@ class TestDeadBand:
 
 class TestRunsWithoutOvershoot:
     def test_default_tolerances_are_not_slower(self, states):
-        off = morph_gdf(states, "Population", options=_options(False))
-        on = morph_gdf(states, "Population", options=_options(True))
+        off = create_flow_cartogram(states, "Population", options=_options(False))
+        on = create_flow_cartogram(states, "Population", options=_options(True))
         assert off.status == on.status == MorphStatus.CONVERGED
         assert on.niterations <= 1.1 * off.niterations
 
@@ -194,7 +194,7 @@ class TestLatePhase:
         kwargs = {"n_iter": 150, "mean_tol": 1e-6, "max_tol": 1e-6, "stall_patience": None, "snapshot_every": 1}
         highest = {}
         for adaptive in (False, True):
-            result = morph_gdf(states, "Population", options=_options(adaptive, **kwargs))
+            result = create_flow_cartogram(states, "Population", options=_options(adaptive, **kwargs))
             highest[adaptive] = _true_max_errors(result, values)[-40:].max()
         assert highest[False] > 1.0
         assert highest[True] < 0.5 * highest[False]
@@ -203,8 +203,8 @@ class TestLatePhase:
     def test_tight_tolerances_converge_where_constant_dt_stalls(self, states, recompute_on_rise):
         """The step control works the same with and without recompute_on_rise."""
         kwargs = {"dt": 0.4, "mean_tol": 0.005, "max_tol": 0.01, "recompute_on_rise": recompute_on_rise}
-        off = morph_gdf(states, "Population", options=_options(False, **kwargs))
-        on = morph_gdf(states, "Population", options=_options(True, **kwargs))
+        off = create_flow_cartogram(states, "Population", options=_options(False, **kwargs))
+        on = create_flow_cartogram(states, "Population", options=_options(True, **kwargs))
         assert on.status == MorphStatus.CONVERGED
         assert off.status != MorphStatus.CONVERGED
         assert on.niterations < off.niterations
@@ -234,7 +234,9 @@ class TestRestart:
         """A run that starts far from the target takes the same first steps with and without the control."""
         scores = {}
         for adaptive in (False, True):
-            result = morph_gdf(states, "Population", options=_options(adaptive, n_iter=10, stall_patience=None))
+            result = create_flow_cartogram(
+                states, "Population", options=_options(adaptive, n_iter=10, stall_patience=None)
+            )
             scores[adaptive] = _score(result.convergence, result.options)
         np.testing.assert_allclose(scores[True], scores[False], rtol=1e-9)
 

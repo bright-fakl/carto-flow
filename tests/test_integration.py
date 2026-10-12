@@ -40,10 +40,10 @@ class TestIntegration:
 
     def test_flow_cartogram_workflow(self):
         """Test complete flow cartogram workflow."""
-        from carto_flow.flow_cartogram import MorphOptions, morph_gdf
+        from carto_flow.flow_cartogram import MorphOptions, create_flow_cartogram
 
         gdf = make_grid_gdf()
-        result = morph_gdf(
+        result = create_flow_cartogram(
             gdf,
             "population",
             options=MorphOptions.preset_fast(),

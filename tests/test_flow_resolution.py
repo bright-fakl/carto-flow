@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from carto_flow import data
-from carto_flow.flow_cartogram import MorphOptions, morph_gdf, multiresolution_morph
+from carto_flow.flow_cartogram import LadderSpec, MorphOptions, create_flow_cartogram
 from carto_flow.flow_cartogram.resolution import (
     MAX_RESOLUTION,
     MAX_START,
@@ -108,23 +108,25 @@ def test_few_sub_cell_regions_at_the_finest_grid_do_not_warn_about_it():
 def test_morph_with_automatic_resolution_converges_without_a_resolution_warning(states):
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message="Grid resolution")
-        cartogram = multiresolution_morph(
-            states, "Population", min_resolution="auto", levels="auto", options=MorphOptions(show_progress=False)
-        )
+        cartogram = create_flow_cartogram(states, "Population", options=MorphOptions(grid="auto", show_progress=False))
     assert cartogram.status.value == "converged"
     assert cartogram.options.grid.sx == 128
 
 
 def test_morph_warns_for_a_too_coarse_explicit_resolution(districts):
     with pytest.warns(UserWarning, match="Grid resolution"):
-        multiresolution_morph(
-            districts, "Population", min_resolution=64, levels=2, options=MorphOptions(show_progress=False)
+        create_flow_cartogram(
+            districts,
+            "Population",
+            options=MorphOptions(grid=LadderSpec(min_resolution=64, levels=2), show_progress=False),
         )
 
 
 def test_levels_auto_with_explicit_resolution(states):
-    cartogram = multiresolution_morph(
-        states, "Population", min_resolution=256, levels="auto", options=MorphOptions(show_progress=False)
+    cartogram = create_flow_cartogram(
+        states,
+        "Population",
+        options=MorphOptions(grid=LadderSpec(min_resolution=256), show_progress=False),
     )
     assert cartogram.options.grid.sx == 256
 
@@ -135,8 +137,8 @@ def test_warning_when_no_grid_up_to_the_maximum_resolves_the_smallest_region():
 
 
 def test_single_resolution_morph_warns_for_a_too_coarse_grid(districts):
-    with pytest.warns(UserWarning, match=r"covers 0\.68 cells at the grid \(64\).*grid_size=128") as record:
-        morph_gdf(districts, "Population", options=MorphOptions(show_progress=False, grid_size=64, n_iter=10))
+    with pytest.warns(UserWarning, match=r"covers 0\.68 cells at the grid \(64\).*grid=128") as record:
+        create_flow_cartogram(districts, "Population", options=MorphOptions(show_progress=False, grid=64, n_iter=10))
     assert sum("Grid resolution" in str(r.message) for r in record) == 1
     assert record[0].filename == __file__
 
@@ -144,12 +146,14 @@ def test_single_resolution_morph_warns_for_a_too_coarse_grid(districts):
 def test_single_resolution_morph_without_small_regions_does_not_warn(states):
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message="Grid resolution")
-        morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
+        create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False))
 
 
 def test_ladder_warns_once(districts):
     with pytest.warns(UserWarning, match="Grid resolution") as record:
-        multiresolution_morph(
-            districts, "Population", min_resolution=64, levels=3, options=MorphOptions(show_progress=False)
+        create_flow_cartogram(
+            districts,
+            "Population",
+            options=MorphOptions(grid=LadderSpec(min_resolution=64, levels=3), show_progress=False),
         )
     assert sum("Grid resolution" in str(r.message) for r in record) == 1

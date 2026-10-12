@@ -70,7 +70,7 @@ def _premorph(gdf: gpd.GeoDataFrame, weights: str | np.ndarray | None, premorph:
     """
     import shapely
 
-    from carto_flow.flow_cartogram import MorphOptions, morph_gdf
+    from carto_flow.flow_cartogram import MorphOptions, create_flow_cartogram
 
     from .fields._base import _keep_polygonal
 
@@ -86,7 +86,7 @@ def _premorph(gdf: gpd.GeoDataFrame, weights: str | np.ndarray | None, premorph:
         column = "_premorph_weight"
         source = gdf.copy()
         source[column] = np.ones(len(gdf)) if weights is None else np.asarray(weights, dtype=float)
-    morph = morph_gdf(source, column, options=morph_options)
+    morph = create_flow_cartogram(source, column, options=morph_options)
     geoms = np.asarray(morph.to_geodataframe(include_errors=False, include_density=False).geometry, dtype=object)
     invalid = ~shapely.is_valid(geoms)
     if invalid.any():
@@ -159,7 +159,7 @@ def create_voronoi_cartogram(
         initialized, ensuring smooth FFT-driven boundary deformation.
     premorph : bool, MorphOptions, or None
         Morph the regions with the flow cartogram
-        (:func:`carto_flow.flow_cartogram.morph_gdf`) by the same weights
+        (:func:`carto_flow.flow_cartogram.create_flow_cartogram`) by the same weights
         before the Voronoi run, and run it on the morphed regions: the
         generators start at the morphed centroids and *boundary* is built
         from the morphed regions (``"union"``: their union, which stays rigid

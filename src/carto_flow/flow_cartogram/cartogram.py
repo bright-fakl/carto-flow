@@ -13,9 +13,9 @@ Cartogram
 
 Examples
 --------
->>> from carto_flow import morph_gdf
+>>> from carto_flow import create_flow_cartogram
 >>>
->>> cartogram = morph_gdf(gdf, 'population')
+>>> cartogram = create_flow_cartogram(gdf, 'population')
 >>> print(f"Status: {cartogram.status}")
 >>> print(f"Mean error: {cartogram.get_errors().mean_error_pct:.1f}%")
 >>> cartogram.plot()
@@ -88,7 +88,7 @@ class Cartogram:
 
     Examples
     --------
-    >>> cartogram = morph_gdf(gdf, 'population')
+    >>> cartogram = create_flow_cartogram(gdf, 'population')
     >>> print(f"Status: {cartogram.status}")
     >>> print(f"Mean error: {cartogram.get_errors().mean_error_pct:.1f}%")
     >>> cartogram.plot()
@@ -306,7 +306,7 @@ class Cartogram:
 
         Examples
         --------
-        >>> cartogram = morph_gdf(gdf, 'population')
+        >>> cartogram = create_flow_cartogram(gdf, 'population')
         >>> result_gdf = cartogram.to_geodataframe()
         >>> result_gdf.plot(column='_morph_error_pct', cmap='RdYlGn_r')
         """

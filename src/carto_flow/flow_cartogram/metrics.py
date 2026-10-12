@@ -17,10 +17,10 @@ check_topology
 
 Examples
 --------
->>> from carto_flow.flow_cartogram import morph_gdf, MorphOptions
+>>> from carto_flow.flow_cartogram import create_flow_cartogram, MorphOptions
 >>> from carto_flow.flow_cartogram.metrics import validate_result
 >>>
->>> result = morph_gdf(gdf, 'population', options=MorphOptions.preset_fast())
+>>> result = create_flow_cartogram(gdf, 'population', options=MorphOptions.preset_fast())
 >>> report = validate_result(result)
 >>> print(f"Valid: {report.is_valid}, Mean error: {report.mean_error:.1%}")
 """

@@ -8,12 +8,12 @@ spatial relationships.
 
 Functions
 ---------
-morph_gdf
-    Primary interface for cartogram generation from GeoDataFrames.
+create_flow_cartogram
+    Primary interface for cartogram generation from GeoDataFrames, at one resolution or on a ladder.
 morph_geometries
     Low-level interface working directly with Shapely geometries.
-multiresolution_morph
-    Progressive multi-resolution morphing for better convergence.
+morph_gdf, multiresolution_morph
+    Deprecated; use create_flow_cartogram.
 
 Classes
 -------
@@ -23,6 +23,8 @@ CartogramWorkflow
     Workflow class for iterative refinement with state management.
 MorphOptions
     Configuration dataclass with validation and quality presets.
+GridSpec, LadderSpec
+    Grid specifications for MorphOptions.grid: one grid, or a ladder of resolutions.
 MorphStatus
     Enum indicating morphing outcome (CONVERGED, STALLED, COMPLETED, ORIGINAL).
 
@@ -80,22 +82,23 @@ Examples
 Create a population cartogram:
 
 >>> import geopandas as gpd
->>> from carto_flow.flow_cartogram import morph_gdf, MorphOptions
+>>> from carto_flow.flow_cartogram import create_flow_cartogram, MorphOptions
 >>> gdf = gpd.read_file("regions.geojson")
->>> cartogram = morph_gdf(gdf, "population", options=MorphOptions.preset_balanced())
+>>> cartogram = create_flow_cartogram(gdf, "population", options=MorphOptions.preset_balanced())
 >>> cartogram.plot()
 >>> print(f"Status: {cartogram.status}")
 >>> print(f"Error: {cartogram.get_errors().mean_error_pct:.1f}%")
 
 Multi-resolution morphing for better convergence:
 
->>> from carto_flow.flow_cartogram import multiresolution_morph
->>> cartogram = multiresolution_morph(gdf, "population", levels=3, resolution=512)
+>>> from carto_flow.flow_cartogram import LadderSpec, create_flow_cartogram
+>>> options = MorphOptions(grid=LadderSpec(min_resolution=128, levels=3))
+>>> cartogram = create_flow_cartogram(gdf, "population", options=options)
 
 Custom configuration:
 
 >>> options = MorphOptions(
-...     grid_size=512,
+...     grid=512,
 ...     n_iter=100,
 ...     dt=0.5,
 ...     mean_tol=0.01,
@@ -152,12 +155,13 @@ from .anisotropy import (
 )
 from .anisotropy import Smooth as VelocitySmooth
 from .anisotropy import preview_modulator as preview_velocity_modulator
-from .api import morph_gdf, multiresolution_morph
+from .api import create_flow_cartogram, morph_gdf, multiresolution_morph
 from .cartogram import Cartogram
 from .density import DensityBorderExtension, DensityModulator, DensityPipeline
 from .density import Smooth as DensitySmooth
 from .density import preview_modulator as preview_density_modulator
 from .errors import MorphErrors, compute_error_metrics
+from .grid import GridSpec, LadderSpec
 from .history import ConvergenceHistory, ErrorRecord
 from .options import (
     MorphOptions,
@@ -200,6 +204,8 @@ __all__ = [
     "DensitySmooth",
     "DirectionalTensor",
     "ErrorRecord",
+    "GridSpec",
+    "LadderSpec",
     "LocalizedTensor",
     "ModulatorPreviewResult",
     "MorphErrors",
@@ -220,6 +226,7 @@ __all__ = [
     "anisotropy",
     "comparison",
     "compute_error_metrics",
+    "create_flow_cartogram",
     "density",
     "displacement",
     "grid",

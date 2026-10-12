@@ -71,7 +71,7 @@ class BenchmarkRuns:
         runs = BenchmarkRuns()
 
         def run():
-            result = morph_gdf(gdf, "col", options=options)
+            result = create_flow_cartogram(gdf, "col", options=options)
             runs.add(result.benchmark)
             return result
 

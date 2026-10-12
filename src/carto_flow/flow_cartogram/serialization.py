@@ -18,10 +18,10 @@ export_history
 
 Examples
 --------
->>> from carto_flow.flow_cartogram import morph_gdf, MorphOptions
+>>> from carto_flow.flow_cartogram import create_flow_cartogram, MorphOptions
 >>> from carto_flow.flow_cartogram.serialization import save_cartogram
 >>>
->>> cartogram = morph_gdf(gdf, 'population', options=MorphOptions.preset_fast())
+>>> cartogram = create_flow_cartogram(gdf, 'population', options=MorphOptions.preset_fast())
 >>> save_cartogram(cartogram, 'cartogram.json')
 >>> cartogram.save('cartogram.gpkg')  # Or use the Cartogram.save() method
 """

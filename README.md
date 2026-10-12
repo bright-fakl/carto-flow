@@ -46,10 +46,10 @@ Requires Python 3.10+.
 
 ```python
 import geopandas as gpd
-from carto_flow.flow_cartogram import morph_gdf
+from carto_flow.flow_cartogram import create_flow_cartogram
 
 gdf = gpd.read_file("countries.gpkg")
-result = morph_gdf(gdf, values=gdf["population"])
+result = create_flow_cartogram(gdf, values=gdf["population"])
 result.cartogram_gdf.plot()
 ```
 

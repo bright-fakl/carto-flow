@@ -67,12 +67,10 @@ cartograms = []
 for week in keyframe_weeks:
     df = us_states.copy()
     df["cases_per_100k"] = cases_per_100k.loc[week].values
-    cartogram = flow.multiresolution_morph(
+    cartogram = flow.create_flow_cartogram(
         df,
         "cases_per_100k",
-        min_resolution=128,
-        levels=4,
-        options=flow.MorphOptions(show_progress=False),
+        options=flow.MorphOptions(grid=flow.LadderSpec(min_resolution=128, levels=4), show_progress=False),
     )
     cartograms.append(cartogram)
 

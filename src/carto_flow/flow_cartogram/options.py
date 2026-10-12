@@ -643,10 +643,11 @@ class MorphOptions:
 
     @classmethod
     def preset_fast(cls) -> "MorphOptions":
-        """Create options optimized for quick preview.
+        """Create options for a quick preview.
 
-        Uses lower grid resolution, fewer iterations, and looser tolerances
-        for fast interactive exploration.
+        A coarse grid (128), a larger step (``dt=0.3``) and loose tolerances (15 % mean, 25 % maximum
+        area error) for exploring a map. The regions are only approximately on target, and a coarse
+        grid does not resolve inputs with many small regions, such as the congressional districts.
 
         Returns
         -------
@@ -660,7 +661,7 @@ class MorphOptions:
         """
         return cls(
             grid_size=128,
-            n_iter=30,
+            n_iter=150,
             dt=0.3,
             mean_tol=0.15,
             max_tol=0.25,
@@ -671,7 +672,9 @@ class MorphOptions:
     def preset_balanced(cls) -> "MorphOptions":
         """Create options with balanced speed/quality trade-off.
 
-        Default production setting suitable for most use cases.
+        The same values as ``MorphOptions()``: grid 256, ``dt=0.2`` and tolerances of 5 % mean and 10 %
+        maximum area error. This is the setting for most uses, and the one ``premorph`` of
+        :func:`~carto_flow.voronoi_cartogram.create_voronoi_cartogram` builds on.
 
         Returns
         -------
@@ -685,7 +688,7 @@ class MorphOptions:
         """
         return cls(
             grid_size=256,
-            n_iter=100,
+            n_iter=500,
             dt=0.2,
             mean_tol=0.05,
             max_tol=0.1,
@@ -694,10 +697,12 @@ class MorphOptions:
 
     @classmethod
     def preset_high_quality(cls) -> "MorphOptions":
-        """Create options optimized for publication-quality results.
+        """Create options for publication-quality results.
 
-        Uses higher grid resolution, more iterations, and stricter tolerances
-        for maximum accuracy.
+        A fine grid (512), a small step (``dt=0.1``) and strict tolerances (1 % mean, 3 % maximum area
+        error). The small step needs about twice the iterations of ``dt=0.2``; the maximum error
+        at the end is lower and fewer regions end self-intersecting. Inputs with many regions smaller than
+        a grid cell, such as the 3,108 counties, do not converge with any preset.
 
         Returns
         -------
@@ -711,7 +716,7 @@ class MorphOptions:
         """
         return cls(
             grid_size=512,
-            n_iter=300,
+            n_iter=1000,
             dt=0.1,
             mean_tol=0.01,
             max_tol=0.03,

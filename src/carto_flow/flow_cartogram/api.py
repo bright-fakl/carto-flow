@@ -104,8 +104,8 @@ def multiresolution_morph(
     gdf: Any,
     column: str,
     landmarks: Any = None,
-    min_resolution: int = 128,
-    levels: int = 3,
+    min_resolution: int | Literal["auto"] = 128,
+    levels: int | Literal["auto"] = 3,
     margin: float = 0.5,
     square: bool = True,
     options: MorphOptions | list[MorphOptions] | None = None,
@@ -127,11 +127,14 @@ def multiresolution_morph(
         Data column name.
     landmarks : GeoDataFrame, optional
         Optional landmarks.
-    min_resolution : int, default=128
+    min_resolution : int or "auto", default=128
         Resolution of the coarsest (first) grid level. Each subsequent
         level doubles this, up to ``min_resolution * 2^(levels-1)``.
-    levels : int, default=3
-        Number of resolution levels.
+        ``"auto"`` takes the smallest power of two from 64 to 512 at which
+        the smallest target region covers at least 2.5 cells (512 if none does).
+    levels : int or "auto", default=3
+        Number of resolution levels. ``"auto"`` doubles up to a finest grid
+        of 2048; the morph ends at the first level that converges.
     margin : float, default=0.5
         Grid margin around data bounds.
     square : bool, default=True

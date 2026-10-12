@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -102,7 +103,8 @@ class VoronoiOptions:
         components (e.g. Alaska, Hawaii) start at very different sizes relative
         to their weights.
     fix_topology : int, TopologyRepair, or None
-        Periodic topology permutation pipeline.
+        Periodic topology permutation pipeline.  With ``weights`` it makes the run much slower and can
+        move generators away from their weighted positions, so it suits unweighted runs.
 
         * ``None`` *(default)* — disabled.
         * **int** *N* — enable all three stages, run every *N* iterations with
@@ -110,7 +112,7 @@ class VoronoiOptions:
         * :class:`TopologyRepair` — full control over cadence, passes, and
           which stages are active.
     adj_min_shared_length : float or None
-        Minimum shared border length for two cells to be considered adjacent
+        Internal tuning setting (a non-default value is deprecated). Minimum shared border length for two cells to be considered adjacent
         in topology repair.  Pairs whose shared border is shorter than this
         value are not counted as adjacent.  ``None`` (default) = no extra
         filter beyond the auto-computed ``distance_tolerance`` in
@@ -177,6 +179,13 @@ class VoronoiOptions:
             raise ValueError(f"record_history as int must be >= 1, got {self.record_history}")
         if isinstance(self.fix_topology, int) and not isinstance(self.fix_topology, bool) and self.fix_topology < 1:
             raise ValueError(f"fix_topology as int must be >= 1, got {self.fix_topology}")
+        if self.adj_min_shared_length is not None:
+            warnings.warn(
+                "VoronoiOptions.adj_min_shared_length is an internal tuning setting: a non-default value is "
+                "deprecated and will no longer be accepted in the next major release.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
 
     def _topology_repair(self) -> TopologyRepair | None:
         """Return a resolved TopologyRepair, or None if disabled."""

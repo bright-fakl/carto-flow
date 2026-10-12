@@ -201,14 +201,13 @@ Key parameters:
 | Parameter | Default | Description |
 |---|---|---|
 | `resolution` | 300 | Pixel grid size (longer axis) |
-| `relaxation` | `"overrelax"` | SOR factor schedule |
-| `distance_mode` | `"euclidean"` | `"euclidean"` or `"geodesic"` (see [Geodesic Labeling](voronoi-cartogram-geodesic-labeling.md)) |
-| `area_equalizer_rate` | 0.1 | Power-diagram offset learning rate |
-| `boundary` | `None` | `AdhesiveBoundary` or `ElasticBoundary` |
-| `adjacency_spring` | 0.0 | Spring strength preserving adjacency |
+| `distance_mode` | `"euclidean"` | `"euclidean"` or `"geodesic"` (unweighted only; see [Geodesic Labeling](voronoi-cartogram-geodesic-labeling.md)) |
+| `boundary` | `None` | `None` (rigid) or `ElasticBoundary` |
+| `adjacency_spring` | 0.0 | Spring strength preserving adjacency; little effect with `premorph` |
+| `intra_group_spring` | `None` | Spring strength between adjacent regions of the same `group_by` group; keeps groups whole on a fixed or elastic outline |
 | `generator_anchor` | `None` | Pull of the generators toward their starting positions; `None` = 0.25 with `premorph`, else 0 |
 
-**Pure FFT-flow mode**: pass `relaxation=0.0` together with `ElasticBoundary` to skip Lloyd relaxation entirely and drive movement solely from area-pressure via the FFT velocity field.
+The relaxation schedule, the power-diagram offset rate and ramp, the output resolution and the cell smoothing are internal tuning settings; passing a non-default value is deprecated (see [Internal and deprecated settings](#internal-and-deprecated-settings)).
 
 ### ExactBackend
 
@@ -219,13 +218,13 @@ outer boundary using shapely intersection.
 **Accuracy**: geometrically exact cells. Useful for small datasets or when
 precise cell shapes matter for downstream analysis.
 
-**Limitation**: does not support `ElasticBoundary` (only `AdhesiveBoundary`).
+**Limitation**: does not support `ElasticBoundary`.
 
 ---
 
 ## Relaxation Schedule
 
-The over-relaxation factor $\alpha$ controls step size. A value $\alpha > 1$
+The relaxation schedule is an internal setting (see [Internal and deprecated settings](#internal-and-deprecated-settings)). The over-relaxation factor $\alpha$ controls step size. A value $\alpha > 1$
 (SOR) converges faster than plain Lloyd ($\alpha = 1$) but can overshoot if
 too large.
 
@@ -235,7 +234,7 @@ $$
 \alpha_i = \max(\text{minimum},\ \text{start} \times \text{decay}^i)
 $$
 
-The shorthand `"overrelax"` resolves to `RelaxationSchedule(start=1.9, decay=0.98, minimum=1.0)`. Passing a plain float (e.g. `relaxation=1.5`) uses a constant factor. A callable `f(iteration) -> float` allows arbitrary schedules.
+The default `"overrelax"` is `RelaxationSchedule(start=1.9, decay=0.98, minimum=1.0)`.
 
 ---
 
@@ -274,11 +273,7 @@ target areas at the start.
 By default the outer boundary is **fixed**: generators are constrained inside
 it and the boundary polygon does not change.
 
-**`AdhesiveBoundary(strength)`**: generators whose geometry touches the outer
-boundary are attracted toward the boundary edge (snapped by `strength ∈ [0,1]`
-toward the nearest boundary point). Available on both backends.
-
-**`ElasticBoundary(strength, step_scale, density_smooth, min_boundary_points, adhesion_strength)`**: the boundary
+**`ElasticBoundary(strength)`**: the boundary
 vertices themselves are advected by an FFT-derived velocity field proportional
 to the area pressure at each cell. The outer hull flexes to accommodate large
 area changes at the periphery. Available on `RasterBackend` only.
@@ -292,10 +287,19 @@ sparse ones, until the carried density evens out. Inside the boundary the
 carried density is scaled to hold the total weight, and outside it keeps the
 initial mean, so the boundary changes shape but keeps its initial area. The
 cells inside still match the weights exactly.
-`min_boundary_points` densifies simple shapes (e.g. `"bbox"`) for smoother
-deformation; `adhesion_strength` combines elastic deformation with centroid
-adhesion in a single pass (equivalent to `AdhesiveBoundary` but with the snap
-target tracking the evolving boundary shape).
+`strength` is the deformation strength in [0, 1]; 0.02 to 0.05 gives a smooth
+outline. Simple shapes (e.g. `"bbox"`) are densified automatically before the
+deformation starts.
+
+---
+
+## Internal and deprecated settings
+
+These settings are tuned internally; the defaults are the tested values. Passing a non-default value works but warns, and will no longer be accepted in the next major release: `relaxation` (`RasterBackend`, `ExactBackend`), `RasterBackend.area_equalizer_rate`, `RasterBackend.weight_ramp_iters`, `RasterBackend.output_resolution`, `RasterBackend.cell_smoothing_px`, `ElasticBoundary.step_scale`, `ElasticBoundary.density_smooth`, `ElasticBoundary.min_boundary_points` and `VoronoiOptions.adj_min_shared_length`.
+
+Deprecated, to be removed in the next major release: `AdhesiveBoundary` and `ElasticBoundary.adhesion_strength`. Use `ElasticBoundary`, or `generator_anchor` with `premorph`, instead.
+
+`VoronoiOptions.fix_topology` stays a regular option; with `weights` it makes the run much slower and can move generators away from their weighted positions, so it suits unweighted runs (the run warns).
 
 ---
 

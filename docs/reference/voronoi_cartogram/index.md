@@ -32,7 +32,7 @@ graph TD
 |------------|-------------|
 | **[API](api.md)** | `create_voronoi_cartogram`, `make_groups_contiguous` |
 | **[Options](options.md)** | `VoronoiOptions`, `TopologyRepair` — iteration count, stopping criteria, topology repair schedule |
-| **[Backends](backends.md)** | `RasterBackend` (default), `ExactBackend`, `RelaxationSchedule`, `AdhesiveBoundary`, `ElasticBoundary` |
+| **[Backends](backends.md)** | `RasterBackend` (default), `ExactBackend`, `RelaxationSchedule`, `AdhesiveBoundary` (deprecated), `ElasticBoundary` |
 | **[Result](result.md)** | `VoronoiCartogram`, `TopologyAnalysis`, `TopologyRepairReport` — positions, cells, metrics, plot & repair methods |
 | **[History](history.md)** | `VoronoiSnapshot` — per-iteration snapshot |
 

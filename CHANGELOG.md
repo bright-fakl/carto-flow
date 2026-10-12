@@ -13,7 +13,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 - **`create_voronoi_cartogram` warns when `fix_topology` is used with `weights`:**
   the topology repair makes a weighted run much slower and can move generators away
-  from their weighted positions. ([#PR](https://github.com/bright-fakl/carto-flow/pull/PR))
+  from their weighted positions. ([#126](https://github.com/bright-fakl/carto-flow/pull/126))
 - **A flow cartogram warns when regions of the result are invalid, and
   `Cartogram.invalid_regions` lists them.** A region that is much narrower than a grid
   cell somewhere could be pinched during the morph until its boundary crossed itself,
@@ -109,11 +109,11 @@ Releases before 2.0.0 have no changelog entry; see the
   `ElasticBoundary.step_scale`, `density_smooth` and `min_boundary_points`, and
   `VoronoiOptions.adj_min_shared_length` warns and will no longer be accepted in the
   next major release; the defaults are the tested values.
-  ([#PR](https://github.com/bright-fakl/carto-flow/pull/PR))
+  ([#126](https://github.com/bright-fakl/carto-flow/pull/126))
 - **`AdhesiveBoundary` and `ElasticBoundary.adhesion_strength`** are deprecated and
   will be removed in the next major release; use `ElasticBoundary` (strength 0.02 to
   0.05), or `generator_anchor` with `premorph`.
-  ([#PR](https://github.com/bright-fakl/carto-flow/pull/PR))
+  ([#126](https://github.com/bright-fakl/carto-flow/pull/126))
 
 - **`Cartogram.latest`, `CartogramWorkflow.latest` and `History.latest()`.**
   `Cartogram.best` is the snapshot of the returned state and `Cartogram.last`

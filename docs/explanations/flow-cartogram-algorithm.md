@@ -38,7 +38,7 @@ $$
 
 Both areas are first raised to a floor $\varepsilon = \texttt{error\_floor} \cdot \overline{a^{\text{target}}}$ (default $10^{-3}$ of the mean target area), so that a collapsed or zero-valued region has a finite error. The floor does not depend on the grid, which makes the reported errors comparable between grid sizes and between the levels of a multiresolution morph; regions with a target below the floor count as on target while their area stays below it. `error_floor=0` disables it.
 
-**Self-intersecting output.** The vertices move independently, so a channel of a region that is much narrower than a grid cell can close until the boundary of the region crosses itself. The returned geometries are made valid by default (`repair_output`: `shapely.make_valid`, zero-area parts dropped, so a region can become a MultiPolygon and its area changes slightly); the iterations stored in `snapshots` are not repaired, and `Cartogram.invalid_regions` lists the regions that were invalid. With `repair_output=False` the output is returned as computed and a warning names the invalid regions.
+**Self-intersecting output.** The vertices move independently, so a channel of a region that is much narrower than a grid cell can close until the boundary of the region crosses itself. The morph then warns, and `Cartogram.invalid_regions` lists the regions. The computed geometries keep the vertices of the input, which animations between cartograms (keyframes) need, so they are not repaired by default. With `repair_output=True`, `Cartogram.to_geodataframe` makes the invalid regions valid (`shapely.make_valid`, zero-area parts dropped; a region can become a MultiPolygon, its area changes slightly, and its vertices no longer correspond to the input); `get_geometry` and the snapshots are never repaired.
 
 ---
 
@@ -200,7 +200,7 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `recompute_every` | 10 | Recompute density/velocity every N iterations (maximum interval with `recompute_on_rise`) |
 | `recompute_on_rise` | 0.01 | Relative score rise that triggers an early recompute; `None` = fixed schedule only |
 | `adaptive_dt` | `True` | Shrink the step when the area errors alternate in sign (down to `dt / 8`, never growing back) and limit the first steps of a run that starts near the target; `False` = constant `dt` |
-| `repair_output` | `True` | Make invalid (self-intersecting) output regions valid (`shapely.make_valid`, zero-area parts dropped); `False` returns the output as computed and warns. The stored iterations are not repaired; `Cartogram.invalid_regions` lists the regions |
+| `repair_output` | `False` | Make invalid (self-intersecting) regions valid in `Cartogram.to_geodataframe` (`shapely.make_valid`, zero-area parts dropped); this adds vertices, so the regions no longer correspond vertex by vertex to the input and to other cartograms (keyframe animations need that). The morph warns about invalid regions either way; `Cartogram.invalid_regions` lists them. `get_geometry` and the snapshots are never repaired |
 | `density_rasterization` | `"exact"` | `"exact"`: area-weighted over the cell; `"center"`: each cell takes the density at its center |
 | `snapshot_every` | `None` | Save full snapshot every N iterations; `None` = final only |
 | `mean_tol` | 0.05 | Convergence threshold for mean area error (fraction) |

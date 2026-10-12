@@ -173,15 +173,17 @@ class MorphOptions:
 
     False: constant ``dt``.
     """
-    repair_output: bool = True
-    """Repair invalid (self-intersecting) output regions.
+    repair_output: bool = False
+    """Repair invalid (self-intersecting) regions when the cartogram is exported.
 
     Narrow channels of a region can close during the morph so that its boundary crosses itself, and
-    the returned geometry is then not a valid polygon. With ``repair_output`` the returned
-    geometries are made valid (:func:`shapely.make_valid`, zero-area parts dropped; a region can
-    become a MultiPolygon and its area changes slightly). The stored iterations (``snapshots``) are
-    not repaired. ``Cartogram.invalid_regions`` lists the repaired
-    regions. With False the output is returned as computed and a warning names the invalid regions.
+    the computed geometry is then not a valid polygon. The morph warns and ``Cartogram.invalid_regions``
+    lists the regions. With ``repair_output`` the geometries of ``Cartogram.to_geodataframe`` are made
+    valid (:func:`shapely.make_valid`, zero-area parts dropped; a region can become a MultiPolygon and
+    its area changes slightly). The repair adds vertices, so the repaired regions no longer correspond
+    vertex by vertex to the input and to other cartograms of the same input, which animations between
+    cartograms (keyframes) need; that is why it is off by default. ``get_geometry`` and the snapshots
+    are never repaired.
     """
     snapshot_every: int | None = None
     mean_tol: float = 0.05  # Percentage tolerance, e.g., 0.05 = 5%

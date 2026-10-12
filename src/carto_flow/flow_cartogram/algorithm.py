@@ -32,7 +32,7 @@ from ..geo_utils.geometry import (
     reconstruct_geometries,
     unpack_geometries,
 )
-from ..geo_utils.validity import invalid_indices, repair_polygons
+from ..geo_utils.validity import invalid_indices
 from .cartogram import Cartogram
 from .density import DensityModulator, compute_density_field_from_geometries
 from .displacement import displace_coords_numba, max_abs_velocity, max_velocity_magnitude
@@ -223,18 +223,14 @@ def _normalize_coordinates(coords, format_type=None):
 
 
 def _check_output(snapshot, repair: bool) -> tuple[int, ...]:
-    """Indices of the invalid regions of the returned snapshot; repaired in place if ``repair``, else warned about."""
+    """Indices of the invalid regions of the returned snapshot; warned about unless ``repair`` (applied on export)."""
     if snapshot is None or snapshot.geometry is None:
         return ()
     invalid = invalid_indices(snapshot.geometry)
-    if len(invalid) == 0:
-        return ()
-    if repair:
-        snapshot.geometry = repair_polygons(snapshot.geometry, invalid)
-    else:
+    if len(invalid) and not repair:
         warnings.warn(
             f"{len(invalid)} output regions are not valid polygons (self-intersecting boundary), "
-            f"first indices {invalid[:5].tolist()}; set repair_output=True to repair them.",
+            f"first indices {invalid[:5].tolist()}; use repair_output=True to repair them in to_geodataframe (this changes the vertices).",
             UserWarning,
             stacklevel=3,
         )

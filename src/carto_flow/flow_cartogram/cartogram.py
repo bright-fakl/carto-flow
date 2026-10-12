@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
+from ..geo_utils.validity import invalid_indices, repair_polygons
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -72,8 +74,10 @@ class Cartogram:
     internals : History, optional
         Internal computation data (if save_internals=True).
     invalid_regions : tuple of int
-        Indices of the regions whose returned geometry was not a valid polygon (a self-intersecting
-        boundary). They have been repaired if ``MorphOptions.repair_output`` is True (the default).
+        Indices of the regions whose returned geometry is not a valid polygon (a self-intersecting
+        boundary). ``to_geodataframe`` repairs them if ``MorphOptions.repair_output`` is True (the
+        default is False, which keeps the vertices of the input); ``get_geometry`` and the snapshots
+        keep the computed geometries.
 
     Examples
     --------
@@ -273,7 +277,9 @@ class Cartogram:
         Returns
         -------
         GeoDataFrame
-            Copy of source GeoDataFrame with morphed geometry and metrics.
+            Copy of source GeoDataFrame with morphed geometry and metrics. Invalid
+            (self-intersecting) regions are repaired, which adds vertices, if
+            ``MorphOptions.repair_output`` is True (the default is False).
 
         Raises
         ------
@@ -297,7 +303,12 @@ class Cartogram:
             raise ValueError(f"No snapshot found for iteration {iteration}")
 
         output = self._source_gdf.copy()
-        output.geometry = snapshot.geometry
+        geometry = snapshot.geometry
+        if geometry is not None and self.options is not None and self.options.repair_output:
+            invalid = invalid_indices(geometry)
+            if len(invalid):
+                geometry = repair_polygons(geometry, invalid)
+        output.geometry = geometry
 
         if include_errors and snapshot.errors is not None:
             output["_morph_error_pct"] = snapshot.errors.errors_pct

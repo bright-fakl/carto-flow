@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
+from ..geo_utils.validity import invalid_indices, repair_polygons
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -41,6 +43,14 @@ if TYPE_CHECKING:
     from .timings import Benchmark
 
 __all__ = ["Cartogram"]
+
+
+def _repaired(geometry: Any) -> Any:
+    """The geometries with the invalid ones made valid."""
+    if geometry is None:
+        return None
+    invalid = invalid_indices(geometry)
+    return repair_polygons(geometry, invalid) if len(invalid) else geometry
 
 
 @dataclass
@@ -71,6 +81,10 @@ class Cartogram:
         Target equilibrium density.
     internals : History, optional
         Internal computation data (if save_internals=True).
+    invalid_regions : tuple of int
+        Indices of the regions whose returned geometry is not a valid polygon (a self-intersecting
+        boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
+        the vertices of the input, unless ``repair=True``.
 
     Examples
     --------
@@ -93,6 +107,7 @@ class Cartogram:
     target_density: float | None = None
     internals: Optional["History[CartogramInternalsSnapshot]"] = None
     benchmark: Optional["Benchmark"] = None
+    invalid_regions: tuple[int, ...] = ()
 
     # Source references for GeoDataFrame reconstruction (not shown in repr)
     _source_gdf: Any | None = field(default=None, repr=False)
@@ -178,13 +193,18 @@ class Cartogram:
             return self.convergence[-1]
         return self.convergence.get_by_iteration(iteration)
 
-    def get_geometry(self, iteration: int | None = None) -> Any:
+    def get_geometry(self, iteration: int | None = None, repair: bool = False) -> Any:
         """Get geometry sequence for a specific iteration.
 
         Parameters
         ----------
         iteration : int, optional
             Iteration number. If None, returns latest.
+        repair : bool, default=False
+            Make invalid (self-intersecting) regions valid (:func:`shapely.make_valid`, zero-area
+            parts dropped). The repair adds vertices, so the repaired regions no longer correspond
+            vertex by vertex to the input and to other cartograms of the same input, and a region
+            can become a MultiPolygon. Do not repair geometries that are animated between cartograms.
 
         Returns
         -------
@@ -192,7 +212,9 @@ class Cartogram:
             Sequence of geometries.
         """
         snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
-        return snapshot.geometry if snapshot else None
+        if snapshot is None:
+            return None
+        return _repaired(snapshot.geometry) if repair else snapshot.geometry
 
     def get_density(self, iteration: int | None = None) -> np.ndarray | None:
         """Get density values for a specific iteration.
@@ -251,6 +273,7 @@ class Cartogram:
         iteration: int | None = None,
         include_errors: bool = True,
         include_density: bool = True,
+        repair: bool = False,
     ) -> "gpd.GeoDataFrame":
         """Export cartogram as GeoDataFrame.
 
@@ -265,6 +288,11 @@ class Cartogram:
             Add '_morph_error_pct' column with percentage errors.
         include_density : bool, default=True
             Add '_morph_density' column with density values.
+        repair : bool, default=False
+            Make invalid (self-intersecting) regions valid (:func:`shapely.make_valid`, zero-area
+            parts dropped). The repair adds vertices, so the repaired regions no longer correspond
+            vertex by vertex to the input and to other cartograms of the same input, and a region
+            can become a MultiPolygon. Do not repair geometries that are animated between cartograms.
 
         Returns
         -------
@@ -293,7 +321,7 @@ class Cartogram:
             raise ValueError(f"No snapshot found for iteration {iteration}")
 
         output = self._source_gdf.copy()
-        output.geometry = snapshot.geometry
+        output.geometry = _repaired(snapshot.geometry) if repair else snapshot.geometry
 
         if include_errors and snapshot.errors is not None:
             output["_morph_error_pct"] = snapshot.errors.errors_pct

@@ -38,6 +38,8 @@ $$
 
 Both areas are first raised to a floor $\varepsilon = \texttt{error\_floor} \cdot \overline{a^{\text{target}}}$ (default $10^{-3}$ of the mean target area), so that a collapsed or zero-valued region has a finite error. The floor does not depend on the grid, which makes the reported errors comparable between grid sizes and between the levels of a multiresolution morph; regions with a target below the floor count as on target while their area stays below it. `error_floor=0` disables it.
 
+**Self-intersecting output.** The vertices move independently, so a region that is much narrower than a grid cell somewhere (a thin neck) can be pinched until its boundary crosses itself; less often a thin wedge of a neighboring region is squeezed between two parts of its boundary. Adjacent regions share vertices (identical coordinates), so the invalid regions are mostly on shared borders. The morph warns and `Cartogram.invalid_regions` lists the regions. The computed geometries keep the vertices of the input, which animations between cartograms (keyframes) need, so they are not repaired by default. `Cartogram.get_geometry(repair=True)` and `Cartogram.to_geodataframe(repair=True)` make the invalid regions valid (`shapely.make_valid`, zero-area parts dropped); a region can become a MultiPolygon, its area changes slightly, its vertices no longer correspond to the input, and the vertex added to one region is not added to its neighbor. Do not repair geometries that are animated between cartograms.
+
 ---
 
 ## Computational Pipeline

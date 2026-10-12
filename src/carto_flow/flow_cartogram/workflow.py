@@ -407,6 +407,7 @@ class CartogramWorkflow:
         iteration: int | None = None,
         include_errors: bool = True,
         include_density: bool = True,
+        repair: bool = False,
     ) -> Any:
         """
         Export a cartogram result as GeoDataFrame.
@@ -421,6 +422,9 @@ class CartogramWorkflow:
             Add '_morph_error_pct' column.
         include_density : bool, default=True
             Add '_morph_density' column.
+        repair : bool, default=False
+            Make invalid (self-intersecting) regions valid; this adds vertices (see
+            :meth:`Cartogram.to_geodataframe`).
 
         Returns
         -------
@@ -432,6 +436,7 @@ class CartogramWorkflow:
             iteration=iteration,
             include_errors=include_errors,
             include_density=include_density,
+            repair=repair,
         )
 
     # ========================================================================

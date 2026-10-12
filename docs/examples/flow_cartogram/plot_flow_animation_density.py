@@ -14,7 +14,7 @@ from carto_flow.flow_cartogram.animation import animate_density_field
 
 gdf = examples.load_us_census(population=True)
 
-cartogram = flow.morph_gdf(
+cartogram = flow.create_flow_cartogram(
     gdf,
     "Population",
     options=flow.MorphOptions.preset_balanced().copy_with(

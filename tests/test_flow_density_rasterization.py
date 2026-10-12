@@ -7,7 +7,7 @@ import pytest
 from shapely.geometry import Polygon, box
 
 from carto_flow import data
-from carto_flow.flow_cartogram import MorphOptions, MorphStatus, morph_gdf
+from carto_flow.flow_cartogram import MorphOptions, MorphStatus, create_flow_cartogram
 from carto_flow.flow_cartogram.density import compute_density_field_from_geometries
 from carto_flow.flow_cartogram.grid import Grid
 
@@ -114,28 +114,28 @@ class TestMorph:
     def test_default_is_the_exact_run(self, states):
         """The default run is the same with the option spelled out."""
         options = MorphOptions(show_progress=False, grid_size=64, n_iter=20)
-        a = morph_gdf(states, "Population", options=options)
-        b = morph_gdf(states, "Population", options=options.copy_with(density_rasterization="exact"))
+        a = create_flow_cartogram(states, "Population", options=options)
+        b = create_flow_cartogram(states, "Population", options=options.copy_with(density_rasterization="exact"))
         assert [g.wkb for g in a.get_geometry()] == [g.wkb for g in b.get_geometry()]
 
     def test_center_is_still_available(self, states):
         options = MorphOptions(show_progress=False, grid_size=64, n_iter=20)
-        exact = morph_gdf(states, "Population", options=options)
-        center = morph_gdf(states, "Population", options=options.copy_with(density_rasterization="center"))
+        exact = create_flow_cartogram(states, "Population", options=options)
+        center = create_flow_cartogram(states, "Population", options=options.copy_with(density_rasterization="center"))
         assert [g.wkb for g in exact.get_geometry()] != [g.wkb for g in center.get_geometry()]
 
     def test_exact_lowers_the_area_error(self, states):
         """Center sampling quantizes every region to whole cells; exact coverage removes that (grid 256, states)."""
         base = MorphOptions(show_progress=False, grid_size=256, n_iter=300, adaptive_dt=False)
-        center = morph_gdf(states, "Population", options=base.copy_with(density_rasterization="center"))
-        exact = morph_gdf(states, "Population", options=base)
+        center = create_flow_cartogram(states, "Population", options=base.copy_with(density_rasterization="center"))
+        exact = create_flow_cartogram(states, "Population", options=base)
         assert exact.status == MorphStatus.CONVERGED
         assert exact.get_errors().max_error_pct < 0.5 * center.get_errors().max_error_pct
 
     def test_districts_converge_with_self_intersecting_regions(self, districts):
         """A region whose ring crosses itself is not dropped from the field (districts, grid 128, dt 0.4, 1 % / 2 %)."""
         options = MorphOptions(show_progress=False, grid_size=128, dt=0.4, mean_tol=0.01, max_tol=0.02, n_iter=400)
-        result = morph_gdf(districts, "Population", options=options)
+        result = create_flow_cartogram(districts, "Population", options=options)
         assert result.status == MorphStatus.CONVERGED
         assert result.get_errors().max_error_pct < 3.0
 

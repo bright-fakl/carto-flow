@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 from shapely.geometry import box
 
-from carto_flow.flow_cartogram import MorphOptions, morph_gdf, morph_geometries
+from carto_flow.flow_cartogram import MorphOptions, create_flow_cartogram, morph_geometries
 from carto_flow.geo_utils import densify_coverage
 
 
@@ -61,7 +61,7 @@ class TestFlowCartogram:
 
     def test_basic_flow_cartogram(self, gdf):
         """Test creating a basic flow cartogram."""
-        cartogram = morph_gdf(gdf, "population")
+        cartogram = create_flow_cartogram(gdf, "population")
         assert cartogram is not None
         assert len(cartogram.get_geometry()) == len(gdf)
 
@@ -72,7 +72,7 @@ class TestFlowCartogram:
             n_iter=100,
             mean_tol=1e-3,
         )
-        cartogram = morph_gdf(gdf, "population", options=options)
+        cartogram = create_flow_cartogram(gdf, "population", options=options)
         assert cartogram is not None
         assert len(cartogram.get_geometry()) == len(gdf)
 
@@ -80,7 +80,7 @@ class TestFlowCartogram:
         """Test flow cartogram with different grid sizes."""
         for grid_size in [32, 64, 128]:
             options = MorphOptions(grid_size=grid_size)
-            cartogram = morph_gdf(gdf, "population", options=options)
+            cartogram = create_flow_cartogram(gdf, "population", options=options)
             assert cartogram is not None
             assert len(cartogram.get_geometry()) == len(gdf)
 
@@ -90,7 +90,7 @@ class TestFlowCartogram:
             n_iter=10,
             mean_tol=1e-1,
         )
-        cartogram = morph_gdf(gdf, "population", options=options)
+        cartogram = create_flow_cartogram(gdf, "population", options=options)
         assert cartogram is not None
         assert len(cartogram.get_geometry()) == len(gdf)
 
@@ -105,7 +105,7 @@ class TestZeroValueGeometry:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)
-            cartogram = morph_gdf(gdf, "population", options=options)
+            cartogram = create_flow_cartogram(gdf, "population", options=options)
 
         assert cartogram is not None
 
@@ -118,7 +118,7 @@ class TestZeroValueGeometry:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error", RuntimeWarning)
-            cartogram = morph_gdf(gdf, "population", options=options)
+            cartogram = create_flow_cartogram(gdf, "population", options=options)
 
         final = cartogram.best
         errors = final.errors
@@ -173,7 +173,7 @@ class TestSnapshotCoords:
 
     @pytest.mark.parametrize("fmt", ["grid", "points", "mesh"])
     def test_snapshots_hold_per_iteration_coords(self, gdf, fmt):
-        cart = morph_gdf(
+        cart = create_flow_cartogram(
             gdf,
             "population",
             displacement_coords=self._inputs(fmt),

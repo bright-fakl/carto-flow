@@ -34,13 +34,89 @@ Grid shape: (100, 200)
 Number of resolution levels: 3
 """
 
+from dataclasses import dataclass
+from typing import Literal
+
 import numpy as np
 
 # Module-level exports - Public API
 __all__ = [
     "Grid",
+    "GridSpec",
+    "LadderSpec",
     "build_multilevel_grids",
 ]
+
+
+@dataclass(frozen=True)
+class GridSpec:
+    """A single grid built from the bounds of the data.
+
+    Parameters
+    ----------
+    size : int or tuple of (int or None, int or None)
+        Number of points along the long axis, or ``(nx, ny)``; a ``None`` entry is derived
+        from the aspect ratio.
+    margin : float, default=0.5
+        Padding around the bounds, as a fraction of the extent.
+    square : bool, default=False
+        Whether the cells are square.
+    """
+
+    size: int | tuple[int | None, int | None] = 256
+    margin: float = 0.5
+    square: bool = False
+
+    def __post_init__(self):
+        if isinstance(self.size, int) and not isinstance(self.size, bool):
+            if self.size <= 0:
+                raise ValueError("GridSpec.size as int must be positive")
+        elif isinstance(self.size, (tuple, list)) and len(self.size) == 2:
+            for i, n in enumerate(self.size):
+                if n is not None and (not isinstance(n, int) or n <= 0):
+                    raise ValueError(f"GridSpec.size[{i}] must be a positive integer or None")
+        else:
+            raise ValueError("GridSpec.size must be a positive integer or a tuple of (int, int)")
+        if not isinstance(self.margin, (int, float)) or self.margin < 0:
+            raise ValueError("GridSpec.margin must be a non-negative number")
+        if not isinstance(self.square, bool):
+            raise TypeError("GridSpec.square must be a boolean")
+
+
+@dataclass(frozen=True)
+class LadderSpec:
+    """A sequence of grids, each level doubling the resolution of the previous one.
+
+    The morph runs the levels from coarse to fine and ends at the first level that converges.
+
+    Parameters
+    ----------
+    min_resolution : int or "auto", default="auto"
+        Points along the long axis of the coarsest grid. ``"auto"`` takes the smallest power of
+        two from 64 to 512 at which the smallest target region covers at least 2.5 cells
+        (512 if none does).
+    levels : int or "auto", default="auto"
+        Number of levels. ``"auto"`` doubles up to a finest grid of 2048.
+    margin : float, default=0.5
+        Padding around the bounds, as a fraction of the extent.
+    square : bool, default=True
+        Whether the cells are square.
+    """
+
+    min_resolution: int | Literal["auto"] = "auto"
+    levels: int | Literal["auto"] = "auto"
+    margin: float = 0.5
+    square: bool = True
+
+    def __post_init__(self):
+        for name in ("min_resolution", "levels"):
+            value = getattr(self, name)
+            if value != "auto" and (not isinstance(value, int) or isinstance(value, bool) or value <= 0):
+                raise ValueError(f"LadderSpec.{name} must be a positive integer or 'auto'")
+        if not isinstance(self.margin, (int, float)) or self.margin < 0:
+            raise ValueError("LadderSpec.margin must be a non-negative number")
+        if not isinstance(self.square, bool):
+            raise TypeError("LadderSpec.square must be a boolean")
 
 
 class Grid:

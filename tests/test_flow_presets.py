@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from carto_flow import data
-from carto_flow.flow_cartogram import MorphOptions, MorphStatus, morph_gdf
+from carto_flow.flow_cartogram import MorphOptions, MorphStatus, create_flow_cartogram
 
 
 @pytest.fixture(scope="module")
@@ -28,7 +28,7 @@ class TestPresets:
     @pytest.mark.parametrize("preset", list(PRESETS))
     def test_the_preset_converges_within_its_tolerances(self, inputs, preset, name):
         options = PRESETS[preset]().copy_with(show_progress=False)
-        result = morph_gdf(inputs[name], "Population", options=options)
+        result = create_flow_cartogram(inputs[name], "Population", options=options)
         errors = result.get_errors()
         assert result.status == MorphStatus.CONVERGED
         assert result.niterations < options.n_iter

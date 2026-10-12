@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import carto_flow.data as data
-from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, morph_gdf
+from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, create_flow_cartogram
 from carto_flow.flow_cartogram.anisotropy import DirectionalTensor
 from carto_flow.flow_cartogram.recompute import score_rose, should_recompute
 from carto_flow.flow_cartogram.stall import MIN_CYCLE_LENGTH, StallMonitor, cycle_length
@@ -44,7 +44,7 @@ class TestStrongAnisotropyConverges:
         ids=["horizontal", "tangential", "tilted"],
     )
     def test_converges_within_400_iterations(self, states, modulator):
-        result = morph_gdf(states, "Population", options=_strong_anisotropy_options(modulator))
+        result = create_flow_cartogram(states, "Population", options=_strong_anisotropy_options(modulator))
         assert result.status == MorphStatus.CONVERGED
         assert result.niterations <= 400
         assert result.best_iteration == result.niterations
@@ -52,14 +52,14 @@ class TestStrongAnisotropyConverges:
 
 class TestConvergedRunsUnchanged:
     def test_default_options(self, states):
-        result = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
+        result = create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False))
         assert result.status == MorphStatus.CONVERGED
         assert result.niterations == 112
         assert result.best_iteration == 112
         assert result.snapshots.get_iterations() == [112]
 
     def test_grid_512(self, states):
-        result = morph_gdf(states, "Population", options=MorphOptions(show_progress=False, grid_size=512))
+        result = create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False, grid_size=512))
         assert result.status == MorphStatus.CONVERGED
         assert result.niterations == 214
         assert result.best_iteration == result.niterations
@@ -82,7 +82,7 @@ class TestBestIterate:
 
     def test_iteration_cap_returns_best_iterate(self, states):
         options = MorphOptions(**self.OPTIONS)
-        result = morph_gdf(states, "Population", options=options)
+        result = create_flow_cartogram(states, "Population", options=options)
         score = _score(result.convergence, options)
         best = int(np.argmin(score)) + 1
 
@@ -100,7 +100,7 @@ class TestBestIterate:
 
     def test_best_iterate_with_periodic_snapshots_is_not_duplicated(self, states):
         options = MorphOptions(**{**self.OPTIONS, "snapshot_every": 1})
-        result = morph_gdf(states, "Population", options=options)
+        result = create_flow_cartogram(states, "Population", options=options)
         iterations = result.snapshots.get_iterations()
         assert len(iterations) == len(set(iterations))
         assert result.best.iteration == result.best_iteration
@@ -109,12 +109,12 @@ class TestBestIterate:
         landmarks = states.copy()
         coords = np.array([[x, y] for x in np.linspace(-2.5e6, 2.5e6, 5) for y in np.linspace(-1.5e6, 1.5e6, 5)])
         kwargs = {"landmarks": landmarks, "displacement_coords": coords}
-        full = morph_gdf(states, "Population", options=MorphOptions(**self.OPTIONS), **kwargs)
+        full = create_flow_cartogram(states, "Population", options=MorphOptions(**self.OPTIONS), **kwargs)
         assert full.best_iteration < full.niterations
 
         # Running exactly to the best iteration gives the same state.
         reference_options = MorphOptions(**{**self.OPTIONS, "n_iter": full.best_iteration})
-        reference = morph_gdf(states, "Population", options=reference_options, **kwargs)
+        reference = create_flow_cartogram(states, "Population", options=reference_options, **kwargs)
         assert reference.niterations == full.best_iteration
 
         for got, want in zip(full.get_geometry(), reference.get_geometry(), strict=True):
@@ -125,7 +125,7 @@ class TestBestIterate:
         assert not np.allclose(full.get_coords(), full.get_coords(full.niterations), atol=1e-3)
 
     def test_serialization_round_trip(self, states, tmp_path):
-        result = morph_gdf(states, "Population", options=MorphOptions(**self.OPTIONS))
+        result = create_flow_cartogram(states, "Population", options=MorphOptions(**self.OPTIONS))
         result.save(tmp_path / "c.json")
         loaded = type(result).load(tmp_path / "c.json")
         assert loaded.best_iteration == result.best_iteration
@@ -257,7 +257,7 @@ class TestStallPatience:
         options = MorphOptions.preset_balanced().copy_with(
             dt=0.6, show_progress=False, recompute_on_rise=None, density_rasterization="center", adaptive_dt=False
         )
-        result = morph_gdf(states, "Population", options=options)
+        result = create_flow_cartogram(states, "Population", options=options)
         score = _score(result.convergence, options)
 
         assert result.status == MorphStatus.STALLED
@@ -270,7 +270,7 @@ class TestStallPatience:
 
     def test_none_disables_stall_detection(self, states):
         options = MorphOptions(**self.OPTIONS, stall_patience=None)
-        result = morph_gdf(states, "Population", options=options)
+        result = create_flow_cartogram(states, "Population", options=options)
         assert result.niterations == 60
 
     @pytest.mark.parametrize("recompute_every", [1, 2, 5, 10])
@@ -278,7 +278,7 @@ class TestStallPatience:
         options = _strong_anisotropy_options(DirectionalTensor(theta=0, Dpar=4, Dperp=0.3)).copy_with(
             recompute_every=recompute_every
         )
-        result = morph_gdf(states, "Population", options=options)
+        result = create_flow_cartogram(states, "Population", options=options)
         assert result.status == MorphStatus.CONVERGED
 
     @pytest.mark.parametrize("value", [-1, True, 2.5])
@@ -335,15 +335,17 @@ class TestRecomputeOnRise:
             s = _score(result.convergence, options)
             return int(np.sum((s[1:] > s[:-1]) & (s[:-1] < 20)))
 
-        off = morph_gdf(states, "Population", options=options.copy_with(recompute_on_rise=None))
-        on = morph_gdf(states, "Population", options=options.copy_with(recompute_on_rise=0.01))
+        off = create_flow_cartogram(states, "Population", options=options.copy_with(recompute_on_rise=None))
+        on = create_flow_cartogram(states, "Population", options=options.copy_with(recompute_on_rise=0.01))
         assert off.status == on.status == MorphStatus.CONVERGED
         assert rises(on) < rises(off)
         assert on.benchmark.density_calls != off.benchmark.density_calls
 
     def test_no_change_when_the_score_never_rises(self, states):
-        off = morph_gdf(states, "Population", options=MorphOptions(show_progress=False, recompute_on_rise=None))
-        on = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
+        off = create_flow_cartogram(
+            states, "Population", options=MorphOptions(show_progress=False, recompute_on_rise=None)
+        )
+        on = create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False))
         assert on.niterations == off.niterations == 112
 
     def test_default_is_one_percent(self):
@@ -360,7 +362,9 @@ class TestBestAndLast:
 
     @pytest.fixture(scope="class")
     def result(self, states):
-        return morph_gdf(states, "Population", options=MorphOptions(**TestBestIterate.OPTIONS, snapshot_every=20))
+        return create_flow_cartogram(
+            states, "Population", options=MorphOptions(**TestBestIterate.OPTIONS, snapshot_every=20)
+        )
 
     def test_snapshots_are_in_iteration_order(self, result):
         iterations = result.snapshots.get_iterations()
@@ -384,11 +388,13 @@ class TestBestAndLast:
             assert result.latest is result.best
 
     def test_converged_run_has_the_same_best_and_last(self, states):
-        result = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
+        result = create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False))
         assert result.best is result.last
 
     def test_internals_end_at_the_best_iterate(self, states):
-        result = morph_gdf(states, "Population", options=MorphOptions(**TestBestIterate.OPTIONS, save_internals=True))
+        result = create_flow_cartogram(
+            states, "Population", options=MorphOptions(**TestBestIterate.OPTIONS, save_internals=True)
+        )
         internals = result.internals
         assert internals.best_iteration <= result.best_iteration
         assert internals.best().iteration == internals.best_iteration

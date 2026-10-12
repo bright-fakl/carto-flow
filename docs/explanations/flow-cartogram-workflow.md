@@ -5,7 +5,7 @@
 The flow cartogram module provides two API levels:
 
 - **Low-level**: `morph_geometries(geometries, values, options)` operates on raw Shapely geometry sequences and returns a `Cartogram` result object. It has no dependency on geopandas.
-- **High-level**: `CartogramWorkflow` wraps `morph_geometries()` with GeoDataFrame input/output, automatic area-unit handling, and multi-run state management. This is the primary entry point for most use cases.
+- **High-level**: `CartogramWorkflow` wraps `morph_geometries()` with GeoDataFrame input/output, automatic area-unit handling, and multi-run state management. `create_flow_cartogram(gdf, column, options=...)` is the one-call entry point built on it and returns the final `Cartogram`.
 
 The two are related as follows: each call to `CartogramWorkflow.morph()` invokes `morph_geometries()` internally and wraps the result in a `Cartogram` stored on the workflow.
 
@@ -55,7 +55,7 @@ Runs one complete morphing pass. The input geometry for the pass is taken from t
 
 Builds a dyadic grid hierarchy with `levels` grids and runs one morphing pass per grid level, from coarsest to finest. Each pass's output geometry is the input to the next. Each pass appends a separate `Cartogram` to `_results`. Execution stops early if the coarser-level result has already converged.
 
-`min_resolution="auto"` and `levels="auto"` choose the ladder from the data (see [Choosing the resolution](flow-cartogram-algorithm.md#choosing-the-resolution)). Before the first pass, the workflow warns when the coarsest grid cannot resolve the smallest target region or when many regions are below one cell at the finest grid.
+`morph()` runs the same ladder when `grid_size` in the options is a `LadderSpec` or `"auto"`. `min_resolution="auto"` and `levels="auto"` choose the ladder from the data (see [Choosing the resolution](flow-cartogram-algorithm.md#choosing-the-resolution)). Before the first pass, the workflow warns when the coarsest grid cannot resolve the smallest target region or when many regions are below one cell at the finest grid.
 
 `prescale_components` is applied only at the first (coarsest) level; subsequent levels disable it automatically to avoid rescaling already-morphed geometry.
 

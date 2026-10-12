@@ -567,15 +567,14 @@ class MosaicLayout(Layout):
 
         # Step 1: Optional flow morphing
         if opts.morph and target_count > 0:
-            from ....flow_cartogram.algorithm import morph_geometries
+            import geopandas as gpd
+
+            from ....flow_cartogram import create_flow_cartogram
             from ....flow_cartogram.options import MorphOptions
 
             morph_opts = opts.morph_options or MorphOptions(n_iter=100, show_progress=show_progress)
-            flow_result = morph_geometries(
-                geometries,
-                values=counts.astype(np.float64),
-                options=morph_opts,
-            )
+            source = gpd.GeoDataFrame({"count": counts.astype(np.float64)}, geometry=list(geometries))
+            flow_result = create_flow_cartogram(source, "count", options=morph_opts)
             best = flow_result.best
             morphed = best.geometry if best is not None else None
             if morphed is None:  # pragma: no cover - morph always stores a snapshot

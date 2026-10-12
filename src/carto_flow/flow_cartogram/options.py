@@ -23,9 +23,12 @@ Examples
 >>> options = MorphOptions(grid_size=256, n_iter=100, mean_tol=0.05)
 """
 
+import warnings
 from dataclasses import dataclass, replace
 from enum import Enum
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Literal, Optional
+
+from .grid import GridSpec, LadderSpec
 
 if TYPE_CHECKING:
     from .anisotropy import VelocityModulator
@@ -112,12 +115,17 @@ class MorphOptions:
 
     Grid specification (in order of precedence):
         1. grid: Pre-constructed Grid object (highest precedence)
-        2. grid_size + grid_margin + grid_square: Construction parameters
+        2. grid_size: an int or ``(nx, ny)`` for one grid, a ``GridSpec`` for one grid with its
+           margin and squareness, or a ``LadderSpec`` (``"auto"`` is ``LadderSpec()``) for a ladder of
+           resolutions that ``create_flow_cartogram`` and ``CartogramWorkflow.morph`` run from
+           coarse to fine
         3. Default: 100x100 grid if nothing specified
 
     Note
     ----
-    When 'grid' is provided, 'grid_size', 'grid_margin', and 'grid_square' are ignored.
+    When 'grid' is provided, 'grid_size' is ignored, and combining 'grid' with a ladder is an error.
+    ``grid_margin`` and ``grid_square`` are deprecated: they apply to an int or tuple ``grid_size``
+    (defaults 0.5 and False); put them in a ``GridSpec`` or ``LadderSpec`` instead.
 
     Validation
     ----------
@@ -129,9 +137,9 @@ class MorphOptions:
 
     # Grid construction parameters
     grid: Optional["Grid"] = None  # For advanced users
-    grid_size: int | tuple[int | None, int | None] | None = 256
-    grid_margin: float = 0.5
-    grid_square: bool = False
+    grid_size: int | tuple[int | None, int | None] | GridSpec | LadderSpec | Literal["auto"] | None = 256
+    grid_margin: float | None = None
+    grid_square: bool | None = None
 
     # Computation options
     dt: float = 0.2
@@ -312,12 +320,29 @@ class MorphOptions:
         if isinstance(self.grid, Grid):
             # Grid object provided - use it, ignore other grid params
             return self.grid
-        elif self.grid_size is not None:
-            # Use grid construction parameters
-            return Grid.from_bounds(bounds, self.grid_size, self.grid_margin, self.grid_square)
-        else:
-            # Default grid
-            return Grid.from_bounds(bounds, size=100)
+        spec = self.grid_spec
+        if isinstance(spec, LadderSpec):
+            raise ValueError(  # noqa: TRY004
+                "grid_size describes a ladder of resolutions; run it with create_flow_cartogram or CartogramWorkflow.morph"
+            )
+        if spec is not None:
+            return Grid.from_bounds(bounds, spec.size, spec.margin, spec.square)
+        # Default grid
+        return Grid.from_bounds(bounds, size=100)
+
+    @property
+    def grid_spec(self) -> "GridSpec | LadderSpec | None":
+        """``grid_size`` as a ``GridSpec`` or ``LadderSpec`` (None when ``grid_size`` is None)."""
+        size = self.grid_size
+        if size is None or isinstance(size, (GridSpec, LadderSpec)):
+            return size
+        if isinstance(size, str):
+            return LadderSpec()
+        return GridSpec(
+            tuple(size) if isinstance(size, list) else size,
+            0.5 if self.grid_margin is None else self.grid_margin,
+            False if self.grid_square is None else self.grid_square,
+        )
 
     def copy_with(self, **kwargs) -> "MorphOptions":
         """Create a copy of this MorphOptions instance with specified options overridden.
@@ -370,6 +395,14 @@ class MorphOptions:
     def __post_init__(self):
         """Validate options after dataclass initialization."""
         self._validate()
+        for name in ("grid_margin", "grid_square"):
+            if getattr(self, name) is not None:
+                warnings.warn(
+                    f"MorphOptions.{name} is deprecated and will be removed in the next major release; "
+                    "pass a GridSpec or LadderSpec as grid_size instead.",
+                    DeprecationWarning,
+                    stacklevel=3,
+                )
         # Mark that validation has been initialized
         super().__setattr__("_validation_initialized", True)
 
@@ -450,10 +483,10 @@ class MorphOptions:
             if value is not None:
                 return self._validate_grid_size(value)
         elif field_name == "grid_margin":
-            if not isinstance(value, (int, float)) or value < 0:
+            if value is not None and (not isinstance(value, (int, float)) or value < 0):
                 return "grid_margin must be a non-negative number"
         elif field_name == "grid_square":
-            if not isinstance(value, bool):
+            if value is not None and not isinstance(value, bool):
                 return "grid_square must be a boolean"
         elif field_name == "density_rasterization":
             if value not in ("center", "exact"):
@@ -562,6 +595,10 @@ class MorphOptions:
         if self.mean_tol > self.max_tol:
             errors.append(f"mean_tol ({self.mean_tol}) must be <= max_tol ({self.max_tol})")
 
+        # A ladder of resolutions cannot be combined with an explicit grid
+        if self.grid is not None and (isinstance(self.grid_size, LadderSpec) or self.grid_size == "auto"):
+            errors.append("grid_size is a ladder of resolutions and cannot be combined with an explicit grid")
+
         # Anisotropy consistency
         if self.anisotropy is not None and (self.Dx != 1.0 or self.Dy != 1.0):
             errors.append("cannot combine anisotropy modulator with Dx/Dy != 1.0")
@@ -570,6 +607,10 @@ class MorphOptions:
 
     def _validate_grid_size(self, grid_size) -> str | None:
         """Validate grid_size parameter format and values."""
+        if isinstance(grid_size, (GridSpec, LadderSpec)):
+            return None
+        if isinstance(grid_size, str):
+            return None if grid_size == "auto" else "grid_size as a string must be 'auto'"
         if isinstance(grid_size, int):
             if grid_size <= 0:
                 return "grid_size as int must be positive"
@@ -578,7 +619,7 @@ class MorphOptions:
                 if size is not None and (not isinstance(size, int) or size <= 0):
                     return f"grid_size[{i}] must be a positive integer or None"
         else:
-            return "grid_size must be a positive integer or tuple of (int, int)"
+            return "grid_size must be a positive integer, a tuple of (int, int), a GridSpec, a LadderSpec or 'auto'"
 
         return None
 
@@ -657,7 +698,7 @@ class MorphOptions:
         Examples
         --------
         >>> options = MorphOptions.preset_fast()
-        >>> result = morph_gdf(gdf, 'population', options=options)
+        >>> result = create_flow_cartogram(gdf, 'population', options=options)
         """
         return cls(
             grid_size=128,
@@ -684,7 +725,7 @@ class MorphOptions:
         Examples
         --------
         >>> options = MorphOptions.preset_balanced()
-        >>> result = morph_gdf(gdf, 'population', options=options)
+        >>> result = create_flow_cartogram(gdf, 'population', options=options)
         """
         return cls(
             grid_size=256,
@@ -712,7 +753,7 @@ class MorphOptions:
         Examples
         --------
         >>> options = MorphOptions.preset_high_quality()
-        >>> result = morph_gdf(gdf, 'population', options=options)
+        >>> result = create_flow_cartogram(gdf, 'population', options=options)
         """
         return cls(
             grid_size=512,

@@ -36,12 +36,12 @@ graph LR
 ### Cartogram with Multi-Category Partitioning
 
 ```python
-from carto_flow.flow_cartogram import morph_gdf, MorphOptions
+from carto_flow.flow_cartogram import create_flow_cartogram, MorphOptions
 from carto_flow.proportional_cartogram import partition_geometries
 from carto_flow.proportional_cartogram.visualization import plot_partitions
 
 # Generate cartogram
-cartogram = morph_gdf(gdf, "total_gdp", options=MorphOptions.preset_balanced())
+cartogram = create_flow_cartogram(gdf, "total_gdp", options=MorphOptions.preset_balanced())
 
 # Partition morphed geometries by sector
 partitioned = partition_geometries(

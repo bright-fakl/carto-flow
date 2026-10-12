@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 from carto_flow import data
-from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, morph_gdf
+from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, create_flow_cartogram
 
 
 @pytest.fixture(scope="module")
@@ -69,6 +69,6 @@ class TestGridIndependence:
 class TestMorphUnchangedForNormalRegions:
     def test_states_converge_in_the_same_iterations(self, states):
         """No state is below the floor, so the run is the one the one-cell floor gave."""
-        result = morph_gdf(states, "Population", options=MorphOptions(show_progress=False))
+        result = create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False))
         assert result.status == MorphStatus.CONVERGED
         assert result.niterations == 112

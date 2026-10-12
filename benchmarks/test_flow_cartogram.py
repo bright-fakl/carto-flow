@@ -6,7 +6,7 @@ Two groups:
 Group A — parallelism & bounding-box filter (fixed iterations)
     All cases run exactly n_iter=100 iterations so wall-time comparisons are clean.
 
-Group B — morph_gdf vs multiresolution_morph (convergence)
+Group B — create_flow_cartogram vs multiresolution_morph (convergence)
     Both run to convergence.  niterations and status are stored in extra_info
     to explain any timing difference.
 
@@ -18,7 +18,7 @@ import gc
 
 import pytest
 
-from carto_flow.flow_cartogram import MorphOptions, morph_gdf
+from carto_flow.flow_cartogram import MorphOptions, create_flow_cartogram
 from carto_flow.flow_cartogram.timings import BenchmarkRuns
 
 
@@ -70,7 +70,7 @@ def test_parallel_options(benchmark, us_states_gdf, overrides, grid_size):
     runs = BenchmarkRuns()
 
     def run():
-        r = morph_gdf(us_states_gdf, "Population", options=options)
+        r = create_flow_cartogram(us_states_gdf, "Population", options=options)
         runs.add(r.benchmark)
         return r
 
@@ -92,7 +92,7 @@ _CONVERGENCE_OPTS = MorphOptions(n_iter=500, grid_size=512, show_progress=False,
 
 def test_morph_gdf_convergence(benchmark, us_states_gdf):
     def run():
-        return morph_gdf(us_states_gdf, "Population", options=_CONVERGENCE_OPTS)
+        return create_flow_cartogram(us_states_gdf, "Population", options=_CONVERGENCE_OPTS)
 
     result = benchmark.pedantic(run, rounds=_ROUNDS, warmup_rounds=_WARMUP_ROUNDS, iterations=1)
     errors = result.get_errors()
@@ -153,7 +153,7 @@ def test_congressional_districts(benchmark, us_congressional_districts_gdf, over
     runs = BenchmarkRuns()
 
     def run():
-        r = morph_gdf(us_congressional_districts_gdf, "Population", options=options)
+        r = create_flow_cartogram(us_congressional_districts_gdf, "Population", options=options)
         runs.add(r.benchmark)
         return r
 
@@ -222,7 +222,7 @@ def test_vertex_scaling(benchmark, vertex_case, overrides):
     runs = BenchmarkRuns()
 
     def run():
-        r = morph_gdf(gdf, "Population", options=options)
+        r = create_flow_cartogram(gdf, "Population", options=options)
         runs.add(r.benchmark)
         return r
 

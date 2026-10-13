@@ -2,6 +2,7 @@
 
 import warnings
 
+import numpy as np
 import pytest
 
 from carto_flow import data
@@ -153,3 +154,44 @@ def test_multiresolution_morph_is_deprecated(states):
     with pytest.warns(DeprecationWarning, match="create_flow_cartogram"):
         cartogram = multiresolution_morph(states, "Population", min_resolution=64, levels=2, options=options)
     assert cartogram.options.grid.sx in (64, 128)
+
+
+def test_n_iter_is_the_total_of_a_ladder(states):
+    rng = np.random.default_rng(0)
+    gdf = states[["geometry"]].copy()
+    gdf["v"] = gdf.area * rng.lognormal(0, 0.2, len(gdf))
+    options = _quiet(grid=LadderSpec(min_resolution=64, levels=3), n_iter=300, mean_tol=0.01, max_tol=0.03)
+    workflow = CartogramWorkflow(gdf, "v", options=options)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        workflow.morph()
+    levels = list(workflow)[1:]
+    assert len(levels) >= 2
+    assert sum(r.niterations for r in levels) <= 300
+    # a later level is given what the earlier levels left
+    assert levels[1].options.n_iter == 300 - levels[0].niterations
+
+
+def test_a_list_of_options_keeps_n_iter_per_level(states):
+    options = [_quiet(n_iter=20, recompute_every=10, mean_tol=1e-4, max_tol=1e-3) for _ in range(2)]
+    workflow = CartogramWorkflow(states, "Population", options=options[0])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        workflow.morph_multiresolution(min_resolution=64, levels=2, options=options)
+    assert [r.options.n_iter for r in list(workflow)[1:]] == [20, 20]
+
+
+def test_remaining_iterations_below_recompute_every_are_allowed(states):
+    options = _quiet(
+        grid=LadderSpec(min_resolution=64, levels=3),
+        n_iter=25,
+        recompute_every=10,
+        mean_tol=1e-4,
+        max_tol=1e-3,
+        stall_patience=None,
+    )
+    workflow = CartogramWorkflow(states, "Population", options=options)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        workflow.morph()
+    assert sum(r.niterations for r in list(workflow)[1:]) == 25

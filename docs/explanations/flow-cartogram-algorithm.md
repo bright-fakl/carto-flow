@@ -187,7 +187,7 @@ A region whose target area is a few grid cells or fewer is not represented by th
 
 The same two conditions apply to a single grid, and the message names the smallest `grid` that satisfies the first. A ladder is checked once, not at each level.
 
-`LadderSpec(min_resolution="auto", levels="auto")`, also written `grid="auto"`, takes the smallest power of two from 64 to 512 at which the smallest target region covers 2.5 cells (512 if none does) as the coarsest resolution and doubles up to a finest grid of 2048. The morph ends at the first level that converges, so on inputs without small regions only the coarsest level runs.
+`LadderSpec(min_resolution="auto", levels="auto")`, also written `grid="auto"`, takes the smallest power of two from 64 to 512 at which the smallest target region covers 2.5 cells (512 if none does) as the coarsest resolution and doubles up to a finest grid of 2048. The morph ends at the first level that converges, so on inputs without small regions only the coarsest level runs. `n_iter` is the total number of iterations of a ladder: a level that ends early (converged or stalled) leaves the rest to the finer levels, and the ladder stops when the total is used up. A list of `MorphOptions` gives each level its own `n_iter`.
 
 ---
 

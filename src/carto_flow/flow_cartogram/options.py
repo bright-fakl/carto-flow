@@ -144,6 +144,8 @@ class MorphOptions:
     # Computation options
     dt: float = 0.2
     n_iter: int = 500
+    """Maximum number of iterations. For a ladder of resolutions (``LadderSpec`` or ``"auto"`` in ``grid``) it is
+    the total over all levels: each level can use what the previous levels left."""
     recompute_every: int | None = 10
     """Maximum number of iterations a computed velocity field is reused; ``recompute_on_rise`` can recompute it earlier
     (None: not recomputed on the clock)."""
@@ -525,17 +527,11 @@ class MorphOptions:
             if not isinstance(value, int) or value <= 0:
                 return "n_iter must be a positive integer"
         elif field_name == "recompute_every":
-            if value is not None:
-                if not isinstance(value, int) or value <= 0:
-                    return "recompute_every must be a positive integer"
-                elif hasattr(self, "n_iter") and value > self.n_iter:
-                    return "recompute_every cannot be greater than n_iter"
+            if value is not None and (not isinstance(value, int) or value <= 0):
+                return "recompute_every must be a positive integer"
         elif field_name == "snapshot_every":
-            if value is not None:
-                if not isinstance(value, int) or value <= 0:
-                    return "snapshot_every must be a positive integer"
-                elif hasattr(self, "n_iter") and value > self.n_iter:
-                    return "snapshot_every cannot be greater than n_iter"
+            if value is not None and (not isinstance(value, int) or value <= 0):
+                return "snapshot_every must be a positive integer"
         elif field_name == "mean_tol":
             if not isinstance(value, (int, float)) or value <= 0 or value > 1.0:
                 return "mean_tol must be > 0 and <= 1.0"

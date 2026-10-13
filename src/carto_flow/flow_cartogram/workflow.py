@@ -328,7 +328,10 @@ class CartogramWorkflow:
         options : MorphOptions, list[MorphOptions], or None
             Options for each level. When a single MorphOptions is provided (or
             None), the same options are used at every level. When a list is
-            provided, each entry maps directly to a level.
+            provided, each entry maps directly to a level. With a single
+            MorphOptions, its ``n_iter`` is the total number of iterations of
+            the ladder, and each level may use what is left; with a list, every
+            level has its own ``n_iter``.
 
         Returns
         -------
@@ -345,7 +348,11 @@ class CartogramWorkflow:
         return self._run_ladder(spec, options)
 
     def _run_ladder(self, spec: LadderSpec, options: MorphOptions | list[MorphOptions] | None) -> Cartogram:
-        """Run the levels of ``spec`` from coarse to fine, one pass each, ending at the first converged level."""
+        """Run the levels of ``spec`` from coarse to fine, one pass each, ending at the first converged level.
+
+        With one ``MorphOptions`` (or None), its ``n_iter`` is the total number of iterations of the ladder: each
+        level may use what is left. With a list, every level has its own ``n_iter``.
+        """
         margin, square = spec.margin, spec.square
         min_resolution, levels = spec.min_resolution, spec.levels
         bounds = self._original_gdf.total_bounds
@@ -375,8 +382,12 @@ class CartogramWorkflow:
                 raise ValueError(f"Options length ({len(options)}) must match levels ({levels})")
             options_list = [copy.deepcopy(opt) for opt in options]
 
+        remaining: int | None = None if isinstance(options, list) else options_list[0].n_iter  # type: ignore[union-attr]
         for level, (grid, level_options) in enumerate(zip(grids, options_list, strict=False)):
-            level_options.grid = None  # type: ignore[union-attr]
+            if remaining is not None:
+                if remaining < 1:
+                    break
+                level_options.n_iter = remaining  # type: ignore[union-attr]
             level_options.grid = grid  # type: ignore[union-attr]
             level_options.progress_message = (  # type: ignore[union-attr]
                 f"{'Refining' if self.is_morphed else 'Morphing'} with {grid.sx}x{grid.sy} grid"
@@ -388,6 +399,8 @@ class CartogramWorkflow:
                 level_options.prescale_components = False  # type: ignore[union-attr]
 
             result = self._morph(level_options, check=False)  # type: ignore[arg-type]
+            if remaining is not None:
+                remaining -= result.niterations
 
             if result.status == MorphStatus.CONVERGED:
                 break

@@ -56,6 +56,9 @@ Releases before 2.0.0 have no changelog entry; see the
   may use what the previous levels left, and the ladder stops when the total is used up;
   before, every level could use `n_iter`. A list of `MorphOptions` in
   `CartogramWorkflow.morph_multiresolution` keeps one `n_iter` per level.
+- **`recompute_every` and `snapshot_every` may be larger than `n_iter`.** The check is removed:
+  an interval longer than the run gives one field computation (one snapshot), and the
+  remaining iterations of a ladder can fall below the interval.
 
 - **`MorphOptions.adaptive_dt`** (new, default `True`, so flow results change) shrinks the step of the flow
   cartogram when the area errors alternate in sign. Near the target a constant step

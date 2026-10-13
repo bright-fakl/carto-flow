@@ -387,8 +387,6 @@ class CartogramWorkflow:
             if remaining is not None:
                 if remaining < 1:
                     break
-                if level_options.recompute_every is not None and level_options.recompute_every > remaining:  # type: ignore[union-attr]
-                    level_options.recompute_every = remaining  # type: ignore[union-attr]
                 level_options.n_iter = remaining  # type: ignore[union-attr]
             level_options.grid = grid  # type: ignore[union-attr]
             level_options.progress_message = (  # type: ignore[union-attr]

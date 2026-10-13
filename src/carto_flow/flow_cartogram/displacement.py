@@ -9,6 +9,10 @@ max_velocity_magnitude
     Single-pass max(sqrt(vx²+vy²)) without temporary array allocation.
 max_abs_velocity
     Single-pass max(|vx|, |vy|) without temporary array allocation.
+field_divergence
+    Divergence of a velocity field on a uniform grid.
+accumulate_log_area_scaling
+    Adds the logarithm of the area scaling of one displacement step to a running sum per point.
 """
 
 from __future__ import annotations
@@ -18,7 +22,9 @@ from numba import njit, prange
 
 # Module-level exports - Public API
 __all__ = [
+    "accumulate_log_area_scaling",
     "displace_coords_numba",
+    "field_divergence",
     "max_abs_velocity",
     "max_velocity_magnitude",
 ]
@@ -169,3 +175,66 @@ def displace_coords_numba(
     if use_parallel:
         return _displace_coords_parallel(coords, x_coords, y_coords, vx, vy, dt, dx, dy)
     return _displace_coords_serial(coords, x_coords, y_coords, vx, vy, dt, dx, dy)
+
+
+@njit(cache=True, fastmath=True)
+def field_divergence(vx: np.ndarray, vy: np.ndarray, dx: float, dy: float) -> np.ndarray:
+    """Divergence of the velocity field (columns are x, rows are y): central differences inside, one-sided at the edges."""
+    ny, nx = vx.shape
+    out = np.empty((ny, nx))
+    inv2dx = 0.5 / dx
+    inv2dy = 0.5 / dy
+    for i in range(ny):
+        for j in range(nx):
+            if j == 0:
+                ddx = (vx[i, 1] - vx[i, 0]) / dx
+            elif j == nx - 1:
+                ddx = (vx[i, nx - 1] - vx[i, nx - 2]) / dx
+            else:
+                ddx = (vx[i, j + 1] - vx[i, j - 1]) * inv2dx
+            if i == 0:
+                ddy = (vy[1, j] - vy[0, j]) / dy
+            elif i == ny - 1:
+                ddy = (vy[ny - 1, j] - vy[ny - 2, j]) / dy
+            else:
+                ddy = (vy[i + 1, j] - vy[i - 1, j]) * inv2dy
+            out[i, j] = ddx + ddy
+    return out
+
+
+@njit(cache=True, fastmath=True)
+def accumulate_log_area_scaling(
+    coords: np.ndarray,
+    x_coords: np.ndarray,
+    y_coords: np.ndarray,
+    div: np.ndarray,
+    dt: float,
+    dx: float,
+    dy: float,
+    acc: np.ndarray,
+) -> None:
+    """Add ``dt * div`` at the position of every point to ``acc`` (in place).
+
+    The area scaling of a flow along a path is the exponential of the integral of the divergence of the
+    velocity field along it. The divergence is sampled with the same bilinear interpolation as the
+    displacement, so ``dt`` is the step ``displace_coords_numba`` takes with the same field.
+    """
+    dx_inv = 1.0 / dx
+    dy_inv = 1.0 / dy
+    x_min = x_coords[0]
+    y_min = y_coords[0]
+    max_ix = div.shape[1] - 2
+    max_iy = div.shape[0] - 2
+    for i in range(coords.shape[0]):
+        x, y = coords[i, 0], coords[i, 1]
+        ix = max(0, min(int((x - x_min) * dx_inv), max_ix))
+        iy = max(0, min(int((y - y_min) * dy_inv), max_iy))
+        tx = (x - x_coords[ix]) * dx_inv
+        ty = (y - y_coords[iy]) * dy_inv
+        d = (
+            (1.0 - tx) * (1.0 - ty) * div[iy, ix]
+            + tx * (1.0 - ty) * div[iy, ix + 1]
+            + (1.0 - tx) * ty * div[iy + 1, ix]
+            + tx * ty * div[iy + 1, ix + 1]
+        )
+        acc[i] += d * dt

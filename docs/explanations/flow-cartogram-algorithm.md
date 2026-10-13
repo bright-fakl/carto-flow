@@ -170,6 +170,12 @@ Scalar error metrics are recorded in `ConvergenceHistory` at every iteration. Fu
 
 Cell centers, edges, and spacings are computed lazily on first access and cached as properties.
 
+### Landmarks
+
+Landmarks (points, lines or polygons given with `landmarks=`) are displaced with the same velocity field as the geometries. The algorithm also sums, for every landmark vertex, the divergence of the field at its position times the step of the iteration; the exponential of the sum is the area scaling of the flow along the path of the landmark, returned as `Cartogram.landmark_area_scaling` (for the returned state). The cost is one bilinear sample per landmark vertex and iteration and the divergence of every new field.
+
+The divergence of the field is constant inside a region, as for a uniform scaling, but lower in a band along its border whose width follows the cell size: the rasterized density there is a blend of the region and its neighbors. Points that are uniform in a region before the morph therefore crowd the border of an expanding region and leave the border of a shrinking one. `Cartogram.get_landmarks(uniform=True)` corrects point landmarks: the density of the landmarks relative to a uniform one follows from the area scaling, and the distance of every landmark to the border of its region is remapped, along the direction to the nearest border point, so that the density is uniform again (`flow_cartogram.landmarks.uniform_landmarks`). The moves are a few percent of the width of the region.
+
 ### Multi-Resolution Grids
 
 `build_multilevel_grids(min_resolution, levels, margin, square)` returns a dyadic hierarchy of `Grid` objects. Each successive level doubles the resolution on the longest axis. The coarsest grid has `min_resolution` points; there are `levels` grids total.

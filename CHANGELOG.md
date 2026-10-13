@@ -11,6 +11,14 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`Cartogram.landmark_area_scaling` and `Cartogram.get_landmarks(uniform=True)`:** the
+  morph sums the divergence of the velocity field along the path of every landmark vertex
+  (one bilinear sample per vertex and iteration), which gives the area scaling of the flow
+  there. The flow scales the area less near the border of a region than inside, so
+  landmarks that are uniform in a region before the morph crowd the border of an expanding
+  region; `uniform=True` remaps the distance of point landmarks to the border of their
+  region so that they are uniform again, with moves of a few percent of the width of the
+  region.
 - **`create_flow_cartogram(gdf, column, *, landmarks, options, displacement_coords, density_per)`
   is the entry point of the flow cartogram, and `MorphOptions.grid` selects the
   resolution.** An int or `(nx, ny)` is one grid; `GridSpec(size, margin, square)` is one

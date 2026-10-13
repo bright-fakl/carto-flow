@@ -36,7 +36,13 @@ from ..geo_utils.geometry import (
 from ..geo_utils.validity import invalid_indices
 from .cartogram import Cartogram
 from .density import DensityModulator, compute_density_field_from_geometries
-from .displacement import displace_coords_numba, max_abs_velocity, max_velocity_magnitude
+from .displacement import (
+    accumulate_log_area_scaling,
+    displace_coords_numba,
+    field_divergence,
+    max_abs_velocity,
+    max_velocity_magnitude,
+)
 from .errors import compute_error_metrics
 from .history import (
     CartogramInternalsSnapshot,
@@ -445,6 +451,10 @@ def morph_geometries(
     # Handle landmarks
     flat_landmarks_geoms = GeometryCoordinates(landmarks) if landmarks is not None else None
 
+    # Logarithm of the area scaling of the flow along the path of every landmark vertex, summed during the morph
+    landmark_log_scaling = np.zeros(len(flat_landmarks_geoms.coords)) if flat_landmarks_geoms is not None else None
+    landmark_div = None
+
     # Handle displacement coordinates
     flat_coords = None
     coords_format = None
@@ -596,6 +606,10 @@ def morph_geometries(
             vx *= vmax_scale
             vy *= vmax_scale
 
+            # 1e. Divergence of the field, for the area scaling of the landmarks
+            if landmark_log_scaling is not None:
+                landmark_div = field_divergence(vx, vy, grid.dx, grid.dy)
+
             # 1f. Cache internal state if requested
             if options.save_internals and internals is not None:
                 snapshot = CartogramInternalsSnapshot(
@@ -630,6 +644,16 @@ def morph_geometries(
 
         # 2b. Displace landmarks if provided (using same velocity field)
         if landmarks is not None and flat_landmarks_geoms is not None:
+            accumulate_log_area_scaling(
+                flat_landmarks_geoms.coords,
+                grid.x_coords,
+                grid.y_coords,
+                landmark_div,
+                dt_prime,
+                grid.dx,
+                grid.dy,
+                landmark_log_scaling,
+            )
             flat_landmarks_geoms.coords = displace_coords_numba(
                 flat_landmarks_geoms.coords,
                 grid.x_coords,
@@ -696,6 +720,7 @@ def morph_geometries(
                 flat_coords.copy() if flat_coords is not None else None,
                 current_areas.copy(),
                 error_metrics,
+                landmark_log_scaling.copy() if landmark_log_scaling is not None else None,
             )
         stalled = stall_monitor.update(step, mean_error / log2_mean_tol, max_error / log2_max_tol)
         n_done = step + 1
@@ -741,11 +766,12 @@ def morph_geometries(
     if status != MorphStatus.CONVERGED and best_state is not None and best_step != n_done - 1:
         if _pt is not None:
             _t0 = _time.perf_counter()
-        b_coords, b_landmarks, b_flat_coords, b_areas, b_errors = best_state
+        b_coords, b_landmarks, b_flat_coords, b_areas, b_errors, b_log_scaling = best_state
         flat_geoms.coords = b_coords
         flat_geoms.invalidate_cache()
         if b_landmarks is not None and flat_landmarks_geoms is not None:
             flat_landmarks_geoms.coords = b_landmarks
+            landmark_log_scaling = b_log_scaling
         if b_flat_coords is not None and flat_coords is not None:
             flat_coords[:] = b_flat_coords
         snapshots.snapshots = [snap for snap in snapshots.snapshots if snap.iteration != best_step + 1]
@@ -794,6 +820,7 @@ def morph_geometries(
         internals=internals,
         benchmark=_pt,
         invalid_regions=invalid_regions,
+        landmark_area_scaling=np.exp(landmark_log_scaling) if landmark_log_scaling is not None else None,
     )
     if _pt is not None:
         _pt.status = str(status)

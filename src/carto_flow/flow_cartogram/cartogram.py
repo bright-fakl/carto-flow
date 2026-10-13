@@ -85,6 +85,11 @@ class Cartogram:
         Indices of the regions whose returned geometry is not a valid polygon (a self-intersecting
         boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
         the vertices of the input, unless ``repair=True``.
+    landmark_area_scaling : np.ndarray or None
+        With landmarks, the area scaling of the flow along the path of every landmark vertex (the exponential
+        of the integral of the divergence of the velocity field along the path), for the returned state: a
+        value above 1 means the neighborhood of the landmark was expanded, below 1 compressed. For point
+        landmarks there is one value per landmark. ``get_landmarks(uniform=True)`` uses it.
 
     Examples
     --------
@@ -108,6 +113,7 @@ class Cartogram:
     internals: Optional["History[CartogramInternalsSnapshot]"] = None
     benchmark: Optional["Benchmark"] = None
     invalid_regions: tuple[int, ...] = ()
+    landmark_area_scaling: Any | None = None
 
     # Source references for GeoDataFrame reconstruction (not shown in repr)
     _source_gdf: Any | None = field(default=None, repr=False)
@@ -232,21 +238,51 @@ class Cartogram:
         snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
         return snapshot.density if snapshot else None
 
-    def get_landmarks(self, iteration: int | None = None) -> Any:
+    def get_landmarks(self, iteration: int | None = None, uniform: bool = False) -> Any:
         """Get landmark geometries for a specific iteration.
 
         Parameters
         ----------
         iteration : int, optional
             Iteration number. If None, returns latest.
+        uniform : bool, default=False
+            Correct point landmarks that were uniform in their region before the morph for the border
+            effect of the flow, so that they are uniform in the morphed region again (see
+            :func:`carto_flow.flow_cartogram.landmarks.uniform_landmarks`). Only for the returned state
+            (``iteration=None``) of a cartogram created with ``create_flow_cartogram`` or
+            ``CartogramWorkflow`` and point landmarks. The moves are small, a few percent of the width of the region.
 
         Returns
         -------
         array-like or None
             Landmark geometries, or None if not available.
         """
+        if uniform and iteration is not None:
+            raise ValueError("uniform=True is available for the returned state only (iteration=None)")
         snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
-        return snapshot.landmarks if snapshot else None
+        if not uniform or snapshot is None or snapshot.landmarks is None:
+            return snapshot.landmarks if snapshot else None
+        if self.landmark_area_scaling is None or self._source_gdf is None or self._source_landmarks_gdf is None:
+            raise ValueError(
+                "uniform=True needs the area scaling of the landmarks and the source data of a cartogram created "
+                "with create_flow_cartogram or CartogramWorkflow"
+            )
+        import shapely
+
+        from .landmarks import uniform_landmarks
+
+        final = np.asarray(snapshot.landmarks, dtype=object)
+        if not np.all(shapely.get_type_id(final) == 0):
+            raise ValueError("uniform=True is available for point landmarks only")
+        original = np.asarray(self._source_landmarks_gdf.geometry.values, dtype=object)
+        xy = uniform_landmarks(
+            np.asarray(self._source_gdf.geometry.values, dtype=object),
+            np.asarray(snapshot.geometry, dtype=object),
+            shapely.get_coordinates(original),
+            shapely.get_coordinates(final),
+            np.asarray(self.landmark_area_scaling),
+        )
+        return shapely.points(xy)
 
     def get_coords(self, iteration: int | None = None) -> Any:
         """Get displaced coordinates for a specific iteration.

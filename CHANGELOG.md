@@ -52,6 +52,11 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`n_iter` is the total number of iterations of a ladder of resolutions.** Each level
+  may use what the previous levels left, and the ladder stops when the total is used up;
+  before, every level could use `n_iter`. A list of `MorphOptions` in
+  `CartogramWorkflow.morph_multiresolution` keeps one `n_iter` per level.
+
 - **`MorphOptions.adaptive_dt`** (new, default `True`, so flow results change) shrinks the step of the flow
   cartogram when the area errors alternate in sign. Near the target a constant step
   overshoots, the areas alternate around their targets with an amplitude proportional

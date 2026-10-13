@@ -144,6 +144,8 @@ class MorphOptions:
     # Computation options
     dt: float = 0.2
     n_iter: int = 500
+    """Maximum number of iterations. For a ladder of resolutions (``LadderSpec`` or ``"auto"`` in ``grid``) it is
+    the total over all levels: each level can use what the previous levels left."""
     recompute_every: int | None = 10
     """Maximum number of iterations a computed velocity field is reused; ``recompute_on_rise`` can recompute it earlier
     (None: not recomputed on the clock)."""

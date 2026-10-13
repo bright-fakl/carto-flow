@@ -98,10 +98,11 @@ def uniform_landmarks(
             continue
         G = G / G[-1] * F[-1]
         keep = np.concatenate([[True], np.diff(F) > 0])
-        new_d = np.interp(np.interp(d[inside], sgrid, G), F[keep], sgrid[keep])
-        line = shapely.shortest_line(pts[inside], poly.boundary)
+        move = inside & (d <= sgrid[-1])  # the deepest 2 % of the area are left where they are
+        new_d = np.interp(np.interp(d[move], sgrid, G), F[keep], sgrid[keep])
+        line = shapely.shortest_line(pts[move], poly.boundary)
         xy = shapely.get_coordinates(line).reshape(-1, 2, 2)
         v = xy[:, 0, :] - xy[:, 1, :]
         u = v / np.maximum(np.linalg.norm(v, axis=1), 1e-300)[:, None]
-        out[sel[inside]] += ((new_d - d[inside]) * sc)[:, None] * u
+        out[sel[move]] += ((new_d - d[move]) * sc)[:, None] * u
     return out

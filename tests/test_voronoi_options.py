@@ -158,3 +158,48 @@ class TestRegularOptions:
             return sum(len(p.exterior.coords) for p in (union.geoms if hasattr(union, "geoms") else [union]))
 
         assert vertices(100_000.0) < 0.5 * vertices(None)
+
+
+class TestPremorphPrescale:
+    """VoronoiOptions.prescale_components reaches the premorph unless the MorphOptions sets it."""
+
+    @staticmethod
+    def _premorph_options(premorph, prescale):
+        import geopandas as gpd
+        from shapely.geometry import box
+
+        gdf = gpd.GeoDataFrame(
+            {"w": [1.0, 2.0, 5.0, 3.0]}, geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1), box(5, 0, 6, 1), box(6, 0, 7, 1)]
+        )
+        result = create_voronoi_cartogram(
+            gdf, weights="w", premorph=premorph, options=VoronoiOptions(n_iter=5, prescale_components=prescale)
+        )
+        return result.premorph.options.prescale_components
+
+    def test_default_options_follow_the_voronoi_option(self):
+        assert self._premorph_options(True, True) is True
+        assert not self._premorph_options(True, False)
+
+    def test_morph_options_without_the_setting_follow_the_voronoi_option(self):
+        from carto_flow.flow_cartogram import MorphOptions
+
+        options = MorphOptions(show_progress=False, grid=64, n_iter=20)
+        assert options.prescale_components is None
+        assert self._premorph_options(options, True) is True
+        assert not self._premorph_options(options, False)
+
+    def test_explicit_setting_of_the_morph_options_is_kept(self):
+        from carto_flow.flow_cartogram import MorphOptions
+
+        assert (
+            self._premorph_options(
+                MorphOptions(show_progress=False, grid=64, n_iter=20, prescale_components=False), True
+            )
+            is False
+        )
+        assert (
+            self._premorph_options(
+                MorphOptions(show_progress=False, grid=64, n_iter=20, prescale_components=True), False
+            )
+            is True
+        )

@@ -101,7 +101,9 @@ class VoronoiOptions:
         touch or share a boundary) and uniformly scale each group to its target
         total area before running relaxation.  Important when disconnected
         components (e.g. Alaska, Hawaii) start at very different sizes relative
-        to their weights.
+        to their weights.  With ``premorph``, the flow-cartogram morph pre-scales its
+        components too, unless the ``MorphOptions`` given as ``premorph`` sets
+        ``prescale_components`` itself.
     fix_topology : int, TopologyRepair, or None
         Periodic topology permutation pipeline.  With ``weights`` it makes the run much slower and can
         move generators away from their weighted positions, so it suits unweighted runs.

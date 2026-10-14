@@ -52,6 +52,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`VoronoiOptions.prescale_components` also pre-scales the `premorph`.** With
+  `premorph=True` the flow-cartogram morph pre-scales its connected components when the
+  Voronoi option is set (on the 52 US regions including Alaska, Hawaii and Puerto Rico
+  the morph converges in 58 instead of 168 iterations); a `MorphOptions` given as
+  `premorph` is used as given when it sets `prescale_components`. To tell an explicit
+  setting from the default, `MorphOptions.prescale_components` is now `None` by default,
+  which behaves as `False`.
 - **`n_iter` is the total number of iterations of a ladder of resolutions.** Each level
   may use what the previous levels left, and the ladder stops when the total is used up;
   before, every level could use `n_iter`. A list of `MorphOptions` in

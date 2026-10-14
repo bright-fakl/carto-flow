@@ -196,7 +196,7 @@ class MorphOptions:
     # Unit scaling options
     area_scale: float = 1.0  # Multiplier for area values (e.g., 1e6 to convert m² to km²)
 
-    prescale_components: bool = False
+    prescale_components: bool | None = None
     """Pre-scale each connected component to its target total area before morphing.
 
     When True, the algorithm detects groups of adjacent geometries (connected
@@ -206,6 +206,10 @@ class MorphOptions:
     archipelagos, separate land masses). By pre-scaling components to their target areas,
     the algorithm can focus on redistributing density within each component rather than
     applying large global transformations that can excessively distort the outer boundary.
+    The landmarks and the displacement coordinates are scaled with the component that contains them.
+
+    None (default) means False, and ``create_voronoi_cartogram(premorph=...)`` then follows
+    ``VoronoiOptions.prescale_components``; an explicit True or False is used as given.
     """
 
     # Output options
@@ -598,8 +602,8 @@ class MorphOptions:
         # Outer-boundary distortion reduction options
         elif field_name == "adaptive_dt" and not isinstance(value, bool):
             return "adaptive_dt must be a boolean"
-        elif field_name == "prescale_components" and not isinstance(value, bool):
-            return "prescale_components must be a boolean"
+        elif field_name == "prescale_components" and value is not None and not isinstance(value, bool):
+            return "prescale_components must be a boolean or None"
 
         return ""  # No errors
 

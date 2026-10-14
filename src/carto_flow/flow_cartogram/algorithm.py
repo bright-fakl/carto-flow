@@ -370,10 +370,18 @@ def morph_geometries(
     error_eps = options.error_floor * float(np.mean(target_areas))
 
     # PRE-SCALING (Feature 1 — remove this block to disable)
+    prescaling = None
     if options.prescale_components:
-        from ..geo_utils.prescale import prescale_connected_components
+        from ..geo_utils.prescale import compute_connected_components, prescale_connected_components, prescale_scalings
 
-        geometries = list(prescale_connected_components(geometries, values_array, unscaled_target_density))
+        _, _components = compute_connected_components(geometries)
+        prescaling = (
+            list(geometries),
+            prescale_scalings(geometries, values_array, unscaled_target_density, components=_components),
+        )
+        geometries = list(
+            prescale_connected_components(geometries, values_array, unscaled_target_density, components=_components)
+        )
 
     # 4. Initialize algorithm state
     flat_geoms = unpack_geometries(geometries)
@@ -444,6 +452,15 @@ def morph_geometries(
         # Detect and normalize input format to (N, 2) array
         coords_format, coords_sz = _detect_coordinate_format(coords)
         flat_coords = _normalize_coordinates(coords, coords_format)
+
+    # The pre-scaling moves the landmarks and the displacement coordinates with the component that contains them
+    if prescaling is not None:
+        from ..geo_utils.prescale import scale_points
+
+        if flat_landmarks_geoms is not None:
+            flat_landmarks_geoms.coords, _ = scale_points(flat_landmarks_geoms.coords, *prescaling)
+        if flat_coords is not None:
+            flat_coords[:], _ = scale_points(flat_coords, *prescaling)
 
     if _pt is not None:
         _pt.n_geometries = len(flat_geoms.metadata)

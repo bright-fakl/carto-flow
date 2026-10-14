@@ -28,6 +28,7 @@ _EDGES = np.array([0.0, 0.01, 0.02, 0.04, 0.06, 0.1, 0.2, 0.4, 0.6])
 # Distances at which the distribution of the distance to the border is tabulated, in the same units
 _SGRID = np.array([0.0, 0.005, 0.01, 0.02, 0.03, 0.045, 0.06, 0.08, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5])
 _PIXEL = 0.0075  # pixel of the raster of a region, in units of sqrt(area)
+_NEAR = 0.03  # below the distance _NEAR the distribution is extrapolated linearly from its value there
 _MAX_PIXELS = 400_000
 
 
@@ -56,7 +57,12 @@ def _distribution(poly: Any) -> np.ndarray | None:
         return None
     # distance of a pixel center to the nearest outside pixel center, less half a pixel
     dist = np.maximum(ndimage.distance_transform_edt(mask)[mask] - 0.5, 0.0) * pixel / sc
-    return np.searchsorted(np.sort(dist), _SGRID, side="right") / dist.size
+    F = np.searchsorted(np.sort(dist), _SGRID, side="right") / dist.size
+    # Within a few pixels of the border the raster is too coarse: the share of the area within a small
+    # distance is proportional to the distance (the perimeter times the distance, to first order).
+    near = _SGRID <= _NEAR
+    F[near] = F[np.searchsorted(_SGRID, _NEAR)] * _SGRID[near] / _NEAR
+    return F
 
 
 def distance_distributions(regions: Any) -> list[np.ndarray | None]:

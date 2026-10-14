@@ -253,6 +253,7 @@ def morph_geometries(
     landmarks=None,
     coords=None,
     options: MorphOptions | None = None,
+    probes=None,
 ) -> Cartogram:
     """
     Core morphing algorithm working with shapely geometries.
@@ -280,6 +281,10 @@ def morph_geometries(
         Format is automatically detected from the coordinate structure.
     options : MorphOptions, optional
         Algorithm options (dt, n_iter, density_smooth, etc.)
+    probes : np.ndarray of shape (m, 2), optional
+        Probe points, carried with the flow like the landmarks, with the area scaling along their paths
+        (``CartogramSnapshot.probe_positions`` and ``probe_area_scaling``). They are passive: they do not
+        change the result.
 
     Returns
     -------
@@ -452,12 +457,7 @@ def morph_geometries(
     flat_landmarks_geoms = GeometryCoordinates(landmarks) if landmarks is not None else None
 
     # Logarithm of the area scaling of the flow along the path of every landmark vertex, summed during the morph
-    # (not defined with prescale_components: the pre-scaling moves the geometries but not the landmarks)
-    landmark_log_scaling = (
-        np.zeros(len(flat_landmarks_geoms.coords))
-        if flat_landmarks_geoms is not None and not options.prescale_components
-        else None
-    )
+    landmark_log_scaling = np.zeros(len(flat_landmarks_geoms.coords)) if flat_landmarks_geoms is not None else None
     landmark_div = None
 
     # Handle displacement coordinates
@@ -469,15 +469,25 @@ def morph_geometries(
         coords_format, coords_sz = _detect_coordinate_format(coords)
         flat_coords = _normalize_coordinates(coords, coords_format)
 
-    # The pre-scaling moves the landmarks, and with prescale_coords the displacement coordinates, with the component that
-    # contains them
+    coords_log_scaling = np.zeros(len(flat_coords)) if flat_coords is not None else None
+    probe_xy = np.array(probes, dtype=float).reshape(-1, 2) if probes is not None else None
+    probe_log_scaling = np.zeros(len(probe_xy)) if probe_xy is not None else None
+
+    # The pre-scaling moves the landmarks, the probes, and with prescale_coords the displacement coordinates, with the
+    # component that contains them; the area scaling of that move is the start of their area scaling. Displacement
+    # coordinates that are not pre-scaled have no area scaling.
     if prescaling is not None:
         from ..geo_utils.prescale import scale_points
 
         if flat_landmarks_geoms is not None:
-            flat_landmarks_geoms.coords, _ = scale_points(flat_landmarks_geoms.coords, *prescaling)
-        if flat_coords is not None and options.prescale_coords:
-            flat_coords[:], _ = scale_points(flat_coords, *prescaling)
+            flat_landmarks_geoms.coords, landmark_log_scaling = scale_points(flat_landmarks_geoms.coords, *prescaling)
+        if probe_xy is not None:
+            probe_xy, probe_log_scaling = scale_points(probe_xy, *prescaling)
+        if flat_coords is not None:
+            if options.prescale_coords:
+                flat_coords[:], coords_log_scaling = scale_points(flat_coords, *prescaling)
+            else:
+                coords_log_scaling = None
 
     if _pt is not None:
         _pt.n_geometries = len(flat_geoms.metadata)
@@ -537,6 +547,9 @@ def morph_geometries(
             errors=errors,
             density=values_array / (areas * options.area_scale),
             landmark_area_scaling=np.exp(landmark_log_scaling) if landmark_log_scaling is not None else None,
+            coords_area_scaling=np.exp(coords_log_scaling) if coords_log_scaling is not None else None,
+            probe_positions=probe_xy.copy() if probe_xy is not None else None,
+            probe_area_scaling=np.exp(probe_log_scaling) if probe_log_scaling is not None else None,
         )
 
     msg = "Morph geometries" if options.progress_message is None else options.progress_message
@@ -613,7 +626,7 @@ def morph_geometries(
             vy *= vmax_scale
 
             # 1e. Divergence of the field, for the area scaling of the landmarks
-            if landmark_log_scaling is not None:
+            if landmark_log_scaling is not None or coords_log_scaling is not None or probe_log_scaling is not None:
                 landmark_div = field_divergence(vx, vy, grid.dx, grid.dy)
 
             # 1f. Cache internal state if requested
@@ -674,8 +687,36 @@ def morph_geometries(
             )
             # no need to invalidate cache, because we do not compute the areas
 
+        # 2b'. Displace the probes
+        if probe_xy is not None:
+            if probe_log_scaling is not None:
+                accumulate_log_area_scaling(
+                    probe_xy,
+                    grid.x_coords,
+                    grid.y_coords,
+                    landmark_div,
+                    dt_prime,
+                    grid.dx,
+                    grid.dy,
+                    probe_log_scaling,
+                )
+            probe_xy = displace_coords_numba(
+                probe_xy, grid.x_coords, grid.y_coords, vx, vy, dt_prime, grid.dx, grid.dy, use_parallel=False
+            )
+
         # 2c. Displace displacement field coordinates
         if flat_coords is not None:
+            if coords_log_scaling is not None:
+                accumulate_log_area_scaling(
+                    flat_coords,
+                    grid.x_coords,
+                    grid.y_coords,
+                    landmark_div,
+                    dt_prime,
+                    grid.dx,
+                    grid.dy,
+                    coords_log_scaling,
+                )
             flat_coords[:] = displace_coords_numba(
                 flat_coords,
                 grid.x_coords,
@@ -728,6 +769,9 @@ def morph_geometries(
                 current_areas.copy(),
                 error_metrics,
                 landmark_log_scaling.copy() if landmark_log_scaling is not None else None,
+                coords_log_scaling.copy() if coords_log_scaling is not None else None,
+                probe_xy.copy() if probe_xy is not None else None,
+                probe_log_scaling.copy() if probe_log_scaling is not None else None,
             )
         stalled = stall_monitor.update(step, mean_error / log2_mean_tol, max_error / log2_max_tol)
         n_done = step + 1
@@ -773,7 +817,17 @@ def morph_geometries(
     if status != MorphStatus.CONVERGED and best_state is not None and best_step != n_done - 1:
         if _pt is not None:
             _t0 = _time.perf_counter()
-        b_coords, b_landmarks, b_flat_coords, b_areas, b_errors, b_log_scaling = best_state
+        (
+            b_coords,
+            b_landmarks,
+            b_flat_coords,
+            b_areas,
+            b_errors,
+            b_log_scaling,
+            b_coords_log_scaling,
+            b_probe_xy,
+            b_probe_log,
+        ) = best_state
         flat_geoms.coords = b_coords
         flat_geoms.invalidate_cache()
         if b_landmarks is not None and flat_landmarks_geoms is not None:
@@ -781,6 +835,10 @@ def morph_geometries(
             landmark_log_scaling = b_log_scaling
         if b_flat_coords is not None and flat_coords is not None:
             flat_coords[:] = b_flat_coords
+            coords_log_scaling = b_coords_log_scaling
+        if b_probe_xy is not None:
+            probe_xy = b_probe_xy
+            probe_log_scaling = b_probe_log
         snapshots.snapshots = [snap for snap in snapshots.snapshots if snap.iteration != best_step + 1]
         snapshots.add_snapshot(_snapshot(best_step + 1, b_errors, b_areas))
         snapshots.snapshots.sort(key=lambda snap: snap.iteration)

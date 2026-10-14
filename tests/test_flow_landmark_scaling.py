@@ -70,7 +70,7 @@ def test_uniform_is_for_point_landmarks_only():
     cartogram = flow.create_flow_cartogram(
         gdf, "v", landmarks=lines, options=flow.MorphOptions(show_progress=False, grid=64)
     )
-    with pytest.raises(ValueError, match="point landmarks"):
+    with pytest.raises(ValueError, match="probe"):
         cartogram.get_landmarks(uniform=True)
 
 
@@ -204,3 +204,117 @@ def test_no_area_scaling_with_prescale_components():
     assert cartogram.landmark_area_scaling is None
     with pytest.raises(ValueError, match="prescale_components"):
         cartogram.get_landmarks(uniform=True)
+
+
+PROBES = 50
+
+
+def _states_with_probes(probes, **kwargs):
+    g = data.load_us_census(population=True, poverty=True)
+    options = flow.MorphOptions(area_scale=1e-6, show_progress=False, snapshot_every=8, landmark_probes=probes)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return flow.create_flow_cartogram(g, "Population", options=options, **kwargs), g
+
+
+@pytest.fixture(scope="module")
+def dots_with_probes():
+    g = data.load_us_census(population=True, poverty=True)
+    col = "Below Poverty Level"
+    dots = prop.generate_dot_density(
+        g, columns=[col], n_dots=round(g[col].max() / 25000), normalization="maximum", seed=0
+    )
+    owner = np.array([list(g.index).index(o) for o in dots["original_index"]])
+    landmarks = gpd.GeoSeries(list(dots.geometry), crs=g.crs)
+    with_probes, _ = _states_with_probes(PROBES, landmarks=landmarks)
+    without, _ = _states_with_probes(0, landmarks=landmarks)
+    return with_probes, without, owner, g
+
+
+def test_probes_are_stored_per_snapshot_and_do_not_change_the_landmarks(dots_with_probes):
+    with_probes, without, _, g = dots_with_probes
+    assert without.best.probe_positions is None
+    snapshots = with_probes.snapshots.snapshots
+    assert len(snapshots) > 5
+    for snapshot in snapshots:
+        assert snapshot.probe_positions.shape == (PROBES * len(g), 2)
+        assert snapshot.probe_area_scaling.shape == (PROBES * len(g),)
+    a = shapely.get_coordinates(np.asarray(with_probes.get_landmarks(), dtype=object))
+    b = shapely.get_coordinates(np.asarray(without.get_landmarks(), dtype=object))
+    np.testing.assert_allclose(a, b, rtol=1e-9)
+
+
+def test_dots_corrected_with_probes_have_no_border_excess(dots_with_probes):
+    cartogram, _, owner, _ = dots_with_probes
+    geoms = list(cartogram.get_geometry())
+    carried = np.asarray(cartogram.get_landmarks(), dtype=object)
+    uniform = np.asarray(cartogram.get_landmarks(uniform=True), dtype=object)
+    assert _band_z(geoms, carried, owner) > 2.5
+    assert _band_z(geoms, uniform, owner) < 1.5
+
+
+def test_uniform_line_landmarks_keep_their_vertices():
+    g = data.load_us_census(population=True)
+    points = g.geometry.representative_point()
+    lines = gpd.GeoSeries(
+        [shapely.LineString([(p.x - 20000, p.y), (p.x, p.y), (p.x + 20000, p.y + 10000)]) for p in points], crs=g.crs
+    )
+    cartogram, _ = _states_with_probes(PROBES, landmarks=lines)
+    carried = cartogram.get_landmarks()
+    uniform = cartogram.get_landmarks(uniform=True)
+    assert all(u.geom_type == "LineString" and len(u.coords) == 3 for u in uniform)
+    moved = np.array([
+        np.linalg.norm(np.array(u.coords) - np.array(c.coords), axis=1).max()
+        for u, c in zip(uniform, carried, strict=False)
+    ])
+    width = np.sqrt(shapely.area(cartogram.get_geometry()))
+    assert np.max(moved / width) < 0.2
+    assert (moved > 0).any()
+
+
+def test_uniform_displacement_coordinates():
+    g = data.load_us_census(population=True)
+    rng = np.random.default_rng(0)
+    b = g.total_bounds
+    coords = np.column_stack([rng.uniform(b[0], b[2], 500), rng.uniform(b[1], b[3], 500)])
+    cartogram, _ = _states_with_probes(PROBES, displacement_coords=coords)
+    carried = np.asarray(cartogram.get_coords())
+    uniform = np.asarray(cartogram.get_coords(uniform=True))
+    assert uniform.shape == carried.shape == (500, 2)
+    width = np.sqrt(np.mean(shapely.area(cartogram.get_geometry())))
+    moved = np.linalg.norm(uniform - carried, axis=1) / width
+    assert np.percentile(moved, 99) < 0.2
+    assert (moved > 0).any()
+    without, _ = _states_with_probes(0, displacement_coords=coords)
+    with pytest.raises(ValueError, match="landmark_probes"):
+        without.get_coords(uniform=True)
+
+
+def test_probes_through_a_ladder():
+    g = data.load_us_census(population=True, poverty=True)
+    dots = prop.generate_dot_density(g, columns=["Below Poverty Level"], n_dots=3, normalization="maximum", seed=1)
+    options = flow.MorphOptions(
+        area_scale=1e-6,
+        show_progress=False,
+        landmark_probes=20,
+        grid=flow.LadderSpec(min_resolution=64, levels=2),
+        mean_tol=0.01,
+        max_tol=0.03,
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cartogram = flow.create_flow_cartogram(
+            g, "Population", landmarks=gpd.GeoSeries(list(dots.geometry), crs=g.crs), options=options
+        )
+    scaling = cartogram.best.probe_area_scaling
+    assert scaling.shape == (20 * len(g),)
+    ratios = shapely.area(cartogram.get_geometry()) / g.area.to_numpy()
+    region = np.repeat(np.arange(len(g)), 20)
+    # the probes of a region scale, on average, with the region
+    mean_log = np.array([np.log(scaling[region == r]).mean() for r in range(len(g))])
+    assert np.corrcoef(mean_log, np.log(ratios))[0, 1] > 0.9
+
+
+def test_landmark_probes_option_is_validated():
+    with pytest.raises(flow.options.MorphOptionsValidationError):
+        flow.MorphOptions(landmark_probes=-1)

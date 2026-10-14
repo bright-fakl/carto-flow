@@ -143,6 +143,10 @@ class CartogramSnapshot(BaseSnapshot):
     landmark_area_scaling : Optional[np.ndarray]
         With landmarks, the area scaling of the flow along the path of every landmark vertex up to this
         iteration (the exponential of the integral of the divergence of the velocity field along the path).
+    probe_positions, probe_area_scaling : Optional[np.ndarray]
+        With ``MorphOptions.landmark_probes``, the positions of the probe points and the area scaling along their paths.
+    coords_area_scaling : Optional[np.ndarray]
+        With displacement coordinates, the area scaling of the flow along the path of every coordinate point.
     """
 
     iteration: int
@@ -152,6 +156,9 @@ class CartogramSnapshot(BaseSnapshot):
     errors: MorphErrors | None = None
     density: np.ndarray | None = None
     landmark_area_scaling: np.ndarray | None = None
+    probe_positions: np.ndarray | None = None
+    probe_area_scaling: np.ndarray | None = None
+    coords_area_scaling: np.ndarray | None = None
 
     def __repr__(self) -> str:
         """Concise string representation for terminal display."""

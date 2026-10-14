@@ -292,10 +292,13 @@ class CartogramWorkflow:
 
         # The area scaling of the landmarks accumulates over the passes
         previous = self._results[-1].landmark_area_scaling
-        if previous is not None:
-            for snapshot in result.snapshots.snapshots:
-                if snapshot.landmark_area_scaling is not None:
-                    snapshot.landmark_area_scaling = previous * snapshot.landmark_area_scaling
+        for snapshot in result.snapshots.snapshots:
+            if snapshot.landmark_area_scaling is None:
+                continue
+            if previous is not None:
+                snapshot.landmark_area_scaling = previous * snapshot.landmark_area_scaling
+            elif self._results[-1].status != MorphStatus.ORIGINAL:
+                snapshot.landmark_area_scaling = None  # an earlier pass had none (pre-scaling)
 
         # Set source references for to_geodataframe()
         result._source_gdf = self._original_gdf

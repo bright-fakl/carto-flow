@@ -272,8 +272,9 @@ class Cartogram:
             return snapshot.landmarks if snapshot else None
         if snapshot.landmark_area_scaling is None or self._source_gdf is None or self._source_landmarks_gdf is None:
             raise ValueError(
-                "uniform=True needs the area scaling of the landmarks and the source data of a cartogram created "
-                "with create_flow_cartogram or CartogramWorkflow"
+                "uniform=True needs the area scaling of the landmarks (not defined with prescale_components, which "
+                "does not move the landmarks) and the source data of a cartogram created with "
+                "create_flow_cartogram or CartogramWorkflow"
             )
         import shapely
 

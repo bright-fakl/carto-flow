@@ -452,7 +452,12 @@ def morph_geometries(
     flat_landmarks_geoms = GeometryCoordinates(landmarks) if landmarks is not None else None
 
     # Logarithm of the area scaling of the flow along the path of every landmark vertex, summed during the morph
-    landmark_log_scaling = np.zeros(len(flat_landmarks_geoms.coords)) if flat_landmarks_geoms is not None else None
+    # (not defined with prescale_components: the pre-scaling moves the geometries but not the landmarks)
+    landmark_log_scaling = (
+        np.zeros(len(flat_landmarks_geoms.coords))
+        if flat_landmarks_geoms is not None and not options.prescale_components
+        else None
+    )
     landmark_div = None
 
     # Handle displacement coordinates
@@ -645,16 +650,17 @@ def morph_geometries(
 
         # 2b. Displace landmarks if provided (using same velocity field)
         if landmarks is not None and flat_landmarks_geoms is not None:
-            accumulate_log_area_scaling(
-                flat_landmarks_geoms.coords,
-                grid.x_coords,
-                grid.y_coords,
-                landmark_div,
-                dt_prime,
-                grid.dx,
-                grid.dy,
-                landmark_log_scaling,
-            )
+            if landmark_log_scaling is not None:
+                accumulate_log_area_scaling(
+                    flat_landmarks_geoms.coords,
+                    grid.x_coords,
+                    grid.y_coords,
+                    landmark_div,
+                    dt_prime,
+                    grid.dx,
+                    grid.dy,
+                    landmark_log_scaling,
+                )
             flat_landmarks_geoms.coords = displace_coords_numba(
                 flat_landmarks_geoms.coords,
                 grid.x_coords,

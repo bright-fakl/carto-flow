@@ -193,3 +193,14 @@ def test_distribution_of_the_distance_to_the_border_of_a_square():
     (F,) = distance_distributions([box(0, 0, 10, 10)])
     exact = 1 - (1 - 2 * _SGRID) ** 2  # the part of a square within s x width of the border
     assert np.max(np.abs(F - exact)) < 0.015
+
+
+def test_no_area_scaling_with_prescale_components():
+    """The pre-scaling moves the geometries but not the landmarks, so the area scaling of the landmarks is not defined."""
+    gdf = gpd.GeoDataFrame({"v": [1.0, 4.0]}, geometry=[box(0, 0, 1, 1), box(3, 0, 4, 1)])
+    centers = gpd.GeoSeries(shapely.points([[0.5, 0.5], [3.5, 0.5]]))
+    options = flow.MorphOptions(show_progress=False, grid=64, prescale_components=True)
+    cartogram = flow.create_flow_cartogram(gdf, "v", landmarks=centers, options=options)
+    assert cartogram.landmark_area_scaling is None
+    with pytest.raises(ValueError, match="prescale_components"):
+        cartogram.get_landmarks(uniform=True)

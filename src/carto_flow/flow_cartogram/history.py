@@ -140,6 +140,9 @@ class CartogramSnapshot(BaseSnapshot):
         Provides consistent access to log_errors, percentage errors, etc.
     density : Optional[np.ndarray]
         Current density values for each geometry (values / current_areas).
+    landmark_area_scaling : Optional[np.ndarray]
+        With landmarks, the area scaling of the flow along the path of every landmark vertex up to this
+        iteration (the exponential of the integral of the divergence of the velocity field along the path).
     """
 
     iteration: int
@@ -148,6 +151,7 @@ class CartogramSnapshot(BaseSnapshot):
     coords: Any | None = None
     errors: MorphErrors | None = None
     density: np.ndarray | None = None
+    landmark_area_scaling: np.ndarray | None = None
 
     def __repr__(self) -> str:
         """Concise string representation for terminal display."""

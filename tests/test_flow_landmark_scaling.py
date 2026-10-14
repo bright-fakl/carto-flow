@@ -49,10 +49,19 @@ def two_squares():
     return _two_squares(64), None
 
 
-def test_uniform_needs_the_returned_state_and_the_source_data(two_squares):
-    cartogram, _ = two_squares
-    with pytest.raises(ValueError, match="returned state"):
-        cartogram.get_landmarks(iteration=1, uniform=True)
+def test_uniform_needs_the_source_data():
+    gdf = gpd.GeoDataFrame({"v": [1.0, 4.0]}, geometry=[box(0, 0, 1, 1), box(1, 0, 2, 1)])
+    centers = shapely.points([[0.5, 0.5], [1.5, 0.5]])
+    from carto_flow.flow_cartogram import morph_geometries
+
+    cartogram = morph_geometries(
+        list(gdf.geometry),
+        gdf["v"].to_numpy(),
+        landmarks=centers,
+        options=flow.MorphOptions(show_progress=False, grid=64),
+    )
+    with pytest.raises(ValueError, match="source data"):
+        cartogram.get_landmarks(uniform=True)
 
 
 def test_uniform_is_for_point_landmarks_only():
@@ -67,6 +76,15 @@ def test_uniform_is_for_point_landmarks_only():
 
 @pytest.fixture(scope="module")
 def states_with_dots():
+    return _states_with_dots(None)
+
+
+@pytest.fixture(scope="module")
+def states_with_frames():
+    return _states_with_dots(4)
+
+
+def _states_with_dots(snapshot_every):
     g = data.load_us_census(population=True, poverty=True)
     col = "Below Poverty Level"
     dots = prop.generate_dot_density(
@@ -79,7 +97,7 @@ def states_with_dots():
             g,
             "Population",
             landmarks=gpd.GeoSeries(list(dots.geometry), crs=g.crs),
-            options=flow.MorphOptions(area_scale=1e-6, show_progress=False),
+            options=flow.MorphOptions(area_scale=1e-6, show_progress=False, snapshot_every=snapshot_every),
         )
     return cartogram, owner
 
@@ -127,3 +145,51 @@ def test_uniform_landmarks_are_reproducible(states_with_dots):
     a = shapely.get_coordinates(np.asarray(cartogram.get_landmarks(uniform=True), dtype=object))
     b = shapely.get_coordinates(np.asarray(cartogram.get_landmarks(uniform=True), dtype=object))
     np.testing.assert_array_equal(a, b)
+
+
+def test_every_snapshot_has_its_area_scaling(states_with_frames):
+    cartogram, _ = states_with_frames
+    snapshots = cartogram.snapshots.snapshots
+    assert len(snapshots) > 10
+    assert all(
+        s.landmark_area_scaling is not None and len(s.landmark_area_scaling) == len(s.landmarks) for s in snapshots
+    )
+    assert np.all(snapshots[-1].landmark_area_scaling == cartogram.landmark_area_scaling)
+    # at the start of the morph the flow has hardly scaled any area
+    assert 0.9 < np.mean(snapshots[0].landmark_area_scaling) < 1.1
+
+
+def test_uniform_landmarks_of_an_intermediate_iteration(states_with_frames):
+    cartogram, owner = states_with_frames
+    middle = cartogram.snapshots.snapshots[len(cartogram.snapshots.snapshots) // 2].iteration
+    carried = np.asarray(cartogram.get_landmarks(iteration=middle), dtype=object)
+    uniform = np.asarray(cartogram.get_landmarks(iteration=middle, uniform=True), dtype=object)
+    geoms = list(cartogram.get_geometry(middle))
+    assert _band_z(geoms, uniform, owner) < _band_z(geoms, carried, owner)
+
+
+def test_uniform_landmarks_change_smoothly_over_the_frames(states_with_frames):
+    """The correction vector of a dot grows from frame to frame without jumps (a sampled distribution made it jitter)."""
+    cartogram, owner = states_with_frames
+    snapshots = cartogram.snapshots.snapshots
+    deltas = []
+    for snapshot in snapshots:
+        carried = shapely.get_coordinates(np.asarray(snapshot.landmarks, dtype=object))
+        uniform = shapely.get_coordinates(
+            np.asarray(cartogram.get_landmarks(iteration=snapshot.iteration, uniform=True), dtype=object)
+        )
+        deltas.append(uniform - carried)
+    deltas = np.array(deltas)
+    width = np.array([np.sqrt(shapely.area(snapshots[-1].geometry[o])) for o in owner])
+    second = np.linalg.norm(deltas[2:] - 2 * deltas[1:-1] + deltas[:-2], axis=2) / width[None, :]
+    assert np.percentile(second, 95) < 0.003
+    # the first frame is hardly corrected
+    assert np.median(np.linalg.norm(deltas[0], axis=1) / width) < 0.002
+
+
+def test_distribution_of_the_distance_to_the_border_of_a_square():
+    from carto_flow.flow_cartogram.landmarks import _SGRID, distance_distributions
+
+    (F,) = distance_distributions([box(0, 0, 10, 10)])
+    exact = 1 - (1 - 2 * _SGRID) ** 2  # the part of a square within s x width of the border
+    assert np.max(np.abs(F - exact)) < 0.015

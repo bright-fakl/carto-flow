@@ -531,6 +531,7 @@ def morph_geometries(
             else None,
             errors=errors,
             density=values_array / (areas * options.area_scale),
+            landmark_area_scaling=np.exp(landmark_log_scaling) if landmark_log_scaling is not None else None,
         )
 
     msg = "Morph geometries" if options.progress_message is None else options.progress_message
@@ -820,7 +821,6 @@ def morph_geometries(
         internals=internals,
         benchmark=_pt,
         invalid_regions=invalid_regions,
-        landmark_area_scaling=np.exp(landmark_log_scaling) if landmark_log_scaling is not None else None,
     )
     if _pt is not None:
         _pt.status = str(status)

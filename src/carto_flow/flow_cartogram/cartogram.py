@@ -86,10 +86,11 @@ class Cartogram:
         boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
         the vertices of the input, unless ``repair=True``.
     landmark_area_scaling : np.ndarray or None
-        With landmarks, the area scaling of the flow along the path of every landmark vertex (the exponential
-        of the integral of the divergence of the velocity field along the path), for the returned state: a
-        value above 1 means the neighborhood of the landmark was expanded, below 1 compressed. For point
-        landmarks there is one value per landmark. ``get_landmarks(uniform=True)`` uses it.
+        Property. With landmarks, the area scaling of the flow along the path of every landmark vertex (the
+        exponential of the integral of the divergence of the velocity field along the path) for the returned
+        state: a value above 1 means the neighborhood of the landmark was expanded, below 1 compressed. For point
+        landmarks there is one value per landmark. Every snapshot has its own (``CartogramSnapshot.landmark_area_scaling``);
+        ``get_landmarks(uniform=True)`` uses them.
 
     Examples
     --------
@@ -113,16 +114,24 @@ class Cartogram:
     internals: Optional["History[CartogramInternalsSnapshot]"] = None
     benchmark: Optional["Benchmark"] = None
     invalid_regions: tuple[int, ...] = ()
-    landmark_area_scaling: Any | None = None
 
     # Source references for GeoDataFrame reconstruction (not shown in repr)
     _source_gdf: Any | None = field(default=None, repr=False)
     _source_landmarks_gdf: Any | None = field(default=None, repr=False)
     _value_column: str | None = field(default=None, repr=False)
+    # Cached for get_landmarks(uniform=True): the region of every landmark, and the distance distributions of the regions
+    _landmark_owner: Any | None = field(default=None, repr=False)
+    _distance_distributions: Any | None = field(default=None, repr=False)
 
     # ========================================================================
     # Convenience Access
     # ========================================================================
+
+    @property
+    def landmark_area_scaling(self) -> np.ndarray | None:
+        """Area scaling of the flow along the path of every landmark vertex, for the returned state (None without landmarks)."""
+        snapshot = self.best
+        return snapshot.landmark_area_scaling if snapshot is not None else None
 
     @property
     def best(self) -> Optional["CartogramSnapshot"]:
@@ -244,12 +253,13 @@ class Cartogram:
         Parameters
         ----------
         iteration : int, optional
-            Iteration number. If None, returns latest.
+            Iteration number. If None, returns the returned state.
         uniform : bool, default=False
             Correct point landmarks that were uniform in their region before the morph for the border
             effect of the flow, so that they are uniform in the morphed region again (see
-            :func:`carto_flow.flow_cartogram.landmarks.uniform_landmarks`). Only for the returned state
-            (``iteration=None``) of a cartogram created with ``create_flow_cartogram`` or
+            :mod:`carto_flow.flow_cartogram.landmarks`). Works for every saved iteration, with the area
+            scaling stored in its snapshot, and changes smoothly from one iteration to the next, so it can be
+            used for the frames of an animation. For a cartogram created with ``create_flow_cartogram`` or
             ``CartogramWorkflow`` and point landmarks. The moves are small, a few percent of the width of the region.
 
         Returns
@@ -257,30 +267,35 @@ class Cartogram:
         array-like or None
             Landmark geometries, or None if not available.
         """
-        if uniform and iteration is not None:
-            raise ValueError("uniform=True is available for the returned state only (iteration=None)")
         snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
         if not uniform or snapshot is None or snapshot.landmarks is None:
             return snapshot.landmarks if snapshot else None
-        if self.landmark_area_scaling is None or self._source_gdf is None or self._source_landmarks_gdf is None:
+        if snapshot.landmark_area_scaling is None or self._source_gdf is None or self._source_landmarks_gdf is None:
             raise ValueError(
                 "uniform=True needs the area scaling of the landmarks and the source data of a cartogram created "
                 "with create_flow_cartogram or CartogramWorkflow"
             )
         import shapely
 
-        from .landmarks import uniform_landmarks
+        from .landmarks import distance_distributions, region_of_points, uniform_landmarks
 
         final = np.asarray(snapshot.landmarks, dtype=object)
         if not np.all(shapely.get_type_id(final) == 0):
             raise ValueError("uniform=True is available for point landmarks only")
-        original = np.asarray(self._source_landmarks_gdf.geometry.values, dtype=object)
+        source_regions = np.asarray(self._source_gdf.geometry.values, dtype=object)
+        if self._landmark_owner is None:
+            original = np.asarray(self._source_landmarks_gdf.geometry.values, dtype=object)
+            self._landmark_owner = region_of_points(source_regions, shapely.get_coordinates(original))
+        if self._distance_distributions is None:
+            self._distance_distributions = distance_distributions(self.best.geometry)  # type: ignore[union-attr]
+        regions = np.asarray(snapshot.geometry, dtype=object)
         xy = uniform_landmarks(
-            np.asarray(self._source_gdf.geometry.values, dtype=object),
-            np.asarray(snapshot.geometry, dtype=object),
-            shapely.get_coordinates(original),
+            regions,
             shapely.get_coordinates(final),
-            np.asarray(self.landmark_area_scaling),
+            np.asarray(snapshot.landmark_area_scaling),
+            self._landmark_owner,
+            shapely.area(regions) / shapely.area(source_regions),
+            self._distance_distributions,
         )
         return shapely.points(xy)
 

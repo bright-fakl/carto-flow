@@ -7,6 +7,10 @@ it. The area scaling of the flow along the path of every landmark (``Cartogram.l
 gives the density of the landmarks relative to a uniform one, and the distance of a landmark to the border of
 its region is remapped so that the density becomes uniform again, along the direction to the nearest border
 point.
+
+The remap needs the distribution of the distance to the border of a uniform sample of the region. It is computed
+deterministically from a distance transform of the polygon and does not depend on a random sample, so the
+correction changes smoothly from one iteration of a morph to the next.
 """
 
 from __future__ import annotations
@@ -15,72 +19,96 @@ from typing import Any
 
 import numpy as np
 import shapely
+from scipy import ndimage
 
-__all__ = ["uniform_landmarks"]
+__all__ = ["distance_distributions", "region_of_points", "uniform_landmarks"]
 
-# Bins of the distance to the border, in units of sqrt(area of the region)
+# Bins of the distance to the border, in units of sqrt(area of the region), for the density ratio of the landmarks
 _EDGES = np.array([0.0, 0.01, 0.02, 0.04, 0.06, 0.1, 0.2, 0.4, 0.6])
+# Distances at which the distribution of the distance to the border is tabulated, in the same units
+_SGRID = np.array([0.0, 0.005, 0.01, 0.02, 0.03, 0.045, 0.06, 0.08, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5])
+_PIXEL = 0.0075  # pixel of the raster of a region, in units of sqrt(area)
+_MAX_PIXELS = 400_000
 
 
-def _uniform_in(poly: Any, n: int, rng: np.random.Generator) -> np.ndarray:
+def region_of_points(regions: Any, points: np.ndarray) -> np.ndarray:
+    """Index of the first region that contains each point, -1 for a point outside all regions."""
+    tree = shapely.STRtree(np.asarray(regions, dtype=object))
+    hit_i, hit_r = tree.query(shapely.points(points), predicate="within")
+    owner = np.full(len(points), -1)
+    owner[hit_i[::-1]] = hit_r[::-1]
+    return owner
+
+
+def _distribution(poly: Any) -> np.ndarray | None:
+    """Share of the area of the polygon within each distance of ``_SGRID`` (x sqrt(area)) of its border."""
+    if poly.is_empty or poly.area <= 0:
+        return None
+    sc = np.sqrt(poly.area)
     minx, miny, maxx, maxy = poly.bounds
-    out = np.empty((0, 2))
-    while len(out) < n:
-        c = np.column_stack([rng.uniform(minx, maxx, 4 * n), rng.uniform(miny, maxy, 4 * n)])
-        out = np.vstack([out, c[shapely.contains_xy(poly, c[:, 0], c[:, 1])]])
-    return out[:n]
+    pixel = max(_PIXEL * sc, np.sqrt(max((maxx - minx) * (maxy - miny), 0.0) / _MAX_PIXELS))
+    nx, ny = int((maxx - minx) / pixel) + 3, int((maxy - miny) / pixel) + 3
+    x = minx - pixel + (np.arange(nx) + 0.5) * pixel
+    y = miny - pixel + (np.arange(ny) + 0.5) * pixel
+    X, Y = np.meshgrid(x, y)
+    mask = shapely.contains_xy(poly, X.ravel(), Y.ravel()).reshape(X.shape)
+    if not mask.any():
+        return None
+    # distance of a pixel center to the nearest outside pixel center, less half a pixel
+    dist = np.maximum(ndimage.distance_transform_edt(mask)[mask] - 0.5, 0.0) * pixel / sc
+    return np.searchsorted(np.sort(dist), _SGRID, side="right") / dist.size
+
+
+def distance_distributions(regions: Any) -> list[np.ndarray | None]:
+    """The distribution of the distance to the border of every region (None for an empty region)."""
+    return [_distribution(shapely.buffer(g, 0)) for g in regions]
 
 
 def uniform_landmarks(
-    original_regions: Any,
     final_regions: Any,
-    original_points: np.ndarray,
-    final_points: np.ndarray,
+    points: np.ndarray,
     area_scaling: np.ndarray,
-    n_ref: int = 400,
-    seed: int = 0,
+    owner: np.ndarray,
+    area_ratio: np.ndarray,
+    distributions: list[np.ndarray | None],
 ) -> np.ndarray:
     """Positions of point landmarks after the remap of their distance to the border of their region.
 
     Parameters
     ----------
-    original_regions, final_regions : array-like of polygons
-        The regions before and after the morph, in the same order.
-    original_points, final_points : np.ndarray, shape (n, 2)
-        The landmarks before the morph and as carried by the flow.
+    final_regions : array-like of polygons
+        The regions at the iteration of the landmarks.
+    points : np.ndarray, shape (n, 2)
+        The landmarks as carried by the flow at that iteration.
     area_scaling : np.ndarray, shape (n,)
-        The area scaling of the flow along the path of every landmark.
-    n_ref : int, default=400
-        Number of uniform sample points per region used for the distribution of the distance to the border.
-    seed : int, default=0
-        Seed of the sample points.
+        The area scaling of the flow along the path of every landmark up to that iteration.
+    owner : np.ndarray, shape (n,)
+        The region of every landmark before the morph (-1: none, the landmark is not moved).
+    area_ratio : np.ndarray, shape (n_regions,)
+        The area of every region at that iteration divided by its area before the morph.
+    distributions : list of np.ndarray
+        The distribution of the distance to the border of every region (``distance_distributions``); it
+        can be computed once and used for every iteration.
 
     Returns
     -------
     np.ndarray, shape (n, 2)
-        The corrected positions. Landmarks outside every original region, outside their morphed region, or in a
-        region with too few landmarks are not moved.
+        The corrected positions. Landmarks outside every original region, outside their morphed region, deeper than
+        the tabulated distances, or in a region with too few landmarks are not moved.
     """
-    rng = np.random.default_rng(seed)
-    original_regions = np.asarray(original_regions, dtype=object)
-    final = [shapely.buffer(g, 0) for g in final_regions]
-    tree = shapely.STRtree(original_regions)
-    pts0 = shapely.points(original_points)
-    hit_i, hit_r = tree.query(pts0, predicate="within")
-    owner = np.full(len(original_points), -1)
-    owner[hit_i[::-1]] = hit_r[::-1]  # the first region that contains the point
-    out = np.array(final_points, dtype=float)
+    out = np.array(points, dtype=float)
     centers = 0.5 * (_EDGES[:-1] + _EDGES[1:])
     for r in np.unique(owner[owner >= 0]):
         sel = np.where(owner == r)[0]
-        poly = final[r]
-        if sel.size < 3 or poly.is_empty or original_regions[r].area <= 0:
+        F = distributions[r]
+        poly = shapely.buffer(final_regions[r], 0)
+        if sel.size < 3 or F is None or poly.is_empty:
             continue
         sc = np.sqrt(poly.area)
         pts = shapely.points(out[sel])
         inside = shapely.contains(poly, pts)
         d = np.where(inside, 1.0, -1.0) * shapely.distance(pts, poly.boundary) / sc
-        c = (poly.area / original_regions[r].area) / area_scaling[sel]  # density relative to uniform
+        c = area_ratio[r] / area_scaling[sel]  # density relative to uniform
         chat = np.full(len(centers), np.nan)
         for b in range(len(centers)):
             m = inside & (d >= _EDGES[b]) & (d < _EDGES[b + 1])
@@ -89,17 +117,16 @@ def uniform_landmarks(
         ok = np.isfinite(chat)
         if ok.sum() < 2:
             continue
-        ref = np.sort(shapely.distance(shapely.points(_uniform_in(poly, n_ref, rng)), poly.boundary) / sc)
-        sgrid = np.linspace(0.0, ref[int(0.98 * n_ref)], 60)
-        F = np.searchsorted(ref, sgrid, side="right") / n_ref
-        cfun = np.interp(sgrid, centers[ok], chat[ok])
+        cfun = np.interp(_SGRID, centers[ok], chat[ok])
         G = np.concatenate([[0.0], np.cumsum(np.diff(F) * 0.5 * (cfun[1:] + cfun[:-1]))])
         if G[-1] <= 0 or F[-1] <= 0:
             continue
         G = G / G[-1] * F[-1]
-        keep = np.concatenate([[True], np.diff(F) > 0])
-        move = inside & (d <= sgrid[-1])  # the deepest 2 % of the area are left where they are
-        new_d = np.interp(np.interp(d[move], sgrid, G), F[keep], sgrid[keep])
+        keep = np.concatenate([[True], np.diff(F) > 1e-9])  # F must be strictly increasing to be inverted
+        move = inside & (d <= _SGRID[-1])  # the deepest part of the region is left where it is
+        if not move.any():
+            continue
+        new_d = np.interp(np.interp(d[move], _SGRID, G), F[keep], _SGRID[keep])
         line = shapely.shortest_line(pts[move], poly.boundary)
         xy = shapely.get_coordinates(line).reshape(-1, 2, 2)
         v = xy[:, 0, :] - xy[:, 1, :]

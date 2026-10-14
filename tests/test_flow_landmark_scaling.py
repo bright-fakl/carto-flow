@@ -195,15 +195,58 @@ def test_distribution_of_the_distance_to_the_border_of_a_square():
     assert np.max(np.abs(F - exact)) < 0.015
 
 
-def test_no_area_scaling_with_prescale_components():
-    """The pre-scaling moves the geometries but not the landmarks, so the area scaling of the landmarks is not defined."""
+def _two_far_squares():
     gdf = gpd.GeoDataFrame({"v": [1.0, 4.0]}, geometry=[box(0, 0, 1, 1), box(3, 0, 4, 1)])
-    centers = gpd.GeoSeries(shapely.points([[0.5, 0.5], [3.5, 0.5]]))
-    options = flow.MorphOptions(show_progress=False, grid=64, prescale_components=True)
-    cartogram = flow.create_flow_cartogram(gdf, "v", landmarks=centers, options=options)
-    assert cartogram.landmark_area_scaling is None
-    with pytest.raises(ValueError, match="prescale_components"):
-        cartogram.get_landmarks(uniform=True)
+    rng = np.random.default_rng(0)
+    points = np.vstack([
+        np.column_stack([rng.uniform(0, 1, 300), rng.uniform(0, 1, 300)]),
+        np.column_stack([rng.uniform(3, 4, 300), rng.uniform(0, 1, 300)]),
+    ])
+    return gdf, points, np.repeat([0, 1], 300)
+
+
+def test_prescale_components_moves_the_landmarks_with_their_component():
+    gdf, points, owner = _two_far_squares()
+    options = flow.MorphOptions(
+        show_progress=False, grid=128, prescale_components=True, mean_tol=0.005, max_tol=0.01, landmark_probes=50
+    )
+    cartogram = flow.create_flow_cartogram(gdf, "v", landmarks=gpd.GeoSeries(shapely.points(points)), options=options)
+    geoms = list(cartogram.get_geometry())
+    carried = shapely.get_coordinates(np.asarray(cartogram.get_landmarks(), dtype=object))
+    for r in (0, 1):
+        assert shapely.contains(geoms[r], shapely.points(carried[owner == r])).mean() > 0.99
+    # the area scaling includes the pre-scaling: it is the area ratio of the region
+    ratios = np.array([g.area for g in geoms]) / gdf.area.to_numpy()
+    scaling = np.asarray(cartogram.landmark_area_scaling)
+    np.testing.assert_allclose([scaling[owner == r].mean() for r in (0, 1)], ratios, rtol=0.05)
+    uniform = shapely.get_coordinates(np.asarray(cartogram.get_landmarks(uniform=True), dtype=object))
+    assert np.linalg.norm(uniform - carried, axis=1).max() < 0.2
+
+
+def test_prescale_components_moves_the_displacement_coordinates_with_their_component():
+    gdf, points, owner = _two_far_squares()
+    options = flow.MorphOptions(show_progress=False, grid=128, prescale_components=True, mean_tol=0.005, max_tol=0.01)
+    cartogram = flow.create_flow_cartogram(gdf, "v", displacement_coords=points, options=options)
+    geoms = list(cartogram.get_geometry())
+    carried = np.asarray(cartogram.get_coords())
+    for r in (0, 1):
+        assert shapely.contains(geoms[r], shapely.points(carried[owner == r])).mean() > 0.99
+
+
+def test_scale_points_scales_like_the_geometries():
+    from carto_flow.geo_utils.prescale import prescale_connected_components, prescale_scalings, scale_points
+
+    geoms = [box(0, 0, 2, 2), box(10, 0, 12, 2)]
+    values = np.array([1.0, 3.0])
+    scalings = prescale_scalings(geoms, values, target_density=0.5)  # target areas 2 and 6
+    scaled = prescale_connected_components(geoms, values, 0.5)
+    points = np.array([[0.0, 0.0], [2.0, 2.0], [10.0, 0.0], [5.0, 5.0]])
+    moved, log_scaling = scale_points(points, geoms, scalings)
+    # the corners of the first square follow the corners of the scaled geometry
+    np.testing.assert_allclose(moved[:2], [scaled[0].bounds[:2], scaled[0].bounds[2:]])
+    np.testing.assert_allclose(moved[2], scaled[1].bounds[:2])
+    np.testing.assert_allclose(moved[3], points[3])  # outside every geometry
+    np.testing.assert_allclose(log_scaling, [np.log(scaled[0].area / 4)] * 2 + [np.log(scaled[1].area / 4), 0.0])
 
 
 PROBES = 50

@@ -316,7 +316,7 @@ class CartogramWorkflow:
                 if before is not None:
                     setattr(snapshot, name, before * current)
                 elif previous.status != MorphStatus.ORIGINAL:
-                    setattr(snapshot, name, None)  # an earlier pass had none (pre-scaling)
+                    setattr(snapshot, name, None)  # an earlier pass had none
 
         # Set source references for to_geodataframe()
         result._source_gdf = self._original_gdf

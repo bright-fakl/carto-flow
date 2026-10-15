@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING, Any, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 
+from .._plot_params import classify_string, deprecated_init_params, deprecated_params
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.colorbar import Colorbar
@@ -61,6 +63,7 @@ __all__ = [
 ]
 
 
+@deprecated_init_params(legend_kwargs="colorbar_kwargs")
 @dataclass
 class DensityPlotOptions:
     """Options for density field rendering in static plots and animations.
@@ -88,7 +91,7 @@ class DensityPlotOptions:
         Override color-scale minimum.
     vmax : float, optional
         Override color-scale maximum.
-    colorbar_kwargs : dict, optional
+    legend_kwargs : dict, optional
         Extra keyword arguments forwarded to ``fig.colorbar()``.
     imshow_kwargs : dict, optional
         Extra keyword arguments forwarded to ``ax.imshow()``.
@@ -101,10 +104,11 @@ class DensityPlotOptions:
     max_scale: float | None = None
     vmin: float | None = None
     vmax: float | None = None
-    colorbar_kwargs: dict = field(default_factory=dict)
+    legend_kwargs: dict = field(default_factory=dict)
     imshow_kwargs: dict = field(default_factory=dict)
 
 
+@deprecated_init_params(legend="colorbar", legend_kwargs="colorbar_kwargs")
 @dataclass
 class VelocityPlotOptions:
     """Options for velocity field rendering in static plots and animations.
@@ -131,13 +135,13 @@ class VelocityPlotOptions:
         Color arrows by ``"magnitude"`` or ``"direction"``. None for solid color.
     cmap : str, optional
         Colormap when ``color_by`` is set.
-    colorbar : bool, default=True
+    legend : bool, default=True
         Whether to show a colorbar when ``color_by`` is set.
     alpha_by_magnitude : bool, default=False
         Vary arrow transparency with velocity magnitude.
     alpha_range : tuple[float, float], default=(0.2, 1.0)
         Min/max alpha when ``alpha_by_magnitude`` is True.
-    colorbar_kwargs : dict, optional
+    legend_kwargs : dict, optional
         Extra keyword arguments forwarded to ``fig.colorbar()``.
     quiver_kwargs : dict, optional
         Extra keyword arguments forwarded to ``ax.quiver()``.
@@ -150,10 +154,10 @@ class VelocityPlotOptions:
     alpha: float = 0.8
     color_by: str | None = None
     cmap: str | None = None
-    colorbar: bool = True
+    legend: bool = True
     alpha_by_magnitude: bool = False
     alpha_range: tuple = (0.2, 1.0)
-    colorbar_kwargs: dict = field(default_factory=dict)
+    legend_kwargs: dict = field(default_factory=dict)
     quiver_kwargs: dict = field(default_factory=dict)
 
 
@@ -529,13 +533,46 @@ def _prepare_velocity_colors(
     return colors, colorbar_label, effective_cmap
 
 
+# Built-in quantities of a cartogram, by their name in the vocabulary and the column that holds them
+_BUILTIN_COLUMNS = {"errors_pct": "_morph_error_pct", "density": "_morph_density"}
+
+
+def _fill_arguments(gdf: Any, facecolor: Any) -> tuple[Any, dict[str, Any]]:
+    """Resolve ``facecolor`` against a GeoDataFrame into the data and the arguments for ``GeoDataFrame.plot``.
+
+    Returns the GeoDataFrame (a copy when a column was added) and ``{"column": name}`` for data or
+    ``{"facecolor": value}`` for a literal or an array of colors. A string is resolved by
+    :func:`carto_flow._plot_params.classify_string`.
+    """
+    if facecolor is None:
+        return gdf, {}
+    if isinstance(facecolor, str):
+        kind = classify_string(facecolor, set(gdf.columns), _BUILTIN_COLUMNS, stacklevel=4)
+        if kind == "column":
+            return gdf, {"column": facecolor}
+        if kind == "builtin":
+            column = _BUILTIN_COLUMNS[facecolor]
+            if column not in gdf.columns:
+                raise ValueError(f"'{facecolor}' is not available for this cartogram (no column '{column}')")
+            return gdf, {"column": column}
+        return gdf, {"facecolor": facecolor}
+    values = np.asarray(facecolor)
+    if values.ndim == 1 and len(values) == len(gdf) and values.dtype.kind in "iufb":
+        gdf = gdf.copy()
+        gdf["_facecolor"] = values
+        return gdf, {"column": "_facecolor"}
+    return gdf, {"facecolor": facecolor}
+
+
+@deprecated_params(facecolor="column", legend_kwargs="legend_kwds")
 def plot_cartogram(
     cartogram: "Cartogram",
     ax: Optional["Axes"] = None,
-    column: str | None = None,
+    facecolor: Any = None,
     iteration: int | None = None,
     cmap: str = "RdYlGn_r",
     legend: bool = True,
+    legend_kwargs: dict | None = None,
     **kwargs: Any,
 ) -> "CartogramPlotResult":
     """Plot morphed geometries from a Cartogram.
@@ -546,18 +583,21 @@ def plot_cartogram(
         Cartogram containing morphed geometries to plot.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, creates new figure.
-    column : str, optional
-        Column to use for coloring geometries. Special values:
-        - '_morph_error_pct': Percentage errors (default if available)
-        - '_morph_density': Density values
-        - Any column from source GeoDataFrame
-        If None, uses '_morph_error_pct' if available, otherwise no coloring.
+    facecolor : str or array-like, optional
+        Fill of the geometries. A column of the source GeoDataFrame, the built-in
+        quantity ``"errors_pct"`` (percentage errors, the default if available) or
+        ``"density"``, a numeric array with one value per geometry (all color the
+        geometries by value), or a color (a string or an array of colors, drawn as is).
+        A string that is a column and also a built-in quantity or a color is read as the
+        column, then as the built-in quantity, and a warning is issued.
     iteration : int, optional
         Which iteration snapshot to plot (default: latest).
     cmap : str, default='RdYlGn_r'
-        Matplotlib colormap name.
+        Matplotlib colormap name, used when the fill is data.
     legend : bool, default=True
-        Show colorbar legend when plotting by column.
+        Show colorbar legend when plotting by data.
+    legend_kwargs : dict, optional
+        Keyword arguments of the legend of the fill (passed to ``GeoDataFrame.plot`` as ``legend_kwds``).
     **kwargs
         Additional arguments passed to GeoDataFrame.plot()
 
@@ -577,25 +617,20 @@ def plot_cartogram(
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(10, 7))
 
-    # Determine which columns to include based on requested column
-    include_errors = column == "_morph_error_pct" or column is None
-    include_density = column == "_morph_density"
+    gdf = cartogram.to_geodataframe(iteration=iteration, include_errors=True, include_density=True)
 
-    gdf = cartogram.to_geodataframe(
-        iteration=iteration,
-        include_errors=include_errors,
-        include_density=include_density,
-    )
+    # Default to the error column if no fill is given and errors are available
+    if facecolor is None and "_morph_error_pct" in gdf.columns:
+        facecolor = "errors_pct"
 
-    # Default to error column if no column specified and errors are available
-    if column is None and "_morph_error_pct" in gdf.columns:
-        column = "_morph_error_pct"
+    gdf, fill = _fill_arguments(gdf, facecolor)
 
     before = len(ax.collections)
-    if column is not None and column in gdf.columns:
-        gdf.plot(ax=ax, column=column, cmap=cmap, legend=legend, **kwargs)
+    if "column" in fill:
+        legend_kw = {"legend_kwds": legend_kwargs} if legend_kwargs else {}
+        gdf.plot(ax=ax, cmap=cmap, legend=legend, **fill, **legend_kw, **kwargs)
     else:
-        gdf.plot(ax=ax, **kwargs)
+        gdf.plot(ax=ax, **fill, **kwargs)
     collections = list(ax.collections[before:])
 
     ax.set_aspect("equal")
@@ -605,10 +640,11 @@ def plot_cartogram(
     return CartogramPlotResult(ax=ax, collections=collections)
 
 
+@deprecated_params(facecolor="column")
 def plot_comparison(
     left: Any,
     right: "Cartogram",
-    column: str | None = None,
+    facecolor: Any = None,
     iteration: int | None = None,
     left_iteration: int | None = None,
     figsize: tuple[float, float] = (14, 6),
@@ -626,8 +662,9 @@ def plot_comparison(
         Left panel: original GeoDataFrame or a Cartogram to compare.
     right : Cartogram
         Right panel: Cartogram containing transformed geometries.
-    column : str, optional
-        Column to use for coloring geometries.
+    facecolor : str or array-like, optional
+        Fill of the geometries in both panels, resolved as in :func:`plot_cartogram`.
+        A column that only the right panel has is drawn there only.
     iteration : int, optional
         Which iteration snapshot to plot for `right` (default: latest).
     left_iteration : int, optional
@@ -650,7 +687,7 @@ def plot_comparison(
     >>> cartogram = create_flow_cartogram(gdf, 'population')
     >>> # Compare original GeoDataFrame with cartogram result
     >>> plot_comparison(gdf, cartogram)
-    >>> plot_comparison(gdf, cartogram, column='population')
+    >>> plot_comparison(gdf, cartogram, facecolor='population')
     >>> # Compare two cartograms (e.g., different parameters)
     >>> cartogram_fast = create_flow_cartogram(gdf, 'population', options=MorphOptions.preset_fast())
     >>> cartogram_quality = create_flow_cartogram(gdf, 'population', options=MorphOptions.preset_quality())
@@ -674,24 +711,33 @@ def plot_comparison(
         left_gdf = left
         left_title = "Original"
 
+    right_gdf = right.to_geodataframe(iteration=iteration, include_errors=True, include_density=True)
+    right_gdf, right_fill = _fill_arguments(right_gdf, facecolor)
+    left_fill: dict[str, Any] = {}
+    if (
+        hasattr(left_gdf, "plot")
+        and facecolor is not None
+        and ("column" not in right_fill or right_fill["column"] in left_gdf.columns)
+    ):
+        left_gdf, left_fill = _fill_arguments(left_gdf, facecolor)
+
     before_left = len(ax1.collections)
     if hasattr(left_gdf, "plot"):
-        if column and column in left_gdf.columns:
-            left_gdf.plot(ax=ax1, column=column, legend=True, **kwargs)
+        if "column" in left_fill:
+            left_gdf.plot(ax=ax1, legend=True, **left_fill, **kwargs)
         else:
-            left_gdf.plot(ax=ax1, **kwargs)
+            left_gdf.plot(ax=ax1, **left_fill, **kwargs)
     left_collections = list(ax1.collections[before_left:])
     ax1.set_aspect("equal")
     ax1.set_title(left_title)
 
     # Plot right panel (always a Cartogram)
-    right_gdf = right.to_geodataframe(iteration=iteration)
     before_right = len(ax2.collections)
     if hasattr(right_gdf, "plot"):
-        if column and column in right_gdf.columns:
-            right_gdf.plot(ax=ax2, column=column, legend=True, **kwargs)
+        if "column" in right_fill:
+            right_gdf.plot(ax=ax2, legend=True, **right_fill, **kwargs)
         else:
-            right_gdf.plot(ax=ax2, **kwargs)
+            right_gdf.plot(ax=ax2, **right_fill, **kwargs)
     right_collections = list(ax2.collections[before_right:])
     ax2.set_aspect("equal")
     status_str = right.status.value if hasattr(right.status, "value") else str(right.status)
@@ -952,7 +998,7 @@ def plot_density_field(
         - ``max_scale``: Fixed symmetric color scale maximum.
         - ``cmap``: Override colormap.
         - ``vmin``/``vmax``: Override color-scale limits.
-        - ``colorbar_kwargs``: Passed to ``plt.colorbar()``.
+        - ``legend_kwargs``: Passed to ``plt.colorbar()``.
         - ``imshow_kwargs``: Passed to ``ax.imshow()``.
 
     Returns
@@ -1022,7 +1068,7 @@ def plot_density_field(
         geometry_mask=geometry_mask,
     )
 
-    cbar_kw = {"label": colorbar_label, **opts.colorbar_kwargs}
+    cbar_kw = {"label": colorbar_label, **opts.legend_kwargs}
     cbar = plt.colorbar(im, ax=ax, **cbar_kw)
 
     # Apply custom tick formatter for ratio mode (colorbar shows ratio, not log2)
@@ -1095,10 +1141,10 @@ def plot_velocity_field(
         - ``color`` / ``alpha``: Base arrow color and transparency.
         - ``color_by``: None, ``"magnitude"``, or ``"direction"``.
         - ``cmap``: Colormap when ``color_by`` is set.
-        - ``colorbar``: Whether to show a colorbar (default True).
+        - ``legend``: Whether to show a colorbar (default True).
         - ``alpha_by_magnitude``: Vary alpha with velocity magnitude.
         - ``alpha_range``: Min/max alpha for magnitude-based transparency.
-        - ``colorbar_kwargs``: Passed to ``plt.colorbar()``.
+        - ``legend_kwargs``: Passed to ``plt.colorbar()``.
         - ``quiver_kwargs``: Passed to ``ax.quiver()``.
 
     Returns
@@ -1190,7 +1236,7 @@ def plot_velocity_field(
     quiver_art = ax.quiver(X_sub, Y_sub, vx_sub, vy_sub, color=colors, **quiver_kw)
 
     colorbar_art: Colorbar | None = None
-    if opts.colorbar and opts.color_by is not None:
+    if opts.legend and opts.color_by is not None:
         import matplotlib.cm as cm
         from matplotlib.colors import Normalize
 
@@ -1202,7 +1248,7 @@ def plot_velocity_field(
         cmap_obj = plt.get_cmap(effective_cmap)
         sm = cm.ScalarMappable(cmap=cmap_obj, norm=norm)
         sm.set_array([])
-        cbar_kw = {"label": colorbar_label, **opts.colorbar_kwargs}
+        cbar_kw = {"label": colorbar_label, **opts.legend_kwargs}
         colorbar_art = plt.colorbar(sm, ax=ax, **cbar_kw)
 
     ax.set_aspect("equal")

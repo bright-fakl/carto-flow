@@ -35,5 +35,5 @@ anim = animate_velocity_field(
     fps=15,
     show_axes=False,
     figsize=(8, 5),
-    velocity=flow.VelocityPlotOptions(colorbar_kwargs={"shrink": 0.7}, color_by="direction", velocity_scale=3),
+    velocity=flow.VelocityPlotOptions(legend_kwargs={"shrink": 0.7}, color_by="direction", velocity_scale=3),
 )

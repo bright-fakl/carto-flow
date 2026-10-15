@@ -65,6 +65,15 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`facecolor` is the fill of the flow plot and animate functions.** It takes a column
+  of the data, a built-in quantity (`"errors_pct"`, `"density"`, and in the animations
+  `"original"`), a numeric array with one value per geometry, a list of arrays for the
+  animations of keyframes, or a color (`"red"`, `"#d4e6f1"`), which gives a constant
+  fill. A string that is a column and also a built-in quantity or a color is read as
+  the column, then as the built-in quantity, and a `UserWarning` is issued. A string
+  that is none of these raises `ValueError`: `Cartogram.plot(column="typo")` used to draw
+  an uncolored map without a message. The built-in quantities have the same names in the
+  static and animated plots (`"errors_pct"` is the column `_morph_error_pct`).
 - **`VoronoiOptions.prescale_components` also pre-scales the `premorph`.** With
   `premorph=True` the flow-cartogram morph pre-scales its connected components when the
   Voronoi option is set (on the 52 US regions including Alaska, Hawaii and Puerto Rico
@@ -145,6 +154,20 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Deprecated
 
+- **Old parameter names of the flow plot, animate and preview functions.** Each
+  concept now has one name, shared by all plot functions (the symbol, Voronoi and
+  proportional functions follow in later releases). The old names still work and
+  warn, and will be removed in the next major release:
+
+  | function | old name | new name |
+  |---|---|---|
+  | `Cartogram.plot`, `plot_cartogram`, `plot_comparison` | `column` | `facecolor` |
+  | `animate_morph_history`, `animate_workflow` | `color_by` | `facecolor` |
+  | `animate_geometry_keyframes` | `column`, `color_values` | `facecolor` |
+  | `animate_morph_history`, `animate_geometry_keyframes`, `animate_workflow` | `colorbar`, `colorbar_label`, `colorbar_kwargs` | `legend`, `legend_label`, `legend_kwargs` |
+  | `Cartogram.plot`, `plot_cartogram` | `legend_kwds` | `legend_kwargs` |
+  | both `preview_modulator` functions | `show_colorbar`, `colorbar_kwargs`, `diff_colorbar_kwargs`, `heatmap_colorbar_kwargs` | `legend`, `legend_kwargs`, `diff_legend_kwargs`, `heatmap_legend_kwargs` |
+  | `DensityPlotOptions`, `VelocityPlotOptions` | `colorbar`, `colorbar_kwargs` | `legend`, `legend_kwargs` |
 - **Voronoi tuning settings become internal.** A non-default value of
   `RasterBackend.relaxation`, `area_equalizer_rate`, `weight_ramp_iters`,
   `output_resolution` and `cell_smoothing_px`, `ExactBackend.relaxation`,

@@ -151,7 +151,7 @@ cartogram.to_geodataframe(
 Returns a GeoDataFrame with the morphed geometry replacing the original, plus optional columns `mean_error_pct`, `max_error_pct`, and per-geometry `error_pct` and `density`.
 
 ```python
-cartogram.plot(column=None, iteration=None, cmap='RdYlGn_r', legend=True, ax=None)
+cartogram.plot(facecolor=None, iteration=None, cmap='RdYlGn_r', legend=True, ax=None)
 ```
 
 Delegates to `visualization.plot_cartogram()` and returns a `CartogramPlotResult` containing the matplotlib axes and named artist references.

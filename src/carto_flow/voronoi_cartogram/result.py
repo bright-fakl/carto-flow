@@ -134,6 +134,7 @@ class TopologyAnalysis:
         ax: Any | None = None,
         figsize: tuple[float, float] = (10, 8),
         title: str = "Topology Analysis",
+        style: Any = None,
     ) -> VoronoiPlotResult:
         """Plot topology issues overlaid on the Voronoi cells.
 
@@ -160,6 +161,8 @@ class TopologyAnalysis:
             Figure size when ``ax`` is ``None``.
         title : str
             Axis title.
+        style : PlotStyle or str, optional
+            Style of the plot (default: the style of the block or session, else ``"default"``).
 
         Returns
         -------
@@ -178,6 +181,7 @@ class TopologyAnalysis:
             ax=ax,
             figsize=figsize,
             title=title,
+            style=style,
         )
 
 
@@ -298,6 +302,7 @@ class TopologyRepairReport:
         axes: Any | None = None,
         figsize: tuple[float, float] = (16, 8),
         title: str | None = None,
+        style: Any = None,
     ) -> VoronoiPlotResult:
         """Plot a before/after comparison of the topology repair.
 
@@ -323,6 +328,8 @@ class TopologyRepairReport:
         title : str or None
             Figure suptitle.  Defaults to
             ``"Topology Repair — {stages_run}"``.
+        style : PlotStyle or str, optional
+            Style of the plot (default: the style of the block or session, else ``\"default\"``).
 
         Returns
         -------
@@ -345,6 +352,7 @@ class TopologyRepairReport:
             axes=axes,
             figsize=figsize,
             title=title,
+            style=style,
         )
 
 
@@ -874,17 +882,23 @@ class VoronoiCartogram:
             result["area_error_pct"] = self.area_errors
         return result
 
-    @deprecated_params(facecolor="column")
+    @deprecated_params(facecolor="column", legend_kwargs="legend_kwds")
     def plot(
         self,
         facecolor: Any = None,
-        cmap: str | None = None,
+        cmap: Any = None,
         show_edges: bool = True,
         legend: bool = False,
         labels: bool | str | list[str] | None = None,
-        label_fontsize: int = 8,
-        label_color: str = "black",
+        label_fontsize: float | None = None,
+        label_color: str | None = None,
         ax: Any | None = None,
+        legend_kwargs: dict | None = None,
+        legend_label: str | None = None,
+        norm: Any = None,
+        center: float | None = None,
+        categorical: bool | None = None,
+        style: Any = None,
         **kwargs: Any,
     ) -> VoronoiPlotResult:
         """Plot Voronoi cells.
@@ -910,12 +924,24 @@ class VoronoiCartogram:
             Annotate each cell with a text label.  ``True`` = index values;
             ``str`` = column name; ``list[str]`` = explicit strings; ``None``
             = no labels (default).
-        label_fontsize : int
-            Font size for cell labels.  Default ``8``.
-        label_color : str
-            Text color for cell labels.  Default ``"black"``.
+        label_fontsize : float, optional
+            Font size for cell labels.  Defaults to the annotation size of the style, else ``8``.
+        label_color : str, optional
+            Text color for cell labels.  Defaults to the text color of the style, else black.
         ax : matplotlib Axes or None
             Axes to draw on.  A new figure is created if ``None``.
+        legend_kwargs : dict, optional
+            Keyword arguments of the legend or colorbar.
+        legend_label : str, optional
+            Label of the colorbar. Defaults to the name of the data.
+        norm : Normalize, {"linear", "log", "auto"}, optional
+            Normalization of continuous data: an instance, or the scale of the style's normalization.
+        center : float, optional
+            Treat the data as diverging around this value.
+        categorical : bool, optional
+            Force (True) or prevent (False) the categorical treatment of the data.
+        style : PlotStyle or str, optional
+            Style of the plot (default: the style of the block or session, else ``"default"``).
         **kwargs
             Passed to ``GeoDataFrame.plot()``.
 
@@ -947,6 +973,12 @@ class VoronoiCartogram:
             label_fontsize=label_fontsize,
             label_color=label_color,
             ax=ax,
+            legend_kwargs=legend_kwargs,
+            legend_label=legend_label,
+            norm=norm,
+            center=center,
+            categorical=categorical,
+            style=style,
             **kwargs,
         )
 
@@ -975,6 +1007,7 @@ class VoronoiCartogram:
         ax: Any | None = None,
         figsize: tuple[float, float] = (10, 8),
         title: str = "Voronoi cartogram — centroid redistribution",
+        style: Any = None,
     ) -> VoronoiPlotResult:
         """Plot centroids and displacement arrows on a single axis.
 
@@ -1043,6 +1076,8 @@ class VoronoiCartogram:
             Figure size used when ``ax`` is ``None``.
         title : str
             Axis title.
+        style : PlotStyle or str, optional
+            Style of the plot (default: the style of the block or session, else ``"default"``).
 
         Returns
         -------
@@ -1075,4 +1110,5 @@ class VoronoiCartogram:
             ax=ax,
             figsize=figsize,
             title=title,
+            style=style,
         )

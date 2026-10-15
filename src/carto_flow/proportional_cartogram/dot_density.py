@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from .._plot_params import deprecated_palette, deprecated_params
+from ..style import resolve_style, styled
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -311,6 +312,7 @@ def generate_dot_density(
     reference_linewidth="base_linewidth",
     reference_alpha="base_alpha",
 )
+@styled
 def plot_dot_density(
     gdf: gpd.GeoDataFrame,
     dots_gdf: gpd.GeoDataFrame | None = None,
@@ -321,15 +323,15 @@ def plot_dot_density(
     invert: bool = False,
     seed: int | None = None,
     # Dot styling
-    cmap: str | dict[str, str] | None = None,
+    cmap: Any = None,
     markersize: float = 4,
     alpha: float | Sequence[float] = 0.7,
     marker: str | Sequence[str] = "o",
     # Base geometry styling
-    reference_facecolor: str = "#e0e0e0",
-    reference_edgecolor: str = "white",
-    reference_linewidth: float = 0.5,
-    reference_alpha: float = 1.0,
+    reference_facecolor: str | None = None,
+    reference_edgecolor: str | None = None,
+    reference_linewidth: float | None = None,
+    reference_alpha: float | None = None,
     # General
     ax: Axes | None = None,
     legend: bool = True,
@@ -361,10 +363,9 @@ def plot_dot_density(
         Passed to :func:`generate_dot_density` when ``dots_gdf`` is None.
     seed : int, optional
         Passed to :func:`generate_dot_density` when ``dots_gdf`` is None.
-    cmap : str or dict[str, str], optional
-        Colormap name for categorical colors, defaults to ``'tab10'``. A dict
-        maps category names to colors; categories that are not in the dict take
-        the colors of the colormap.
+    cmap : str, Colormap or dict[str, str], optional
+        Colormap of the categorical colors. Defaults to the categorical colors of the style, else ``'tab10'``. A dict
+        maps category names to colors; categories that are not in the dict take the colors of the colormap.
     markersize : float, default=4
         Marker size in points.
     alpha : float or Sequence[float], default=0.7
@@ -377,14 +378,15 @@ def plot_dot_density(
         A sequence sets the marker per category (same ordering and length
         rules as ``alpha``). Any marker accepted by ``ax.scatter()`` works,
         e.g. ``'o'``, ``'s'``, ``'^'``, ``'*'``.
-    reference_facecolor : str, default='#e0e0e0'
-        Fill color for the background (reference) geometries.
-    reference_edgecolor : str, default='white'
-        Edge color for background geometries.
-    reference_linewidth : float, default=0.5
-        Edge line width for background geometries.
-    reference_alpha : float, default=1.0
-        Transparency for background geometries.
+    reference_facecolor : str, optional
+        Fill color for the background (reference) geometries. Defaults to the reference fill of the style, else
+        ``'#e0e0e0'``.
+    reference_edgecolor : str, optional
+        Edge color for background geometries. Defaults to the reference edge color of the style, else ``'white'``.
+    reference_linewidth : float, optional
+        Edge line width for background geometries. Defaults to the reference line width of the style, else 0.5.
+    reference_alpha : float, optional
+        Transparency for background geometries. Defaults to the reference alpha of the style, else 1.0.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, a new figure is created.
     legend : bool, default=True
@@ -424,9 +426,18 @@ def plot_dot_density(
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(10, 8))
 
+    st = resolve_style()
+    reference_facecolor = reference_facecolor or st.reference_facecolor or "#e0e0e0"
+    reference_edgecolor = reference_edgecolor or st.reference_edgecolor or "white"
+    if reference_linewidth is None:
+        reference_linewidth = st.reference_linewidth if st.reference_linewidth is not None else 0.5
+    if reference_alpha is None:
+        reference_alpha = st.reference_alpha if st.reference_alpha is not None else 1.0
+
     palette: dict[str, str] | None = None
     if isinstance(cmap, dict):
         palette, cmap = cmap, None
+    cmap_given = cmap is not None
 
     # Generate dots if not provided
     if dots_gdf is None:
@@ -469,10 +480,13 @@ def plot_dot_density(
     if cmap is None:
         cmap = "tab10"
     colormap = plt.get_cmap(cmap)
+    style_colors = st.categorical_colors(categories) if not cmap_given else None
     category_colors: dict[str, str] = {}
     for i, cat in enumerate(categories):
         if palette and cat in palette:
             category_colors[cat] = palette[cat]
+        elif style_colors is not None:
+            category_colors[cat] = style_colors[i]
         else:
             category_colors[cat] = mcolors.to_hex(
                 colormap(i % colormap.N if hasattr(colormap, "N") else i / max(len(categories) - 1, 1))

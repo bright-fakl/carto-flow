@@ -34,7 +34,9 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
+from .._fill import Fill, plot_fill
 from .._plot_params import deprecated_params, resolve_fill
+from ..style import resolve_style, styled
 
 if TYPE_CHECKING:
     import geopandas as gpd
@@ -75,18 +77,56 @@ def _resolve_fill(facecolor: Any, result: VoronoiCartogram, stacklevel: int = 4)
     return ("array" if kind == "values" else kind), value
 
 
-@deprecated_params(facecolor="column")
+def _fill_of(
+    gdf: Any,
+    kind: str,
+    value: Any,
+    area_errors: Any,
+    column_values: Any,
+    categorical: bool | None,
+    center: float | None,
+) -> tuple[Any, Fill, str, bool]:
+    """The cells (a copy with the data column added), their ``Fill``, the default colormap and whether the fill is
+    categorical, for a fill resolved by :func:`_resolve_fill`."""
+    import pandas as pd
+
+    gdf = gdf.copy()
+    if kind == "categorical":
+        gdf["_idx"] = np.arange(len(gdf))
+        return gdf, Fill({"column": "_idx"}, "categorical", "_idx"), "tab20", True
+    if kind == "color":
+        return gdf, Fill({"facecolor": value}), "viridis", False
+    if kind == "builtin":
+        gdf["area_error_pct"] = area_errors
+        return gdf, Fill({"column": "area_error_pct"}, "diverging", "area_error_pct", "Area error %"), "RdBu_r", False
+    column, label = ("_facecolor", None) if kind == "array" else (value, value)
+    gdf[column] = value if kind == "array" else column_values
+    numeric = pd.api.types.is_numeric_dtype(gdf[column]) and not pd.api.types.is_bool_dtype(gdf[column])
+    if categorical is True or (categorical is None and not numeric):
+        role = "categorical"
+    else:
+        role = "diverging" if center is not None else "sequential"
+    return gdf, Fill({"column": column}, role, column, label), "viridis", role == "categorical" and bool(categorical)
+
+
+@deprecated_params(facecolor="column", legend_kwargs="legend_kwds")
 def plot_cartogram(
     result: VoronoiCartogram,
     facecolor: Any = None,
-    cmap: str | None = None,
+    cmap: Any = None,
     show_edges: bool = True,
     legend: bool = False,
     labels: bool | str | list[str] | None = None,
-    label_fontsize: int = 8,
-    label_color: str = "black",
+    label_fontsize: float | None = None,
+    label_color: str | None = None,
     label_location: str = "centroid",
     ax: Any | None = None,
+    legend_kwargs: dict | None = None,
+    legend_label: str | None = None,
+    norm: Any = None,
+    center: float | None = None,
+    categorical: bool | None = None,
+    style: Any = None,
     **kwargs: Any,
 ) -> VoronoiPlotResult:
     """Plot Voronoi cells.
@@ -104,14 +144,28 @@ def plot_cartogram(
         colors) fills all cells.  A string that is a column and also the
         built-in quantity or a color is read as the column, then as the
         built-in quantity, and a warning is issued.
-    cmap : str or None
-        Colormap name.  Defaults to ``"tab20"`` for categorical coloring
-        (``facecolor=None``), ``"RdBu_r"`` for ``"area_error_pct"``, and
-        ``"viridis"`` for other numeric data.
+    cmap : str, Colormap, dict, or None
+        Colormap of the data. Defaults to the palette of the style for the data role (categorical colors for the
+        cells of ``facecolor=None``, diverging for ``"area_error_pct"``, sequential for other numeric data), else
+        ``"tab20"``, ``"RdBu_r"`` and ``"viridis"``.
     show_edges : bool
-        Draw cell borders.  Default ``True``.
+        Draw cell borders.  Default ``True``. Their color and width are the edge and linewidth of the style, else
+        black and 0.4.
     legend : bool
         Show a legend or colorbar.  Default ``False``.
+    legend_kwargs : dict, optional
+        Keyword arguments of the legend or colorbar. A ``"label"`` key sets the label of a colorbar.
+    legend_label : str, optional
+        Label of the colorbar. Defaults to the name of the data.
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
+        ``vmax`` fixes a linear normalization unless a scale is named.
+    center : float, optional
+        Treat the data as diverging around this value.
+    categorical : bool, optional
+        Force (True) or prevent (False) the categorical treatment of the data; by default the data type decides.
+    style : PlotStyle or str, optional
+        Style of the plot (default: the style of the block or session, else ``"default"``).
     labels : bool, str, list of str, or None
         Annotate each cell with a text label.
 
@@ -120,10 +174,10 @@ def plot_cartogram(
         * ``list[str]`` — explicit label strings (length must equal number of
           cells).
         * ``None`` / ``False`` — no labels (default).
-    label_fontsize : int
-        Font size for cell labels.  Default ``8``.
-    label_color : str
-        Text color for cell labels.  Default ``"black"``.
+    label_fontsize : float, optional
+        Font size for cell labels.  Defaults to the annotation size of the style, else ``8``.
+    label_color : str, optional
+        Text color for cell labels.  Defaults to the text color of the style, else black.
     label_location : str
         Where to place labels within each cell.  Default ``"centroid"`` (the
         geometric centroid).  Other options are ``"representative"`` (a
@@ -140,88 +194,87 @@ def plot_cartogram(
         Dataclass with ``ax`` and ``collections``.
     """
     import geopandas as gpd
+    import matplotlib as mpl
     import matplotlib.pyplot as plt
 
     from .result import VoronoiPlotResult
 
-    if ax is None:
-        _, ax = plt.subplots()
-
-    edge_color = "black" if show_edges else "none"
-    linewidth = 0.4 if show_edges else 0
-
-    gdf_cells = gpd.GeoDataFrame(
-        {"_idx": np.arange(len(result.cells))},
-        geometry=list(result.cells),
-        crs=result._source_gdf.crs if result._source_gdf is not None else None,
-    )
-
-    kind, fill = _resolve_fill(facecolor, result)
-    if kind == "categorical":
-        gdf_cells.plot(
-            ax=ax,
-            column="_idx",
-            categorical=True,
-            cmap=cmap or "tab20",
-            edgecolor=edge_color,
-            linewidth=linewidth,
-            legend=legend,
-            **kwargs,
-        )
-    elif kind == "color":
-        gdf_cells.plot(ax=ax, facecolor=fill, edgecolor=edge_color, linewidth=linewidth, **kwargs)
-    else:
-        if kind == "builtin":
-            gdf_cells["area_error_pct"] = result.area_errors
-            column, default_cmap = "area_error_pct", "RdBu_r"
-        elif kind == "array":
-            gdf_cells["_facecolor"] = fill
-            column, default_cmap = "_facecolor", "viridis"
+    st = resolve_style(style)
+    with st.rc_context():
+        if ax is None:
+            _, ax = plt.subplots()
         else:
-            gdf_cells[fill] = result._source_gdf[fill].values  # type: ignore[index]
-            column, default_cmap = fill, "viridis"
-        gdf_cells.plot(
-            ax=ax,
-            column=column,
-            cmap=cmap or default_cmap,
-            edgecolor=edge_color,
-            linewidth=linewidth,
-            legend=legend,
-            **kwargs,
+            st.apply_axes(ax)
+
+        gdf_cells = gpd.GeoDataFrame(
+            {"_idx": np.arange(len(result.cells))},
+            geometry=list(result.cells),
+            crs=result._source_gdf.crs if result._source_gdf is not None else None,
         )
 
-    if labels is not None and labels is not False:
-        if labels is True:
-            label_texts = (
-                [str(x) for x in result._source_gdf.index]
-                if result._source_gdf is not None
-                else [str(i) for i in range(len(result.cells))]
-            )
-        elif isinstance(labels, str):
-            if result._source_gdf is None or labels not in result._source_gdf.columns:
-                raise ValueError(f"labels column {labels!r} not found in source GeoDataFrame.")
-            label_texts = [str(x) for x in result._source_gdf[labels]]
-        else:
-            label_texts = [str(x) for x in labels]
-        for idx, (cell, txt) in enumerate(zip(result.cells, label_texts, strict=False)):
-            pt: tuple | np.ndarray
-            if label_location == "centroid":
-                pt = (cell.centroid.x, cell.centroid.y)
-            elif label_location == "representative":
-                _rp = cell.representative_point()
-                pt = (_rp.x, _rp.y)
-            elif label_location == "generator":
-                pt = result.positions[idx, :]
-            ax.annotate(
-                txt,
-                xy=pt,  # type: ignore[arg-type]
-                ha="center",
-                va="center",
-                fontsize=label_fontsize,
-                color=label_color,
-            )
+        kind, fill = _resolve_fill(facecolor, result)
+        column_values = result._source_gdf[fill].values if kind == "column" else None  # type: ignore[index]
+        gdf_cells, fill_plan, default_cmap, force_categorical = _fill_of(
+            gdf_cells, kind, fill, result.area_errors, column_values, categorical, center
+        )
+        draw_kwargs = dict(kwargs)
+        if not show_edges:
+            draw_kwargs.setdefault("edgecolor", "none")
+            draw_kwargs.setdefault("linewidth", 0)
+        plot_fill(
+            ax,
+            gdf_cells,
+            fill_plan,
+            st,
+            cmap=cmap,
+            default_cmap=default_cmap,
+            norm=norm,
+            center=center,
+            legend=legend,
+            legend_kwargs=legend_kwargs,
+            legend_label=legend_label,
+            categorical=True if force_categorical else categorical,
+            edge_default="black",
+            linewidth_default=0.4,
+            kwargs=draw_kwargs,
+        )
+        if label_fontsize is None:
+            label_fontsize = st.annotation_size or 8
+        if label_color is None:
+            label_color = mpl.rcParams["text.color"]
 
-    ax.set_axis_off()
+        if labels is not None and labels is not False:
+            if labels is True:
+                label_texts = (
+                    [str(x) for x in result._source_gdf.index]
+                    if result._source_gdf is not None
+                    else [str(i) for i in range(len(result.cells))]
+                )
+            elif isinstance(labels, str):
+                if result._source_gdf is None or labels not in result._source_gdf.columns:
+                    raise ValueError(f"labels column {labels!r} not found in source GeoDataFrame.")
+                label_texts = [str(x) for x in result._source_gdf[labels]]
+            else:
+                label_texts = [str(x) for x in labels]
+            for idx, (cell, txt) in enumerate(zip(result.cells, label_texts, strict=False)):
+                pt: tuple | np.ndarray
+                if label_location == "centroid":
+                    pt = (cell.centroid.x, cell.centroid.y)
+                elif label_location == "representative":
+                    _rp = cell.representative_point()
+                    pt = (_rp.x, _rp.y)
+                elif label_location == "generator":
+                    pt = result.positions[idx, :]
+                ax.annotate(
+                    txt,
+                    xy=pt,  # type: ignore[arg-type]
+                    ha="center",
+                    va="center",
+                    fontsize=label_fontsize,
+                    color=label_color,
+                )
+
+        ax.set_axis_off()
     return VoronoiPlotResult(ax=ax, collections=list(ax.collections))
 
 
@@ -236,10 +289,14 @@ def plot_comparison(
     result: VoronoiCartogram,
     *,
     facecolor: Any = None,
-    cmap: str | None = None,
+    cmap: Any = None,
     axes: Any | None = None,
     figsize: tuple[float, float] = (14, 6),
     title: str | None = None,
+    norm: Any = None,
+    center: float | None = None,
+    categorical: bool | None = None,
+    style: Any = None,
 ) -> VoronoiPlotResult:
     """Side-by-side comparison of original geometries vs Voronoi cells.
 
@@ -252,9 +309,8 @@ def plot_comparison(
     facecolor : str, array-like, or None
         Fill on both panels, resolved as in :func:`plot_cartogram`.  ``None``
         uses categorical index coloring.
-    cmap : str or None
-        Colormap name.  Defaults to ``"tab20"`` (categorical) or
-        ``"viridis"`` (numeric).
+    cmap : str, Colormap, dict, or None
+        Colormap of the data, as in :func:`plot_cartogram`.
     axes : sequence of two Axes, or None
         Existing axes to draw on.  A new ``(1, 2)`` figure is created when
         ``None``.
@@ -262,6 +318,14 @@ def plot_comparison(
         Figure size when ``axes`` is ``None``.
     title : str or None
         Figure suptitle.  Defaults to ``"Original vs Voronoi Cartogram"``.
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of continuous data, as in :func:`plot_cartogram`.
+    center : float, optional
+        Treat the data as diverging around this value.
+    categorical : bool, optional
+        Force (True) or prevent (False) the categorical treatment of the data.
+    style : PlotStyle or str, optional
+        Style of the plot (default: the style of the block or session, else ``"default"``).
 
     Returns
     -------
@@ -272,42 +336,58 @@ def plot_comparison(
 
     from .result import VoronoiPlotResult
 
-    if axes is not None:
-        ax_orig, ax_cart = next(iter(axes)), list(axes)[1]
-    else:
-        _, (ax_orig, ax_cart) = plt.subplots(1, 2, figsize=figsize)
+    st = resolve_style(style)
+    with st.rc_context():
+        if axes is not None:
+            ax_orig, ax_cart = next(iter(axes)), list(axes)[1]
+            st.apply_axes(ax_orig)
+            st.apply_axes(ax_cart)
+        else:
+            _, (ax_orig, ax_cart) = plt.subplots(1, 2, figsize=figsize)
 
-    edge_kw = {"edgecolor": "black", "linewidth": 0.4}
+        kind, fill = _resolve_fill(facecolor, result, stacklevel=3)
+        column_values = gdf[fill].values if kind == "column" else None
+        gdf_plot, fill_plan, default_cmap, force_categorical = _fill_of(
+            gdf, kind, fill, result.area_errors, column_values, categorical, center
+        )
+        plot_fill(
+            ax_orig,
+            gdf_plot,
+            fill_plan,
+            st,
+            cmap=cmap,
+            default_cmap=default_cmap,
+            norm=norm,
+            center=center,
+            legend=False,
+            legend_kwargs=None,
+            legend_label=None,
+            categorical=True if force_categorical else categorical,
+            edge_default="black",
+            linewidth_default=0.4,
+            kwargs={},
+        )
 
-    kind, fill = _resolve_fill(facecolor, result, stacklevel=3)
-    if kind == "categorical":
-        gdf_plot = gdf.copy()
-        gdf_plot["_idx"] = np.arange(len(gdf))
-        gdf_plot.plot(ax=ax_orig, column="_idx", categorical=True, cmap=cmap or "tab20", **edge_kw)
-    elif kind == "color":
-        gdf.plot(ax=ax_orig, facecolor=fill, **edge_kw)
-    elif kind == "array":
-        gdf_plot = gdf.copy()
-        gdf_plot["_facecolor"] = fill
-        gdf_plot.plot(ax=ax_orig, column="_facecolor", cmap=cmap or "viridis", **edge_kw)
-    elif kind == "builtin":
-        gdf_plot = gdf.copy()
-        gdf_plot["area_error_pct"] = result.area_errors
-        gdf_plot.plot(ax=ax_orig, column="area_error_pct", cmap=cmap or "RdBu_r", **edge_kw)
-    else:
-        gdf.plot(ax=ax_orig, column=fill, cmap=cmap or "viridis", **edge_kw)
+        ax_orig.set_title("Original", fontsize=10)
+        ax_orig.set_axis_off()
+        ax_orig.set_aspect("equal")
 
-    ax_orig.set_title("Original", fontsize=10)
-    ax_orig.set_axis_off()
-    ax_orig.set_aspect("equal")
+        plot_cartogram(
+            result,
+            facecolor=facecolor,
+            cmap=cmap,
+            ax=ax_cart,
+            norm=norm,
+            center=center,
+            categorical=categorical,
+            style=st,
+        )
+        ax_cart.set_title("Voronoi Cartogram", fontsize=10)
+        ax_cart.set_aspect("equal")
 
-    plot_cartogram(result, facecolor=facecolor, cmap=cmap, ax=ax_cart)
-    ax_cart.set_title("Voronoi Cartogram", fontsize=10)
-    ax_cart.set_aspect("equal")
-
-    if title is None:
-        title = "Original vs Voronoi Cartogram"
-    ax_orig.figure.suptitle(title, fontsize=12)
+        if title is None:
+            title = "Original vs Voronoi Cartogram"
+        ax_orig.figure.suptitle(title, fontsize=12)
 
     return VoronoiPlotResult(ax=(ax_orig, ax_cart), collections=list(ax_cart.collections))
 
@@ -317,6 +397,7 @@ def plot_comparison(
 # ---------------------------------------------------------------------------
 
 
+@styled
 def plot_convergence(
     result: VoronoiCartogram,
     *,
@@ -396,6 +477,7 @@ def plot_convergence(
     position_kwargs="position_style",
     displacement_kwargs="displacement_style",
 )
+@styled
 def plot_displacement(
     result: VoronoiCartogram,
     *,
@@ -836,6 +918,7 @@ def _plot_topology_issues(
 # ---------------------------------------------------------------------------
 
 
+@styled
 def plot_topology(
     analysis: TopologyAnalysis,
     cartogram: VoronoiCartogram,
@@ -912,6 +995,7 @@ def plot_topology(
 # ---------------------------------------------------------------------------
 
 
+@styled
 def plot_topology_repair(
     report: TopologyRepairReport,
     *,
@@ -1104,13 +1188,15 @@ def plot_compactness(
     group_by: str,
     *,
     normalize: bool = True,
-    cmap: str = "YlOrRd",
+    cmap: Any = None,
     show_centroids: bool = True,
     show_edges: bool = True,
     legend: bool = True,
     ax: Any | None = None,
     figsize: tuple[float, float] = (10, 8),
     title: str = "Compactness",
+    norm: Any = None,
+    style: Any = None,
 ) -> VoronoiPlotResult:
     """Plot per-cell inertia — the compactness measure used by topology repair.
 
@@ -1130,8 +1216,8 @@ def plot_compactness(
         as ``repair_topology``).
     normalize : bool
         Divide each cell's inertia by the group mean.  Default ``True``.
-    cmap : str
-        Matplotlib colormap name.  Default ``"YlOrRd"``.
+    cmap : str or Colormap, optional
+        Colormap of the inertia.  Defaults to the sequential palette of the style, else ``"YlOrRd"``.
     show_centroids : bool
         Overlay group centroids as small black markers.  Default ``True``.
     show_edges : bool
@@ -1144,27 +1230,59 @@ def plot_compactness(
         Figure size when ``ax`` is ``None``.
     title : str
         Axis title.
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of the inertia: an instance, or the scale of the style's normalization.
+    style : PlotStyle or str, optional
+        Style of the plot (default: the style of the block or session, else ``"default"``).
 
     Returns
     -------
     VoronoiPlotResult
         Dataclass with ``ax`` and ``collections``.
     """
+
+    if cartogram._source_gdf is None or group_by not in cartogram._source_gdf.columns:
+        raise ValueError(f"group_by column {group_by!r} not found in source GeoDataFrame.")
+
+    st = resolve_style(style)
+    with st.rc_context():
+        return _plot_compactness(
+            cartogram, group_by, normalize, cmap, show_centroids, show_edges, legend, ax, figsize, title, norm, st
+        )
+
+
+def _plot_compactness(
+    cartogram: VoronoiCartogram,
+    group_by: str,
+    normalize: bool,
+    cmap: Any,
+    show_centroids: bool,
+    show_edges: bool,
+    legend: bool,
+    ax: Any,
+    figsize: tuple[float, float],
+    title: str,
+    norm: Any,
+    st: Any,
+) -> VoronoiPlotResult:
     import geopandas as gpd
     import matplotlib.pyplot as plt
 
     from .result import VoronoiPlotResult
 
-    if cartogram._source_gdf is None or group_by not in cartogram._source_gdf.columns:
-        raise ValueError(f"group_by column {group_by!r} not found in source GeoDataFrame.")
+    source = cartogram._source_gdf
+    if source is None:
+        raise ValueError("The cartogram has no source GeoDataFrame.")
 
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
+    else:
+        st.apply_axes(ax)
 
     cells = list(cartogram.cells)
     n = len(cells)
     cell_xy = np.array([[c.centroid.x, c.centroid.y] for c in cells])
-    group_labels = list(cartogram._source_gdf[group_by])
+    group_labels = list(source[group_by])
 
     # Build group → [district indices] mapping.
     from collections import defaultdict
@@ -1201,18 +1319,25 @@ def plot_compactness(
     gdf_cells = gpd.GeoDataFrame(
         {"_score": score},
         geometry=cells,
-        crs=cartogram._source_gdf.crs,
+        crs=source.crs,
     )
-    edge_color = "black" if show_edges else "none"
-    linewidth = 0.4 if show_edges else 0
-    gdf_cells.plot(
-        ax=ax,
-        column="_score",
+    draw_kwargs: dict[str, Any] = {} if show_edges else {"edgecolor": "none", "linewidth": 0}
+    plot_fill(
+        ax,
+        gdf_cells,
+        Fill({"column": "_score"}, "sequential", "_score", col_label),
+        st,
         cmap=cmap,
-        edgecolor=edge_color,
-        linewidth=linewidth,
+        default_cmap="YlOrRd",
+        norm=norm,
+        center=None,
         legend=legend,
-        legend_kwds={"label": col_label, "shrink": 0.6} if legend else {},
+        legend_kwargs={"label": col_label, "shrink": 0.6} if legend else None,
+        legend_label=None,
+        categorical=None,
+        edge_default="black",
+        linewidth_default=0.4,
+        kwargs=draw_kwargs,
     )
 
     if show_centroids and centroids_xy:

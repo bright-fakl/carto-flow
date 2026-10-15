@@ -31,7 +31,7 @@ p = result.plot(
     vmin=0,
     vmax=40,
     legend=True,
-    legend_kwds={"shrink": 0.6, "label": "Population (Millions)"},
+    legend_kwargs={"shrink": 0.6, "label": "Population (Millions)"},
     cmap="RdYlGn_r",
     linewidth=0.5,
 )

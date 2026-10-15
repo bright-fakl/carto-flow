@@ -36,6 +36,19 @@ Releases before 2.0.0 have no changelog entry; see the
   they are the limits of the logarithmic scale), and `norm="linear"`,
   `color_scale="linear"` or `log_span` keep a linear scale for data that spans more than one
   decade.
+- **The Voronoi and proportional plots take `style=` too.** `VoronoiCartogram.plot`,
+  `plot_cartogram`, `plot_comparison`, `plot_compactness`, `plot_displacement`, the topology and
+  convergence plots and `animate_voronoi_history`, and `plot_partitions` and `plot_dot_density`,
+  use the surface, the palettes by data role (the categorical colors for the cells of
+  `facecolor=None` and for categories, `RdYlBu_r` symmetric around 0 for `"area_error_pct"`,
+  the sequential palette for numeric data), the boundary and the colorbar of the style, and
+  take `norm=` (the Voronoi plots also `center=` and `categorical=`), `legend_kwargs=` and
+  `legend_label=`. The edge color and width default to the style, then to the former values
+  (black and 0.4 for the Voronoi cells, white and 0.5 for the partitions). A `PlotStyle` has the new
+  fields `reference_facecolor`, `reference_edgecolor`, `reference_linewidth` and `reference_alpha` (the
+  context layer: the base of a dot density map, the complement of `plot_partitions`) and
+  `annotation_size` (the labels of the Voronoi cells). `save_animation` of the Voronoi module saves
+  the frames with the surface of the figure.
 - **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
   through the morph, holds and returns**, for `animate_geometry_keyframes` with
   `position_mapper=linear_over("time")`.
@@ -249,6 +262,9 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **`plot_partitions` drew the complement black when the partitions were colored by a continuous value**
+  (`facecolor="area"` or a numeric column): the missing color value of the complement became NaN and
+  was colored with the "bad" color of the colormap instead of `complement_facecolor`.
 - **`prescale_components` moves the landmarks with their component.** The pre-scaling
   scaled the geometries but left the landmarks where they were, so for a region that was
   scaled down they started outside it (only 39 % of the dots of a shrunken region of a

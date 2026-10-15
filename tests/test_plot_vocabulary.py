@@ -107,6 +107,10 @@ ALLOWED = {
         "use_pct",
     },
     "proportional_cartogram": {
+        "style",
+        "legend_kwargs",
+        "legend_label",
+        "norm",
         "alpha",
         "ax",
         "background_alpha",
@@ -143,6 +147,12 @@ ALLOWED = {
         "vmin",
     },
     "voronoi_cartogram": {
+        "categorical",
+        "center",
+        "legend_kwargs",
+        "legend_label",
+        "norm",
+        "style",
         "adjacency_kwargs",
         "analysis",
         "ax",

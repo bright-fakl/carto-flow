@@ -279,11 +279,10 @@ def plot_partitions(
         color_by = list(facecolor)
 
     # The complement is colored by a column or a constant color
-    complement_color_by: str | None = None
-    complement_color = complement_facecolor
+    complement_column: str | None = None
+    complement_fill = complement_facecolor
     if classify_string(complement_facecolor, gdf.columns, stacklevel=3) == "column":
-        complement_color_by, complement_color = complement_facecolor, "#e0e0e0"
-    background_color = background_facecolor
+        complement_column, complement_fill = complement_facecolor, "#e0e0e0"
 
     # Auto-detect partition columns if not specified
     if columns is None:
@@ -351,8 +350,8 @@ def plot_partitions(
     elif color_by_columns is not None and not is_categorical:
         for col in set(color_by_columns):
             all_values.extend(gdf[col].dropna().tolist())
-        if complement_color_by is not None and complement_color_by in gdf.columns:
-            all_values.extend(gdf[complement_color_by].dropna().tolist())
+        if complement_column is not None and complement_column in gdf.columns:
+            all_values.extend(gdf[complement_column].dropna().tolist())
 
     # Compute vmin/vmax from all values if not specified
     if all_values and not is_categorical:
@@ -395,8 +394,8 @@ def plot_partitions(
                 continue
 
             # Determine complement color value
-            if complement_color_by is not None and complement_color_by in gdf.columns:
-                color_value = row[complement_color_by]
+            if complement_column is not None and complement_column in gdf.columns:
+                color_value = row[complement_column]
             else:
                 color_value = None  # Will use fixed color
 
@@ -440,11 +439,11 @@ def plot_partitions(
         if is_comp:
             if cv is not None:
                 if is_categorical:
-                    base_color = palette[cv] if palette and cv in palette else cat_colors_map.get(cv, complement_color)
+                    base_color = palette[cv] if palette and cv in palette else cat_colors_map.get(cv, complement_fill)
                 else:
                     base_color = _get_colors_from_cmap(np.array([cv]), cmap, vmin, vmax)[0]
             else:
-                base_color = complement_color
+                base_color = complement_fill
         elif constant_color is not None:
             base_color = constant_color
         elif is_categorical:
@@ -459,8 +458,8 @@ def plot_partitions(
             ec = complement_edgecolor or edgecolor
             lw = complement_linewidth or linewidth
         elif highlight_set is not None and cat not in highlight_set:
-            if background_color is not None:
-                final_color = background_color
+            if background_facecolor is not None:
+                final_color = background_facecolor
             elif background_saturation is not None or background_lightness is not None:
                 final_color = _adjust_color(
                     base_color,

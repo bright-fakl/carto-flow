@@ -310,7 +310,7 @@ class TestResultAPI:
 
         matplotlib.use("Agg")
         result = create_voronoi_cartogram(gdf, backend=_FAST_RASTER, options=_FAST_OPTIONS)
-        pr = result.plot(column="population")
+        pr = result.plot(facecolor="population")
         assert pr.ax is not None
         import matplotlib.pyplot as plt
 

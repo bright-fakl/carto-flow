@@ -34,6 +34,8 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
+from .._plot_params import classify_string, deprecated_params
+
 if TYPE_CHECKING:
     import geopandas as gpd
 
@@ -55,9 +57,33 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 
+_BUILTIN_FILLS = ("area_error_pct",)
+
+
+def _resolve_fill(facecolor: Any, result: VoronoiCartogram, stacklevel: int = 4) -> tuple[str, Any]:
+    """Resolve ``facecolor`` of a Voronoi plot: ``("categorical", None)``, ``("builtin" | "column", name)``,
+    ``("array", values)`` or ``("color", literal)``.
+
+    A string is a column of the source GeoDataFrame, the built-in quantity ``"area_error_pct"`` (the signed area
+    error of the cells) or a color, in this order (see :func:`carto_flow._plot_params.classify_string`).
+    """
+    if facecolor is None:
+        return "categorical", None
+    if isinstance(facecolor, str):
+        columns = result._source_gdf.columns if result._source_gdf is not None else ()
+        builtins = _BUILTIN_FILLS if result.area_errors is not None else ()
+        kind = classify_string(facecolor, columns, builtins, stacklevel=stacklevel)
+        return kind, facecolor
+    values = np.asarray(facecolor)
+    if values.ndim == 1 and len(values) == len(result.cells) and values.dtype.kind in "iufb":
+        return "array", values
+    return "color", facecolor
+
+
+@deprecated_params(facecolor="column")
 def plot_cartogram(
     result: VoronoiCartogram,
-    column: str | None = None,
+    facecolor: Any = None,
     cmap: str | None = None,
     show_edges: bool = True,
     legend: bool = False,
@@ -74,15 +100,19 @@ def plot_cartogram(
     ----------
     result : VoronoiCartogram
         The cartogram to plot.
-    column : str or None
-        Column from the source GeoDataFrame to use for choropleth coloring.
-        ``None`` (default) colors each cell with a distinct categorical
-        color derived from its index.  Pass ``"area_error_pct"`` to plot the
-        signed per-cell area error as a diverging choropleth.
+    facecolor : str, array-like, or None
+        Fill of the cells.  ``None`` (default) colors each cell with a distinct
+        categorical color derived from its index.  A column of the source
+        GeoDataFrame gives a choropleth; ``"area_error_pct"`` plots the signed
+        per-cell area error as a diverging choropleth; a numeric array with one
+        value per cell is colored by value; a color (a string or an array of
+        colors) fills all cells.  A string that is a column and also the
+        built-in quantity or a color is read as the column, then as the
+        built-in quantity, and a warning is issued.
     cmap : str or None
         Colormap name.  Defaults to ``"tab20"`` for categorical coloring
-        (``column=None``), ``"RdBu_r"`` for ``"area_error_pct"``, and
-        ``"viridis"`` for other numeric columns.
+        (``facecolor=None``), ``"RdBu_r"`` for ``"area_error_pct"``, and
+        ``"viridis"`` for other numeric data.
     show_edges : bool
         Draw cell borders.  Default ``True``.
     legend : bool
@@ -131,7 +161,8 @@ def plot_cartogram(
         crs=result._source_gdf.crs if result._source_gdf is not None else None,
     )
 
-    if column is None:
+    kind, fill = _resolve_fill(facecolor, result)
+    if kind == "categorical":
         gdf_cells.plot(
             ax=ax,
             column="_idx",
@@ -142,25 +173,22 @@ def plot_cartogram(
             legend=legend,
             **kwargs,
         )
-    elif column == "area_error_pct" and result.area_errors is not None:
-        gdf_cells["area_error_pct"] = result.area_errors
-        gdf_cells.plot(
-            ax=ax,
-            column="area_error_pct",
-            cmap=cmap or "RdBu_r",
-            edgecolor=edge_color,
-            linewidth=linewidth,
-            legend=legend,
-            **kwargs,
-        )
+    elif kind == "color":
+        gdf_cells.plot(ax=ax, facecolor=fill, edgecolor=edge_color, linewidth=linewidth, **kwargs)
     else:
-        if result._source_gdf is None or column not in result._source_gdf.columns:
-            raise ValueError(f"Column {column!r} not found in source GeoDataFrame.")
-        gdf_cells[column] = result._source_gdf[column].values
+        if kind == "builtin":
+            gdf_cells["area_error_pct"] = result.area_errors
+            column, default_cmap = "area_error_pct", "RdBu_r"
+        elif kind == "array":
+            gdf_cells["_facecolor"] = fill
+            column, default_cmap = "_facecolor", "viridis"
+        else:
+            gdf_cells[fill] = result._source_gdf[fill].values  # type: ignore[index]
+            column, default_cmap = fill, "viridis"
         gdf_cells.plot(
             ax=ax,
             column=column,
-            cmap=cmap or "viridis",
+            cmap=cmap or default_cmap,
             edgecolor=edge_color,
             linewidth=linewidth,
             legend=legend,
@@ -207,11 +235,12 @@ def plot_cartogram(
 # ---------------------------------------------------------------------------
 
 
+@deprecated_params(facecolor="column")
 def plot_comparison(
     gdf: gpd.GeoDataFrame,
     result: VoronoiCartogram,
     *,
-    column: str | None = None,
+    facecolor: Any = None,
     cmap: str | None = None,
     axes: Any | None = None,
     figsize: tuple[float, float] = (14, 6),
@@ -225,8 +254,8 @@ def plot_comparison(
         Original input geometries.
     result : VoronoiCartogram
         The cartogram to compare against.
-    column : str or None
-        Column to use for choropleth coloring on both panels.  ``None``
+    facecolor : str, array-like, or None
+        Fill on both panels, resolved as in :func:`plot_cartogram`.  ``None``
         uses categorical index coloring.
     cmap : str or None
         Colormap name.  Defaults to ``"tab20"`` (categorical) or
@@ -255,18 +284,29 @@ def plot_comparison(
 
     edge_kw = {"edgecolor": "black", "linewidth": 0.4}
 
-    if column is None:
+    kind, fill = _resolve_fill(facecolor, result, stacklevel=3)
+    if kind == "categorical":
         gdf_plot = gdf.copy()
         gdf_plot["_idx"] = np.arange(len(gdf))
         gdf_plot.plot(ax=ax_orig, column="_idx", categorical=True, cmap=cmap or "tab20", **edge_kw)
+    elif kind == "color":
+        gdf.plot(ax=ax_orig, facecolor=fill, **edge_kw)
+    elif kind == "array":
+        gdf_plot = gdf.copy()
+        gdf_plot["_facecolor"] = fill
+        gdf_plot.plot(ax=ax_orig, column="_facecolor", cmap=cmap or "viridis", **edge_kw)
+    elif kind == "builtin":
+        gdf_plot = gdf.copy()
+        gdf_plot["area_error_pct"] = result.area_errors
+        gdf_plot.plot(ax=ax_orig, column="area_error_pct", cmap=cmap or "RdBu_r", **edge_kw)
     else:
-        gdf.plot(ax=ax_orig, column=column, cmap=cmap or "viridis", **edge_kw)
+        gdf.plot(ax=ax_orig, column=fill, cmap=cmap or "viridis", **edge_kw)
 
     ax_orig.set_title("Original", fontsize=10)
     ax_orig.set_axis_off()
     ax_orig.set_aspect("equal")
 
-    plot_cartogram(result, column=column, cmap=cmap, ax=ax_cart)
+    plot_cartogram(result, facecolor=facecolor, cmap=cmap, ax=ax_cart)
     ax_cart.set_title("Voronoi Cartogram", fontsize=10)
     ax_cart.set_aspect("equal")
 
@@ -354,6 +394,13 @@ def plot_convergence(
 # ---------------------------------------------------------------------------
 
 
+@deprecated_params(
+    geometry_kwargs="geometry_style",
+    adjacency_kwargs="adjacency_style",
+    centroid_kwargs="centroid_style",
+    position_kwargs="position_style",
+    displacement_kwargs="displacement_style",
+)
 def plot_displacement(
     result: VoronoiCartogram,
     *,
@@ -364,11 +411,11 @@ def plot_displacement(
     show_positions: bool = False,
     show_displacement: bool = True,
     legend: bool = True,
-    geometry_style: dict | None = None,
-    adjacency_style: dict | None = None,
-    centroid_style: dict | None = None,
-    position_style: dict | None = None,
-    displacement_style: dict | None = None,
+    geometry_kwargs: dict | None = None,
+    adjacency_kwargs: dict | None = None,
+    centroid_kwargs: dict | None = None,
+    position_kwargs: dict | None = None,
+    displacement_kwargs: dict | None = None,
     ax: Any | None = None,
     figsize: tuple[float, float] = (10, 8),
     title: str = "Voronoi cartogram — centroid redistribution",
@@ -399,7 +446,7 @@ def plot_displacement(
     legend : bool
         Show the displacement-magnitude colorbar (and any other legends).
         Default ``True``.
-    geometry_style : dict or None
+    geometry_kwargs : dict or None
         Styling for geometry polygons, merged over defaults
         ``{"facecolor": "#e8eef4", "edgecolor": "#9aafc4", "linewidth": 0.4, "alpha": 0.6}``.
         All keys forwarded to ``GeoDataFrame.plot()``.
@@ -411,24 +458,24 @@ def plot_displacement(
         - any other ``str`` → solid fill color.
         - 1-D numeric array → per-geometry values mapped via ``"cmap"``.
         - list/array of color strings → per-geometry colors.
-    adjacency_style : dict or None
+    adjacency_kwargs : dict or None
         Styling for adjacency graph edges, merged over defaults
         ``{"color": "#6b8fa8", "linewidth": 0.6, "alpha": 0.5, "zorder": 2}``.
         All keys forwarded to ``ax.plot()``.
-    centroid_style : dict or None
+    centroid_kwargs : dict or None
         Styling for centroid scatter markers, merged over defaults
         ``{"s": 18, "c": "#1a5276", "zorder": 3, "linewidths": 0}``.
         All keys forwarded to ``ax.scatter()``.
 
         The ``"c"`` (or ``"color"``) key supports the same multi-type
-        resolution as ``geometry_style["color"]``; use ``"cmap"`` (default
+        resolution as ``geometry_kwargs["color"]``; use ``"cmap"`` (default
         ``"viridis"``) for column/numeric cases.
-    position_style : dict or None
+    position_kwargs : dict or None
         Styling for the ``result.positions`` generator-point overlay (only
         used when ``show_positions=True``), merged over defaults
         ``{"s": 14, "marker": "x", "c": "#e74c3c", "zorder": 5, "linewidths": 0.8}``.
         All keys forwarded to ``ax.scatter()``.
-    displacement_style : dict or None
+    displacement_kwargs : dict or None
         Styling for displacement arrows, merged over defaults
         ``{"cmap": "plasma", "lw": 0.9, "mutation_scale": 6, "arrowstyle": "-|>", "min_frac": 0.01}``.
 
@@ -480,21 +527,21 @@ def plot_displacement(
         "edgecolor": "#9aafc4",
         "linewidth": 0.4,
         "alpha": 0.6,
-        **(geometry_style or {}),
+        **(geometry_kwargs or {}),
     }
     adj_kw: dict = {
         "color": "#6b8fa8",
         "linewidth": 0.6,
         "alpha": 0.5,
         "zorder": 2,
-        **(adjacency_style or {}),
+        **(adjacency_kwargs or {}),
     }
     cen_kw: dict = {
         "s": 18,
         "c": "#1a5276",
         "zorder": 3,
         "linewidths": 0,
-        **_norm_scatter(centroid_style),
+        **_norm_scatter(centroid_kwargs),
     }
     pos_kw: dict = {
         "s": 14,
@@ -502,7 +549,7 @@ def plot_displacement(
         "c": "#e74c3c",
         "zorder": 5,
         "linewidths": 0.8,
-        **_norm_scatter(position_style),
+        **_norm_scatter(position_kwargs),
     }
     disp_kw: dict = {
         "cmap": "plasma",
@@ -510,7 +557,7 @@ def plot_displacement(
         "mutation_scale": 6,
         "arrowstyle": "-|>",
         "min_frac": 0.01,
-        **(displacement_style or {}),
+        **(displacement_kwargs or {}),
     }
 
     # --- helpers -------------------------------------------------------------

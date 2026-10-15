@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from .options import VoronoiOptions
 
 from carto_flow._history import History
+from carto_flow._plot_params import deprecated_params
 
 __all__ = [
     "TopologyAnalysis",
@@ -873,9 +874,10 @@ class VoronoiCartogram:
             result["area_error_pct"] = self.area_errors
         return result
 
+    @deprecated_params(facecolor="column")
     def plot(
         self,
-        column: str | None = None,
+        facecolor: Any = None,
         cmap: str | None = None,
         show_edges: bool = True,
         legend: bool = False,
@@ -889,14 +891,16 @@ class VoronoiCartogram:
 
         Parameters
         ----------
-        column : str or None
-            Column from the source GeoDataFrame to use for choropleth coloring.
-            ``None`` (default) colors each cell with a distinct categorical
-            color derived from its index.  Pass ``"area_error_pct"`` to plot
-            the signed per-cell area error as a diverging choropleth.
+        facecolor : str, array-like, or None
+            Fill of the cells.  ``None`` (default) colors each cell with a
+            distinct categorical color derived from its index.  A column of the
+            source GeoDataFrame gives a choropleth; ``"area_error_pct"`` plots
+            the signed per-cell area error as a diverging choropleth; a numeric
+            array with one value per cell is colored by value; a color fills all
+            cells.
         cmap : str or None
             Colormap name.  Defaults to ``"tab20"`` for categorical coloring
-            (``column=None``), ``"RdBu_r"`` for ``"area_error_pct"``, and
+            (``facecolor=None``), ``"RdBu_r"`` for ``"area_error_pct"``, and
             ``"viridis"`` for other numeric columns.
         show_edges : bool
             Draw cell borders.  Default ``True``.
@@ -925,9 +929,9 @@ class VoronoiCartogram:
         >>> pr = result.plot()
         >>> pr.ax.set_title("Equal-area Voronoi")
 
-        >>> pr = result.plot(column="population", cmap="Blues", legend=True)
+        >>> pr = result.plot(facecolor="population", cmap="Blues", legend=True)
 
-        >>> pr = result.plot(column="area_error_pct", legend=True)
+        >>> pr = result.plot(facecolor="area_error_pct", legend=True)
 
         >>> pr = result.plot(labels=True)
         """
@@ -935,7 +939,7 @@ class VoronoiCartogram:
 
         return plot_cartogram(
             self,
-            column=column,
+            facecolor=facecolor,
             cmap=cmap,
             show_edges=show_edges,
             legend=legend,
@@ -946,6 +950,13 @@ class VoronoiCartogram:
             **kwargs,
         )
 
+    @deprecated_params(
+        geometry_kwargs="geometry_style",
+        adjacency_kwargs="adjacency_style",
+        centroid_kwargs="centroid_style",
+        position_kwargs="position_style",
+        displacement_kwargs="displacement_style",
+    )
     def plot_displacement(
         self,
         *,
@@ -956,11 +967,11 @@ class VoronoiCartogram:
         show_positions: bool = False,
         show_displacement: bool = True,
         legend: bool = True,
-        geometry_style: dict | None = None,
-        adjacency_style: dict | None = None,
-        centroid_style: dict | None = None,
-        position_style: dict | None = None,
-        displacement_style: dict | None = None,
+        geometry_kwargs: dict | None = None,
+        adjacency_kwargs: dict | None = None,
+        centroid_kwargs: dict | None = None,
+        position_kwargs: dict | None = None,
+        displacement_kwargs: dict | None = None,
         ax: Any | None = None,
         figsize: tuple[float, float] = (10, 8),
         title: str = "Voronoi cartogram — centroid redistribution",
@@ -989,7 +1000,7 @@ class VoronoiCartogram:
         legend : bool
             Show the displacement-magnitude colorbar (and any other legends).
             Default ``True``.
-        geometry_style : dict or None
+        geometry_kwargs : dict or None
             Styling for geometry polygons, merged over defaults
             ``{"facecolor": "#e8eef4", "edgecolor": "#9aafc4", "linewidth": 0.4, "alpha": 0.6}``.
             All keys forwarded to ``GeoDataFrame.plot()``.
@@ -1001,24 +1012,24 @@ class VoronoiCartogram:
             - any other ``str`` → solid fill color.
             - 1-D numeric array → per-geometry values mapped via ``"cmap"``.
             - list/array of color strings → per-geometry colors.
-        adjacency_style : dict or None
+        adjacency_kwargs : dict or None
             Styling for adjacency graph edges, merged over defaults
             ``{"color": "#6b8fa8", "linewidth": 0.6, "alpha": 0.5, "zorder": 2}``.
             All keys forwarded to ``ax.plot()``.
-        centroid_style : dict or None
+        centroid_kwargs : dict or None
             Styling for centroid scatter markers, merged over defaults
             ``{"s": 18, "c": "#1a5276", "zorder": 3, "linewidths": 0}``.
             All keys forwarded to ``ax.scatter()``.
 
             The ``"c"`` (or ``"color"``) key supports the same multi-type
-            resolution as ``geometry_style["color"]``; use ``"cmap"`` (default
+            resolution as ``geometry_kwargs["color"]``; use ``"cmap"`` (default
             ``"viridis"``) for column/numeric cases.
-        position_style : dict or None
+        position_kwargs : dict or None
             Styling for the ``self.positions`` generator-point overlay (only
             used when ``show_positions=True``), merged over defaults
             ``{"s": 14, "marker": "x", "c": "#e74c3c", "zorder": 5, "linewidths": 0.8}``.
             All keys forwarded to ``ax.scatter()``.
-        displacement_style : dict or None
+        displacement_kwargs : dict or None
             Styling for displacement arrows, merged over defaults
             ``{"cmap": "plasma", "lw": 0.9, "mutation_scale": 6, "arrowstyle": "-|>", "min_frac": 0.01}``.
 
@@ -1056,11 +1067,11 @@ class VoronoiCartogram:
             show_positions=show_positions,
             show_displacement=show_displacement,
             legend=legend,
-            geometry_style=geometry_style,
-            adjacency_style=adjacency_style,
-            centroid_style=centroid_style,
-            position_style=position_style,
-            displacement_style=displacement_style,
+            geometry_kwargs=geometry_kwargs,
+            adjacency_kwargs=adjacency_kwargs,
+            centroid_kwargs=centroid_kwargs,
+            position_kwargs=position_kwargs,
+            displacement_kwargs=displacement_kwargs,
             ax=ax,
             figsize=figsize,
             title=title,

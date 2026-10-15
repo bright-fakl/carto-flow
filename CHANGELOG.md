@@ -154,9 +154,9 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Deprecated
 
-- **Old parameter names of the flow and symbol plot, animate and preview functions.** Each
-  concept now has one name, shared by all plot functions (the Voronoi and
-  proportional functions follow in later releases). The old names still work and
+- **Old parameter names of the flow, symbol and Voronoi plot, animate and preview functions.** Each
+  concept now has one name, shared by all plot functions (the proportional
+  functions follow in a later release). The old names still work and
   warn, and will be removed in the next major release:
 
   | function | old name | new name |
@@ -187,6 +187,9 @@ Releases before 2.0.0 have no changelog entry; see the
   | `plot_displacement` | `arrow_color`, `arrow_alpha` | keys of `arrows_kwargs` |
   | the `plot_tiling` functions | `assigned_color`, `unassigned_color` | `assigned_facecolor`, `unassigned_facecolor` |
   | the plot methods of a tiling and of a tile | `face_color`, `edge_color`, `colormap` | `facecolor`, `edgecolor`, `cmap` |
+  | `VoronoiCartogram.plot`, Voronoi `plot_cartogram`, `plot_comparison` | `column` | `facecolor` |
+  | `plot_displacement` (Voronoi) | `geometry_style`, `adjacency_style`, `centroid_style`, `position_style`, `displacement_style` | `geometry_kwargs`, `adjacency_kwargs`, `centroid_kwargs`, `position_kwargs`, `displacement_kwargs` |
+  | `animate_voronoi_history` | `cell_style`, `point_style` | `cell_kwargs`, `point_kwargs` |
 
 - **`morph_gdf` and `multiresolution_morph`** are deprecated and will be removed in the
   next major release; use `create_flow_cartogram`, with `MorphOptions(grid=LadderSpec(...))`

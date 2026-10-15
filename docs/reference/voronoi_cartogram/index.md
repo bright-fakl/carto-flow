@@ -70,7 +70,7 @@ result = vor.create_voronoi_cartogram(
     us_states,
     weights="Population (Millions)",
 )
-result.plot(column="Population (Millions)", legend=True)
+result.plot(facecolor="Population (Millions)", legend=True)
 ```
 
 ### Choosing a Backend

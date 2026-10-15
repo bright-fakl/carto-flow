@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from .._plot_params import deprecated_params
+
 if TYPE_CHECKING:
     from matplotlib.animation import FuncAnimation
 
@@ -36,14 +38,15 @@ __all__ = [
 ]
 
 
+@deprecated_params(cell_kwargs="cell_style", point_kwargs="point_style")
 def animate_voronoi_history(
     result: VoronoiCartogram,
     *,
     show_cells: bool = True,
     show_points: bool = True,
     show_convergence_title: bool = True,
-    cell_style: dict | None = None,
-    point_style: dict | None = None,
+    cell_kwargs: dict | None = None,
+    point_kwargs: dict | None = None,
     figsize: tuple[float, float] = (8, 6),
     fps: int = 15,
     repeat: bool = True,
@@ -66,11 +69,11 @@ def animate_voronoi_history(
         Overlay generator point positions.  Default ``True``.
     show_convergence_title : bool
         Include iteration number and CV(area) in the title.  Default ``True``.
-    cell_style : dict or None
+    cell_kwargs : dict or None
         Styling for cell polygons, merged over defaults
         ``{"facecolor": "#d0e4f7", "edgecolor": "#1a5276", "linewidth": 0.4, "alpha": 0.7}``.
         All keys forwarded to ``GeoDataFrame.plot()``.
-    point_style : dict or None
+    point_kwargs : dict or None
         Styling for generator points, merged over defaults
         ``{"s": 14, "c": "#e74c3c", "zorder": 3, "linewidths": 0}``.
         All keys forwarded to ``ax.scatter()``.
@@ -108,14 +111,14 @@ def animate_voronoi_history(
         "edgecolor": "#1a5276",
         "linewidth": 0.4,
         "alpha": 0.7,
-        **(cell_style or {}),
+        **(cell_kwargs or {}),
     }
     _pt_kw: dict = {
         "s": 14,
         "c": "#e74c3c",
         "zorder": 3,
         "linewidths": 0,
-        **(point_style or {}),
+        **(point_kwargs or {}),
     }
 
     # Determine whether cell animation is possible

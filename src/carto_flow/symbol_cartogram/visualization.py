@@ -1101,7 +1101,7 @@ def _add_legend(
     norm: Normalize | None,
     vmin: float | None,
     vmax: float | None,
-    legend_kwds: dict,
+    legend_kwargs: dict,
     role: str = "face",
 ) -> Colorbar | Legend:
     """Attach a colorbar (numeric) or patch legend (categorical) to *ax*.
@@ -1127,11 +1127,11 @@ def _add_legend(
         _norm = norm if norm is not None else mc.Normalize(vmin=_vmin, vmax=_vmax)
         sm = plt.cm.ScalarMappable(cmap=cm, norm=_norm)
         sm.set_array([])
-        cbar_kwds = {k: v for k, v in legend_kwds.items() if k not in ("title", "loc")}
+        cbar_kwds = {k: v for k, v in legend_kwargs.items() if k not in ("title", "loc")}
         _fig = ax.get_figure()
         assert _fig is not None  # noqa: S101
         cbar = _fig.colorbar(sm, ax=ax, **cbar_kwds)
-        label = legend_kwds.get("title", col_name or "")
+        label = legend_kwargs.get("title", col_name or "")
         cbar.set_label(label)
         return cbar
     else:
@@ -1152,7 +1152,7 @@ def _add_legend(
         else:
             handles = [mpatches.Patch(facecolor=cat_colors[v], label=v) for v in unique_vals]
 
-        legend_patch_kwds = {k: v for k, v in legend_kwds.items() if k not in ("shrink", "orientation")}
+        legend_patch_kwds = {k: v for k, v in legend_kwargs.items() if k not in ("shrink", "orientation")}
         if col_name and "title" not in legend_patch_kwds:
             legend_patch_kwds["title"] = col_name
 
@@ -1171,7 +1171,7 @@ def _add_hatch_legend(
     ax: plt.Axes,
     cat_hatch_map: dict[str, str],
     col_name: str | None,
-    legend_kwds: dict,
+    legend_kwargs: dict,
 ) -> Legend:
     """Attach a patch legend showing hatch-pattern ↔ category mappings.
 
@@ -1181,15 +1181,15 @@ def _add_hatch_legend(
         Ordered mapping of category label → matplotlib hatch pattern string.
     col_name : str or None
         Column name used as the legend title (when not overridden via
-        ``legend_kwds["title"]``).
-    legend_kwds : dict
+        ``legend_kwargs["title"]``).
+    legend_kwargs : dict
         Standard ``Axes.legend()`` keyword arguments.  An optional nested
         ``"patch_kw"`` key controls the visual appearance of the legend
         patches themselves (``facecolor``, ``edgecolor``, ``linewidth``):
 
         .. code-block:: python
 
-            hatch_legend_kwds={
+            hatch_legend_kwargs={
                 "title": "Land use",
                 "loc": "upper left",
                 "patch_kw": {"facecolor": "lightyellow", "edgecolor": "darkgreen"},
@@ -1201,13 +1201,13 @@ def _add_hatch_legend(
     import matplotlib.patches as mpatches
 
     # Extract patch appearance overrides from the nested "patch_kw" key
-    patch_kw_user: dict[str, Any] = legend_kwds.get("patch_kw", {})
+    patch_kw_user: dict[str, Any] = legend_kwargs.get("patch_kw", {})
     patch_defaults = {"facecolor": "none", "edgecolor": "black", "linewidth": 1.5}
     patch_kw = {**patch_defaults, **patch_kw_user}
 
     handles = [mpatches.Patch(hatch=h if h else None, label=cat, **patch_kw) for cat, h in cat_hatch_map.items()]
 
-    legend_kw = {k: v for k, v in legend_kwds.items() if k not in ("shrink", "orientation", "patch_kw")}
+    legend_kw = {k: v for k, v in legend_kwargs.items() if k not in ("shrink", "orientation", "patch_kw")}
     if col_name and "title" not in legend_kw:
         legend_kw["title"] = col_name
 
@@ -1486,24 +1486,17 @@ def plot_symbols(
     >>> result.plot(facecolor=np.random.rand(len(result.symbols), 4), legend=False)
 
     >>> # Labels from a column
-    >>> result.plot(facecolor="pop_est", label="name")
+    >>> result.plot(facecolor="pop_est", labels="name")
 
     >>> # Labels with per-symbol color
-    >>> result.plot(facecolor="steelblue", label="iso_a3",
+    >>> result.plot(facecolor="steelblue", labels="iso_a3",
     ...             label_color="region", label_fontsize=7)
 
     >>> # Look up columns from an external GeoDataFrame
     >>> result.plot(source_gdf=world_gdf, facecolor="gdp_md_est",
-    ...             label="name", cmap="plasma")
+    ...             labels="name", cmap="plasma")
 
     """
-    legend_kwds, edge_legend_kwds, hatch_legend_kwds = legend_kwargs, edge_legend_kwargs, hatch_legend_kwargs
-    linewidth_legend_kwds, alpha_legend_kwds, label_legend_kwds = (
-        linewidth_legend_kwargs,
-        alpha_legend_kwargs,
-        label_legend_kwargs,
-    )
-    label = labels
     from collections import defaultdict
 
     import matplotlib.pyplot as plt
@@ -1664,7 +1657,7 @@ def plot_symbols(
             norm,
             vmin,
             vmax,
-            legend_kwds or {},
+            legend_kwargs or {},
             role="face",
         )
         from matplotlib.colorbar import Colorbar as _Colorbar
@@ -1677,7 +1670,7 @@ def plot_symbols(
     # --- Legend for hatch patterns (only when column-driven) ---
     hatch_legend_art = None
     if hatch_legend and hatch_is_mapped and cat_hatch_map:
-        hatch_legend_art = _add_hatch_legend(ax, cat_hatch_map, hatch_col_name, hatch_legend_kwds or {})
+        hatch_legend_art = _add_hatch_legend(ax, cat_hatch_map, hatch_col_name, hatch_legend_kwargs or {})
 
     # --- Legend for edgecolor (only when mapped from a different column) ---
     edge_colorbar = None
@@ -1696,7 +1689,7 @@ def plot_symbols(
             None,
             None,
             None,
-            edge_legend_kwds or {},
+            edge_legend_kwargs or {},
             role="edge",
         )
         from matplotlib.colorbar import Colorbar as _Colorbar
@@ -1719,7 +1712,7 @@ def plot_symbols(
             mlines.Line2D([], [], color="gray", linewidth=float(lw), label=f"{dv:.3g}")
             for dv, lw in zip(data_vals, lw_steps, strict=False)
         ]
-        _lkwds = dict(linewidth_legend_kwds or {})
+        _lkwds = dict(linewidth_legend_kwargs or {})
         if "title" not in _lkwds:
             _lkwds["title"] = lw_col_name
         existing = ax.get_legend()
@@ -1754,23 +1747,23 @@ def plot_symbols(
         _anorm = mc.Normalize(vmin=data_min, vmax=data_max)
         _sm = plt.cm.ScalarMappable(cmap=_alpha_cmap, norm=_anorm)
         _sm.set_array([])
-        _akwds = {k: v for k, v in (alpha_legend_kwds or {}).items() if k not in ("title", "loc")}
+        _akwds = {k: v for k, v in (alpha_legend_kwargs or {}).items() if k not in ("title", "loc")}
         _fig = ax.get_figure()
         assert _fig is not None  # noqa: S101
         alpha_colorbar = _fig.colorbar(_sm, ax=ax, **_akwds)
-        alpha_colorbar.set_label((alpha_legend_kwds or {}).get("title", alpha_col_name or ""))
+        alpha_colorbar.set_label((alpha_legend_kwargs or {}).get("title", alpha_col_name or ""))
 
     # --- Per-symbol labels ---
     label_artists: list[Any] = []
     lc_is_mapped = False
     lc_col_values: NDArray | None = None
     lc_col_name: str | None = None
-    if label is not None:
+    if labels is not None:
         # Resolve label texts
-        if isinstance(label, str) and _is_column(label, result, source_gdf):
-            label_texts = [str(v) for v in _find_column(label, result, source_gdf)]
+        if isinstance(labels, str) and _is_column(labels, result, source_gdf):
+            label_texts = [str(v) for v in _find_column(labels, result, source_gdf)]
         else:
-            label_list = list(label) if not isinstance(label, str) else [label] * n
+            label_list = list(labels) if not isinstance(labels, str) else [labels] * n
             if len(label_list) != n:
                 raise ValueError(f"label list length {len(label_list)} != number of symbols {n}.")
             label_texts = [str(v) for v in label_list]
@@ -1846,7 +1839,7 @@ def plot_symbols(
             None,
             None,
             None,
-            label_legend_kwds or {},
+            label_legend_kwargs or {},
             role="face",
         )
         from matplotlib.colorbar import Colorbar as _Colorbar

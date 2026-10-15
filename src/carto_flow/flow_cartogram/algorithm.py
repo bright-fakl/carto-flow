@@ -29,6 +29,7 @@ import shapely
 import tqdm
 
 from ..geo_utils.geometry import (
+    GeometryCoordinates,
     reconstruct_geometries,
     unpack_geometries,
 )
@@ -442,7 +443,7 @@ def morph_geometries(
         _pt.density_threads = _ndensity if _ndensity is not None else _os.cpu_count() or 1
 
     # Handle landmarks
-    flat_landmarks_geoms = unpack_geometries(landmarks) if landmarks is not None else None
+    flat_landmarks_geoms = GeometryCoordinates(landmarks) if landmarks is not None else None
 
     # Handle displacement coordinates
     flat_coords = None
@@ -514,7 +515,7 @@ def morph_geometries(
         return CartogramSnapshot(
             iteration=iteration,
             geometry=reconstruct_geometries(flat_geoms),
-            landmarks=reconstruct_geometries(flat_landmarks_geoms) if flat_landmarks_geoms is not None else None,
+            landmarks=flat_landmarks_geoms.reconstruct() if flat_landmarks_geoms is not None else None,
             coords=_convert_coords_to_input_format(flat_coords.copy(), coords_format, coords_sz)
             if flat_coords is not None
             else None,

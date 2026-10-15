@@ -172,6 +172,11 @@ Releases before 2.0.0 have no changelog entry; see the
   displacement coordinates are not: they are not tied to the geometries (a grid carried
   along to show the deformation of the plane may be wanted without the pre-scaling); the
   new `MorphOptions.prescale_coords` scales them too.
+- **Landmarks of different geometry types (points with lines or polygons) raised an
+  error.** Landmarks may now mix any geometry types. Their coordinates are read and
+  written with `shapely.get_coordinates` and `shapely.set_coordinates`, which also
+  makes rebuilding the landmark geometries for each snapshot about 30 times faster.
+  Z values of landmarks are dropped.
 - **The `MorphOptions` presets stopped before converging.** Their iteration limits
   (30, 100 and 300) date from before the stall rule, the exact rasterization and the
   adaptive step: on the bundled states the three presets ended with a mean area

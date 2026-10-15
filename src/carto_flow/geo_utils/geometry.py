@@ -762,6 +762,32 @@ class GeometryCoordinateInfo:
 # ============================================================================
 
 
+class GeometryCoordinates:
+    """
+    Coordinates of geometries of any mix of types, with reconstruction.
+
+    Parameters
+    ----------
+    geometries : sequence of BaseGeometry
+        Geometries of any types. Holes, parts and order are kept on
+        reconstruction; Z values are dropped.
+
+    Attributes
+    ----------
+    coords : np.ndarray
+        All vertices in geometry order, shape (n_points, 2). Assigning new
+        values of the same shape moves the vertices.
+    """
+
+    def __init__(self, geometries) -> None:
+        self._geometries = np.asarray(geometries, dtype=object)
+        self.coords = shapely.get_coordinates(self._geometries)
+
+    def reconstruct(self) -> list[BaseGeometry]:
+        """Geometries with the current coordinates."""
+        return list(shapely.set_coordinates(self._geometries.copy(), self.coords))
+
+
 def unpack_geometries(geometries: list[BaseGeometry], precompute_ring_info: bool = True) -> GeometryCoordinateInfo:
     """
     Unpack multiple geometries into a single coordinate array with metadata.

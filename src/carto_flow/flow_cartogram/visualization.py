@@ -642,10 +642,21 @@ def _plot_fill(
     role = fill.role
     plot_cmap = cmap if cmap is not None else (style.colormap(role) or default_cmap)
     data = np.asarray(gdf[fill.column] if values is None else values, dtype=float)
+    finite = data[np.isfinite(data)]
+    # Limits of the call fix a linear normalization (they are passed on to GeoDataFrame.plot) unless a scale is named
+    limits = kw.get("vmin") is not None or kw.get("vmax") is not None
+    lo = kw["vmin"] if kw.get("vmin") is not None else finite.min()
+    hi = kw["vmax"] if kw.get("vmax") is not None else finite.max()
     if isinstance(norm, Normalize):
+        if limits:
+            raise ValueError("pass either norm or vmin and vmax, not both")
         norm_obj = norm
     elif isinstance(norm, str):
-        norm_obj = style.norm(data, role, center=center, scale=norm)
+        norm_obj = style.norm(np.array([lo, hi], dtype=float), role, center=center, scale=norm)
+        kw.pop("vmin", None)
+        kw.pop("vmax", None)
+    elif limits:
+        norm_obj = None
     elif role == "diverging" and (style.palettes.diverging is not None or center is not None):
         norm_obj = style.norm(data, role, center=center)
     elif role == "sequential" and style.color_scale in ("log", "auto"):
@@ -660,8 +671,7 @@ def _plot_fill(
     own_guide = legend and (style.draws_guide or norm_obj is not None)
     if own_guide:
         gdf.plot(ax=ax, legend=False, **fill.kwargs, **extra, **kw)
-        finite = data[np.isfinite(data)]
-        norm_for_guide = norm_obj if norm_obj is not None else Normalize(vmin=finite.min(), vmax=finite.max())
+        norm_for_guide = norm_obj if norm_obj is not None else Normalize(vmin=lo, vmax=hi)
         mappable = ScalarMappable(norm=norm_for_guide, cmap=plot_cmap)
         mappable.set_array([])
         guide = dict(legend_kwargs or {})
@@ -715,7 +725,8 @@ def plot_cartogram(
     legend_label : str, optional
         Label of the colorbar. Defaults to the name of the data.
     norm : Normalize, {"linear", "log", "auto"}, optional
-        Normalization of continuous data: an instance, or the scale of the style's normalization.
+        Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
+        ``vmax`` fixes a linear normalization unless a scale is named; with an instance it raises ``ValueError``.
     center : float, optional
         Treat the data as diverging around this value.
     categorical : bool, optional
@@ -819,7 +830,8 @@ def plot_comparison(
         Colormap of continuous data. Defaults to the palette of the style for the data role.
     norm : Normalize, {"linear", "log", "auto"}, optional
         Normalization of continuous data: an instance, or the scale of the style's normalization. With a style
-        that sets a scale, both panels share the normalization of the values of both.
+        that sets a scale, both panels share the normalization of the values of both. A ``vmin`` or ``vmax`` fixes a
+        linear normalization unless a scale is named.
     center : float, optional
         Treat the data as diverging around this value.
     categorical : bool, optional

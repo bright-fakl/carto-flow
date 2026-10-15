@@ -250,3 +250,41 @@ class TestMorphTimeline:
         )
         anim._init_draw()
         anim._func(0)
+
+
+class TestLimitsOfTheCall:
+    def test_vmin_and_vmax_fix_a_linear_normalization(self, cartogram):
+        result = cartogram.plot(facecolor="Population", vmin=0, vmax=3e7, style="default")
+        norm = result.collections[0].norm
+        assert type(norm) is matplotlib.colors.Normalize and (norm.vmin, norm.vmax) == (0, 3e7)
+        low, high = _colorbar_axes(result.ax.figure)[0].get_ylim()
+        assert (low, high) == (0, 3e7)
+
+    def test_only_one_limit(self, cartogram):
+        result = cartogram.plot(facecolor="Population", vmin=1e6, style="default")
+        norm = result.collections[0].norm
+        assert norm.vmin == 1e6 and type(norm) is matplotlib.colors.Normalize
+
+    def test_a_named_scale_uses_the_limits(self, cartogram):
+        result = cartogram.plot(facecolor="Population", vmin=1e5, vmax=5e7, norm="log", style="default")
+        norm = result.collections[0].norm
+        assert isinstance(norm, matplotlib.colors.LogNorm) and (norm.vmin, norm.vmax) == (1e5, 5e7)
+
+    def test_a_norm_instance_and_limits_raise(self, cartogram):
+        with pytest.raises(ValueError, match="norm or vmin"):
+            cartogram.plot(facecolor="Population", vmin=0, norm=matplotlib.colors.Normalize(), style="default")
+
+    def test_classic_passes_the_limits_to_geopandas(self, cartogram):
+        result = cartogram.plot(facecolor="Population", vmin=0, vmax=3e7, style="classic")
+        norm = result.collections[0].norm
+        assert (norm.vmin, norm.vmax) == (0, 3e7)
+        assert len(_colorbar_axes(result.ax.figure)) == 1
+
+
+class TestStyleSequences:
+    def test_a_call_takes_a_sequence_of_styles(self, cartogram):
+        talk = PlotStyle(rc={"xtick.labelsize": 20})
+        result = cartogram.plot(facecolor="Population", style=("dark", talk))
+        assert matplotlib.colors.to_hex(result.ax.figure.get_facecolor()) == PlotStyle.dark().rc["figure.facecolor"]
+        result.ax.figure.canvas.draw()
+        assert result.ax.xaxis.get_ticklabels()[0].get_fontsize() == 20

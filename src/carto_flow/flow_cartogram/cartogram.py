@@ -486,7 +486,8 @@ class Cartogram:
         legend_label : str, optional
             Label of the colorbar. Defaults to the name of the data.
         norm : Normalize, {"linear", "log", "auto"}, optional
-            Normalization of continuous data: an instance, or the scale of the style's normalization.
+            Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
+            ``vmax`` fixes a linear normalization unless a scale is named.
         center : float, optional
             Treat the data as diverging around this value.
         categorical : bool, optional

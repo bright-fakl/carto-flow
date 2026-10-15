@@ -27,7 +27,13 @@ Releases before 2.0.0 have no changelog entry; see the
   `plot_cartogram`, `plot_comparison` and the animations of geometry, with `center=` and
   `categorical=`; a logarithmic colorbar has ticks at 1, 2 and 5 per decade in real
   numbers (`1M`, `2M`, `5M`). `save_animation` saves the frames with the surface of the
-  figure.
+  figure. Styles combine: `a | b` (or `a.merge(b)`) is a style in which what `b` sets wins
+  (the `rc` dicts, palettes and channels merge field by field), and `style=`,
+  `style_context` and `set_style` take a sequence of styles or names, merged in order. A
+  `vmin` or `vmax` in the call fixes a linear normalization in the plots (with `norm="log"`
+  they are the limits of the logarithmic scale), and `norm="linear"`,
+  `color_scale="linear"` or `log_span` keep a linear scale for data that spans more than one
+  decade.
 - **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
   through the morph, holds and returns**, for `animate_geometry_keyframes` with
   `position_mapper=linear_over("time")`.

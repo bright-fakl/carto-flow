@@ -45,6 +45,8 @@ cartogram.plot(facecolor="Population", cmap="Reds")     # a palette of the call
 
 The default style takes a logarithmic scale for positive data that spans more than one decade (`color_scale="auto"`) and writes the tick labels in real numbers (`1M`, `2M`, `5M`). `norm=` accepts a matplotlib `Normalize` or one of `"linear"`, `"log"`, `"auto"`.
 
+To keep a linear scale for data that spans more than one decade, pass `norm="linear"` to the call, set `color_scale="linear"` in a style (`PlotStyle.default().copy_with(color_scale="linear")`), or raise the threshold with `log_span` (the number of decades that triggers `"auto"`, default 1). A `vmin` or `vmax` in the call also fixes a linear scale; combined with `norm="log"` they are the limits of the logarithmic scale.
+
 ## Write your own style
 
 Start from a built-in style and change what you need:
@@ -71,14 +73,29 @@ cartogram.plot(facecolor="Population", style="mine")
 
 `"default"`, `"dark"` and `"classic"` cannot be replaced; `register_style(name, style, overwrite=True)` replaces another registered name.
 
+## Combine styles
+
+A field that a style leaves `None` is left alone, so a style can set only part of the look and be layered over another. `a | b` (or `a.merge(b)`) is a style in which whatever `b` sets wins: the `rc` dicts merge, the palettes and the channels merge field by field, and the other fields of `b` that are not `None` replace those of `a`.
+
+```python
+talk_fonts = PlotStyle(rc={"xtick.labelsize": 20, "ytick.labelsize": 20, "axes.labelsize": 22})
+big_dark = PlotStyle.dark() | talk_fonts
+```
+
+`style=`, `style_context` and `set_style` also take a sequence of styles or names, merged in order:
+
+```python
+cartogram.plot(facecolor="Population", style=("dark", talk_fonts))
+```
+
 ## Figure size, large type and animations
 
 The size of a figure is not part of a style: pass `figsize=` (and `dpi=` when saving). The large type of a slide is a style with larger fonts:
 
 ```python
-talk = PlotStyle.default().copy_with(rc_update={"xtick.labelsize": 20, "ytick.labelsize": 20, "axes.labelsize": 22})
+talk = PlotStyle(rc={"xtick.labelsize": 20, "ytick.labelsize": 20, "axes.labelsize": 22})
 register_style("talk", talk)
-anim = animate_geometry_keyframes(keyframes, style="talk", figsize=(16, 9), legend=True)
+anim = animate_geometry_keyframes(keyframes, style=("default", "talk"), figsize=(16, 9), legend=True)
 save_animation(anim, "map.mp4", fps=30, dpi=120)   # the saved frames have the surface of the style
 ```
 

@@ -124,8 +124,8 @@ class PlotStyle:
     color_scale : {"linear", "log", "auto"}, optional
         Scale of continuous data; ``"auto"`` takes a log scale when all values are positive and span more than
         ``log_span`` decades.
-    log_span : float
-        Decades that trigger ``color_scale="auto"``.
+    log_span : float, optional
+        Decades that trigger ``color_scale="auto"`` (default 1).
     tick_format : {"plain", "si"}, optional
         Format of the tick labels of a colorbar; ``"si"`` writes ``1M`` and ``2.5k``.
     colorbar_orientation, colorbar_shrink, colorbar_pad, colorbar_aspect : optional
@@ -138,7 +138,7 @@ class PlotStyle:
     palettes: Palettes = field(default_factory=Palettes)
     channels: Mapping[str, Channel] = field(default_factory=dict)
     color_scale: str | None = None
-    log_span: float = 1.0
+    log_span: float | None = None
     tick_format: str | None = None
     colorbar_orientation: str | None = None
     colorbar_shrink: float | None = None
@@ -156,7 +156,7 @@ class PlotStyle:
             raise ValueError(
                 f"colorbar_orientation must be one of {_ORIENTATIONS} or None, got {self.colorbar_orientation!r}"
             )
-        if not self.log_span > 0:
+        if self.log_span is not None and not self.log_span > 0:
             raise ValueError(f"log_span must be positive, got {self.log_span!r}")
         unknown = set(self.channels) - set(CHANNELS)
         if unknown:
@@ -172,6 +172,38 @@ class PlotStyle:
         if rc_update:
             changes["rc"] = {**changes.get("rc", self.rc), **rc_update}
         return dataclasses.replace(self, **changes)
+
+    def merge(self, other: PlotStyle | str) -> PlotStyle:
+        """Combine two styles: what ``other`` sets wins over this style.
+
+        The ``rc`` dicts merge, the palettes and the channels merge field by field, and every other field of ``other``
+        that is not ``None`` replaces the field of this style, so a style that sets only the fonts or only a palette
+        can be layered over another. ``a | b`` is ``a.merge(b)``.
+        """
+        other = _lookup(other)
+        changes: dict[str, Any] = {"rc": {**self.rc, **other.rc}}
+        changes["palettes"] = _merge_palettes(self.palettes, other.palettes)
+        channels = dict(self.channels)
+        for name, channel in other.channels.items():
+            channels[name] = _merge_channel(channels.get(name), channel)
+        changes["channels"] = channels
+        for f in dataclasses.fields(self):
+            if f.name in changes:
+                continue
+            value = getattr(other, f.name)
+            if value is not None:
+                changes[f.name] = value
+        return dataclasses.replace(self, **changes)
+
+    def __or__(self, other: PlotStyle | str) -> PlotStyle:
+        if not isinstance(other, (PlotStyle, str)):
+            return NotImplemented
+        return self.merge(other)
+
+    def __ror__(self, other: PlotStyle | str) -> PlotStyle:
+        if not isinstance(other, (PlotStyle, str)):
+            return NotImplemented
+        return _lookup(other).merge(self)
 
     @classmethod
     def from_mplstyle(cls, name_or_path: str, **fields: Any) -> PlotStyle:
@@ -274,7 +306,7 @@ class PlotStyle:
         vmin, vmax = float(data.min()), float(data.max())
         positive = vmin > 0
         if scale == "auto":
-            scale = "log" if positive and vmax / vmin > 10**self.log_span else "linear"
+            scale = "log" if positive and vmax / vmin > 10 ** (self.log_span or 1.0) else "linear"
         if scale == "log":
             if not positive:
                 raise ValueError("a logarithmic color scale needs positive values")
@@ -349,6 +381,26 @@ class PlotStyle:
 
 
 # ---------------------------------------------------------------------- helpers
+
+
+def _merge_palettes(base: Palettes, other: Palettes | None) -> Palettes:
+    if other is None:
+        return base
+    changes = {
+        f.name: getattr(other, f.name) for f in dataclasses.fields(Palettes) if getattr(other, f.name) is not None
+    }
+    return dataclasses.replace(base, **changes)
+
+
+def _merge_channel(base: Channel | None, other: Channel) -> Channel:
+    if base is None:
+        return other
+    palettes = base.palettes if other.palettes is None else _merge_palettes(base.palettes or Palettes(), other.palettes)
+    return Channel(
+        value=other.value if other.value is not None else base.value,
+        palettes=palettes,
+        range=other.range if other.range is not None else base.range,
+    )
 
 
 def _cycle(cmap: Colormap, n: int) -> list[str]:
@@ -458,16 +510,25 @@ def register_style(name: str, style: PlotStyle, *, overwrite: bool = False) -> N
     _registry[name] = style
 
 
-def _lookup(style: PlotStyle | str) -> PlotStyle:
+def _lookup(style: PlotStyle | str | Sequence[PlotStyle | str]) -> PlotStyle:
     if isinstance(style, PlotStyle):
         return style
+    if isinstance(style, (list, tuple)):
+        if not style:
+            raise ValueError("a sequence of styles must not be empty")
+        merged = _lookup(style[0])
+        for item in style[1:]:
+            merged = merged.merge(item)
+        return merged
     if isinstance(style, str):
         if style in _BUILTIN:
             return _BUILTIN[style]()
         if style in _registry:
             return _registry[style]
         raise ValueError(f"no style named {style!r}; available: {sorted([*_BUILTIN, *_registry])}")
-    raise TypeError(f"style must be a PlotStyle, a registered name or None, got {type(style).__name__}")
+    raise TypeError(
+        f"style must be a PlotStyle, a registered name, a sequence of these or None, got {type(style).__name__}"
+    )
 
 
 def get_style(name: str | None = None) -> PlotStyle:
@@ -475,15 +536,18 @@ def get_style(name: str | None = None) -> PlotStyle:
     return resolve_style(name)
 
 
-def set_style(style: PlotStyle | str | None) -> None:
-    """Set the style of the session (process-wide, like ``matplotlib.pyplot.style.use``); ``None`` resets it."""
+def set_style(style: PlotStyle | str | Sequence[PlotStyle | str] | None) -> None:
+    """Set the style of the session (process-wide, like ``matplotlib.pyplot.style.use``); ``None`` resets it.
+
+    A sequence of styles is merged in order (see :meth:`PlotStyle.merge`).
+    """
     global _session
     _session = None if style is None else _lookup(style)
 
 
 @contextlib.contextmanager
-def style_context(style: PlotStyle | str) -> Iterator[PlotStyle]:
-    """Context manager that sets the style for a block of code (thread and async safe)."""
+def style_context(style: PlotStyle | str | Sequence[PlotStyle | str]) -> Iterator[PlotStyle]:
+    """Context manager that sets the style for a block of code (thread and async safe); a sequence is merged."""
     resolved = _lookup(style)
     token = _context.set(resolved)
     try:
@@ -492,8 +556,8 @@ def style_context(style: PlotStyle | str) -> Iterator[PlotStyle]:
         _context.reset(token)
 
 
-def resolve_style(style: PlotStyle | str | None = None) -> PlotStyle:
-    """The style of a call: the argument, else the block, else the session, else ``default``."""
+def resolve_style(style: PlotStyle | str | Sequence[PlotStyle | str] | None = None) -> PlotStyle:
+    """The style of a call: the argument (a sequence is merged), else the block, else the session, else ``default``."""
     if style is not None:
         return _lookup(style)
     return _context.get() or _session or PlotStyle.default()

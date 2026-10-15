@@ -268,3 +268,51 @@ class TestStyledDecorator:
         with pytest.raises(RuntimeError):
             plot(style="dark")
         assert matplotlib.rcParams["axes.facecolor"] == before
+
+
+class TestMerge:
+    def test_what_the_other_style_sets_wins(self):
+        base = PlotStyle.default()
+        fonts = PlotStyle(rc={"xtick.labelsize": 20}, tick_format="plain")
+        merged = base | fonts
+        assert merged.rc["xtick.labelsize"] == 20 and merged.rc["figure.facecolor"] == base.rc["figure.facecolor"]
+        assert merged.tick_format == "plain" and merged.color_scale == base.color_scale  # None does not override
+        assert base.tick_format == "si" and "xtick.labelsize" not in base.rc  # the operands are unchanged
+
+    def test_palettes_and_channels_merge_field_by_field(self):
+        base = PlotStyle(
+            palettes=Palettes(sequential="Blues", sequential_range=(0.2, 1.0), diverging="PuOr"),
+            channels={"edge": Channel(value="#111111", range=(1, 2)), "linewidth": Channel(value=0.5)},
+        )
+        other = PlotStyle(
+            palettes=Palettes(sequential="Greens"),
+            channels={"edge": Channel(palettes=Palettes(sequential="Oranges")), "fill": Channel(value="#abcdef")},
+        )
+        merged = base.merge(other)
+        assert merged.palettes.sequential == "Greens" and merged.palettes.sequential_range == (0.2, 1.0)
+        assert merged.palettes.diverging == "PuOr"
+        edge = merged.channels["edge"]
+        assert edge.value == "#111111" and edge.range == (1, 2) and edge.palettes.sequential == "Oranges"
+        assert merged.channels["linewidth"].value == 0.5 and merged.channels["fill"].value == "#abcdef"
+
+    def test_names_and_reflected_operator(self):
+        assert (PlotStyle() | "dark") == PlotStyle.dark()
+        assert ("dark" | PlotStyle(color_scale="log")).color_scale == "log"
+        assert ("dark" | PlotStyle(color_scale="log")).rc == PlotStyle.dark().rc
+        with pytest.raises(TypeError):
+            PlotStyle() | 3  # type: ignore[operator]
+
+    def test_a_sequence_is_merged_in_order(self):
+        talk = PlotStyle(rc={"xtick.labelsize": 20})
+        assert resolve_style(("dark", talk)) == PlotStyle.dark() | talk
+        assert resolve_style(["classic"]) == PlotStyle.classic()
+        with pytest.raises(ValueError, match="empty"):
+            resolve_style(())
+        with style_context(("dark", talk)):
+            assert resolve_style().rc["xtick.labelsize"] == 20
+        set_style(("dark", talk))
+        assert resolve_style().rc["figure.facecolor"] == PlotStyle.dark().rc["figure.facecolor"]
+
+    def test_log_span_merges_like_any_field(self):
+        assert (PlotStyle.default() | PlotStyle(log_span=3)).log_span == 3
+        assert PlotStyle.default().log_span is None

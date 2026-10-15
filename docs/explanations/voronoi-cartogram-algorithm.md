@@ -266,6 +266,14 @@ Prescaling reduces initial area CV, allowing faster convergence with fewer
 iterations. It is particularly effective when some regions are far from their
 target areas at the start.
 
+With `premorph`, the flow cartogram morph pre-scales its components too (it
+converges in fewer iterations on inputs with disconnected parts), unless the
+`MorphOptions` given as `premorph` sets `prescale_components` itself, True or
+False. `MorphOptions.prescale_components` is None by default, which means
+False and lets `create_voronoi_cartogram` decide. The scaling of the Voronoi run
+itself is applied to the morphed regions and stays necessary: it matches the
+component areas to the weights.
+
 ---
 
 ## Boundary Behavior

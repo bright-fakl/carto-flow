@@ -196,7 +196,7 @@ class MorphOptions:
     # Unit scaling options
     area_scale: float = 1.0  # Multiplier for area values (e.g., 1e6 to convert m² to km²)
 
-    prescale_components: bool = False
+    prescale_components: bool | None = None
     """Pre-scale each connected component to its target total area before morphing.
 
     When True, the algorithm detects groups of adjacent geometries (connected
@@ -206,6 +206,20 @@ class MorphOptions:
     archipelagos, separate land masses). By pre-scaling components to their target areas,
     the algorithm can focus on redistributing density within each component rather than
     applying large global transformations that can excessively distort the outer boundary.
+    The landmarks are scaled with the component that contains them; the displacement coordinates are only with
+    ``prescale_coords``.
+
+    None (default) means False, and ``create_voronoi_cartogram(premorph=...)`` then follows
+    ``VoronoiOptions.prescale_components``; an explicit True or False is used as given.
+    """
+    prescale_coords: bool = False
+    """Also scale the displacement coordinates with the component that contains them when ``prescale_components`` is on.
+
+    The landmarks follow the geometries they refer to, so they are always scaled with them. Displacement coordinates
+    are not tied to the geometries: a grid of points that is carried along to show the deformation of the plane may
+    be wanted without the pre-scaling, points that mark positions on the map with it. With False (default) the
+    displacement coordinates start where they are given. To mix both kinds, pass the points that follow the
+    geometries as ``landmarks`` (point geometries are accepted) and the others as ``displacement_coords``.
     """
 
     # Output options
@@ -481,6 +495,7 @@ class MorphOptions:
             "progress_message",
             "benchmark",
             "prescale_components",
+            "prescale_coords",
             "adaptive_dt",
             "stall_patience",
             "stall_min_improvement",
@@ -598,8 +613,10 @@ class MorphOptions:
         # Outer-boundary distortion reduction options
         elif field_name == "adaptive_dt" and not isinstance(value, bool):
             return "adaptive_dt must be a boolean"
-        elif field_name == "prescale_components" and not isinstance(value, bool):
-            return "prescale_components must be a boolean"
+        elif field_name == "prescale_components" and value is not None and not isinstance(value, bool):
+            return "prescale_components must be a boolean or None"
+        elif field_name == "prescale_coords" and not isinstance(value, bool):
+            return "prescale_coords must be a boolean"
 
         return ""  # No errors
 

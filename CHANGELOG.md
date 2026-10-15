@@ -52,6 +52,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`VoronoiOptions.prescale_components` also pre-scales the `premorph`.** With
+  `premorph=True` the flow-cartogram morph pre-scales its connected components when the
+  Voronoi option is set (on the 52 US regions including Alaska, Hawaii and Puerto Rico
+  the morph converges in 58 instead of 168 iterations); a `MorphOptions` given as
+  `premorph` is used as given when it sets `prescale_components`. To tell an explicit
+  setting from the default, `MorphOptions.prescale_components` is now `None` by default,
+  which behaves as `False`.
 - **`n_iter` is the total number of iterations of a ladder of resolutions.** Each level
   may use what the previous levels left, and the ladder stops when the total is used up;
   before, every level could use `n_iter`. A list of `MorphOptions` in
@@ -157,6 +164,14 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **`prescale_components` moves the landmarks with their component.** The pre-scaling
+  scaled the geometries but left the landmarks where they were, so for a region that was
+  scaled down they started outside it (only 39 % of the dots of a shrunken region of a
+  two-component test case were inside it at the end). Landmarks are scaled with the
+  component that contains them; points outside every region are not moved. The
+  displacement coordinates are not: they are not tied to the geometries (a grid carried
+  along to show the deformation of the plane may be wanted without the pre-scaling); the
+  new `MorphOptions.prescale_coords` scales them too.
 - **The `MorphOptions` presets stopped before converging.** Their iteration limits
   (30, 100 and 300) date from before the stall rule, the exact rasterization and the
   adaptive step: on the bundled states the three presets ended with a mean area

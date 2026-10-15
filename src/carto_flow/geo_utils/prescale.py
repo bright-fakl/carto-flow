@@ -6,6 +6,8 @@ compute_connected_components
     Detect connected components among geometries (Union-Find over adjacency).
 prescale_connected_components
     Uniformly scale each component to its target total area.
+prescale_scalings, scale_points
+    The scale factors of the components and the same scaling of points (landmarks, coordinates).
 """
 
 from __future__ import annotations
@@ -22,6 +24,8 @@ __all__ = [
     "components_from_adjacency",
     "compute_connected_components",
     "prescale_connected_components",
+    "prescale_scalings",
+    "scale_points",
 ]
 
 
@@ -133,6 +137,113 @@ def compute_connected_components(
 # ---------------------------------------------------------------------------
 
 
+def prescale_scalings(
+    geometries: list,
+    values: np.ndarray,
+    target_density: float,
+    *,
+    components: list[list[int]] | None = None,
+    distance_tolerance: float | None = None,
+) -> list[tuple[list[int], float, tuple[float, float]]]:
+    """The uniform scaling of every connected component that :func:`prescale_connected_components` applies.
+
+    Returns
+    -------
+    list of (indices, scale factor, center)
+        For every component that is scaled, the indices of its geometries, the scale factor and the
+        area-weighted centroid it is scaled around. Components that are left unchanged are not listed.
+    """
+    values_array = np.asarray(values, dtype=float)
+    if target_density == 0:
+        return []
+    if components is None:
+        _, components = compute_connected_components(geometries, distance_tolerance)
+
+    scalings = []
+    for component_indices in components:
+        component_geoms = [geometries[i] for i in component_indices]
+        component_values = values_array[component_indices]
+
+        current_area = sum(g.area for g in component_geoms)
+        target_area = float(np.sum(component_values)) / target_density
+
+        if current_area <= 0:
+            if target_area > 0:
+                # A degenerate (zero-area) input geometry carrying real data:
+                # no scale factor can grow it, so it is left unchanged. Warn
+                # rather than silently drop the mismatch.
+                warnings.warn(
+                    f"Component with geometries {component_indices} has zero "
+                    "current area but nonzero target area; it cannot be "
+                    "pre-scaled and is left unchanged.",
+                    UserWarning,
+                    stacklevel=3,
+                )
+            continue
+
+        if target_area <= 0:
+            # All values in this component are zero: collapse it to exactly
+            # zero area so the total-area invariant holds automatically.
+            scale_factor = 0.0
+        else:
+            scale_factor = math.sqrt(target_area / current_area)
+            if abs(scale_factor - 1.0) < 1e-8:
+                continue
+
+        cx = sum(g.centroid.x * g.area for g in component_geoms) / current_area
+        cy = sum(g.centroid.y * g.area for g in component_geoms) / current_area
+        scalings.append((list(component_indices), scale_factor, (cx, cy)))
+    return scalings
+
+
+def scale_points(
+    points: np.ndarray, geometries: list, scalings: list[tuple[list[int], float, tuple[float, float]]]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Scale points with the component that contains them, as :func:`prescale_connected_components` scales the geometries.
+
+    Parameters
+    ----------
+    points : np.ndarray, shape (n, 2)
+        Points (landmark vertices, displacement coordinates, probes).
+    geometries : list of shapely.Geometry
+        The geometries before the pre-scaling.
+    scalings : list
+        The result of :func:`prescale_scalings`.
+
+    Returns
+    -------
+    scaled : np.ndarray, shape (n, 2)
+        The scaled points. A point outside every geometry, or in a component that is collapsed (scale factor 0),
+        is not moved.
+    log_area_scaling : np.ndarray, shape (n,)
+        The logarithm of the area scaling of the move, ``2 log(scale factor)``, 0 for a point that is not moved.
+    """
+    import shapely
+
+    scaled = np.array(points, dtype=float)
+    log_scaling = np.zeros(len(scaled))
+    if not scalings or len(scaled) == 0:
+        return scaled, log_scaling
+    region_to_scaling = {}
+    for scaling_index, (indices, factor, _) in enumerate(scalings):
+        if factor > 0:
+            for i in indices:
+                region_to_scaling[i] = scaling_index
+    tree = shapely.STRtree(np.asarray(geometries, dtype=object))
+    point_idx, region_idx = tree.query(shapely.points(scaled), predicate="intersects")
+    done = np.zeros(len(scaled), dtype=bool)
+    for pi, ri in zip(point_idx, region_idx, strict=False):
+        found = region_to_scaling.get(int(ri))
+        if found is None or done[pi]:
+            continue
+        _, factor, (cx, cy) = scalings[found]
+        scaled[pi, 0] = cx + factor * (scaled[pi, 0] - cx)
+        scaled[pi, 1] = cy + factor * (scaled[pi, 1] - cy)
+        log_scaling[pi] = 2.0 * math.log(factor)
+        done[pi] = True
+    return scaled, log_scaling
+
+
 def prescale_connected_components(
     geometries: list,
     values: np.ndarray,
@@ -184,50 +295,11 @@ def prescale_connected_components(
     """
     from shapely import affinity
 
-    values_array = np.asarray(values, dtype=float)
-
-    if target_density == 0:
-        return list(geometries)
-
-    if components is None:
-        _, components = compute_connected_components(geometries, distance_tolerance)
-
     result = list(geometries)
-
-    for component_indices in components:
-        component_geoms = [geometries[i] for i in component_indices]
-        component_values = values_array[component_indices]
-
-        current_area = sum(g.area for g in component_geoms)
-        target_area = float(np.sum(component_values)) / target_density
-
-        if current_area <= 0:
-            if target_area > 0:
-                # A degenerate (zero-area) input geometry carrying real data:
-                # no scale factor can grow it, so it is left unchanged. Warn
-                # rather than silently drop the mismatch.
-                warnings.warn(
-                    f"Component with geometries {component_indices} has zero "
-                    "current area but nonzero target area; it cannot be "
-                    "pre-scaled and is left unchanged.",
-                    UserWarning,
-                    stacklevel=2,
-                )
-            continue
-
-        if target_area <= 0:
-            # All values in this component are zero: collapse it to exactly
-            # zero area so the total-area invariant holds automatically.
-            scale_factor = 0.0
-        else:
-            scale_factor = math.sqrt(target_area / current_area)
-            if abs(scale_factor - 1.0) < 1e-8:
-                continue
-
-        cx = sum(g.centroid.x * g.area for g in component_geoms) / current_area
-        cy = sum(g.centroid.y * g.area for g in component_geoms) / current_area
-
-        for idx, geom in zip(component_indices, component_geoms, strict=False):
-            result[idx] = affinity.scale(geom, scale_factor, scale_factor, origin=(cx, cy))
+    for indices, scale_factor, center in prescale_scalings(
+        geometries, values, target_density, components=components, distance_tolerance=distance_tolerance
+    ):
+        for idx in indices:
+            result[idx] = affinity.scale(geometries[idx], scale_factor, scale_factor, origin=center)
 
     return result

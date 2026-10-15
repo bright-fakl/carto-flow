@@ -225,7 +225,8 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `anisotropy` | `None` | `VelocityModulator` applied after the FFT solve |
 | `density_mod` | `None` | `DensityModulator` applied after rasterization |
 | `area_scale` | 1.0 | Multiplier applied to polygon areas before density computation |
-| `prescale_components` | `False` | Pre-scale connected components to target area |
+| `prescale_components` | `None` (False) | Pre-scale connected components to target area; the landmarks are scaled with their component (the displacement coordinates with `prescale_coords`). `create_voronoi_cartogram(premorph=...)` sets it from `VoronoiOptions.prescale_components` when it is None |
+| `prescale_coords` | `False` | Scale the displacement coordinates with their component when `prescale_components` is on |
 | `save_internals` | `False` | Save density/velocity grids in `Cartogram.internals` |
 
 Three preset factory methods are available:

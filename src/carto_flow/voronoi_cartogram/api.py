@@ -59,14 +59,15 @@ def _make_outer_boundary(geometries, spec, *, _union=None):
     raise ValueError(f"boundary must be 'union', 'bbox', 'convex_hull', 'circle', or a shapely Geometry; got {spec!r}")
 
 
-def _premorph(gdf: gpd.GeoDataFrame, weights: str | np.ndarray | None, premorph: Any):
+def _premorph(gdf: gpd.GeoDataFrame, weights: str | np.ndarray | None, premorph: Any, prescale: bool = False):
     """Flow-cartogram morph of *gdf* by *weights*; returns the morph result and repaired geometries.
 
     A weights column is morphed directly; weights given as an array, or no
     weights (every region gets the same value, an equal-area morph), are
     morphed from a copy of *gdf* with the values in a ``_premorph_weight``
     column.  Invalid morphed rings are repaired with ``make_valid``, keeping
-    only the polygonal parts.
+    only the polygonal parts.  With *prescale* (``VoronoiOptions.prescale_components``) the morph pre-scales the connected
+    components of the regions, unless ``premorph`` is a ``MorphOptions`` that sets ``prescale_components`` itself.
     """
     import shapely
 
@@ -75,9 +76,13 @@ def _premorph(gdf: gpd.GeoDataFrame, weights: str | np.ndarray | None, premorph:
     from .fields._base import _keep_polygonal
 
     if premorph is True:
-        morph_options = MorphOptions.preset_balanced().copy_with(n_iter=400, show_progress=False)
+        morph_options = MorphOptions.preset_balanced().copy_with(
+            n_iter=400, show_progress=False, prescale_components=True if prescale else None
+        )
     elif isinstance(premorph, MorphOptions):
         morph_options = premorph
+        if prescale and premorph.prescale_components is None:
+            morph_options = premorph.copy_with(prescale_components=True)
     else:
         raise TypeError(f"premorph must be None, False, True or a MorphOptions; got {type(premorph).__name__!r}")
     if isinstance(weights, str):
@@ -168,6 +173,9 @@ def create_voronoi_cartogram(
         repaired with ``make_valid``, keeping only polygonal parts.  ``True``
         uses ``MorphOptions.preset_balanced()`` with ``n_iter=400`` and no
         progress output; a ``MorphOptions`` is used as given.  With
+        ``options.prescale_components`` the morph also pre-scales the connected
+        components, unless the ``MorphOptions`` sets ``prescale_components``
+        itself (True or False).  With
         :class:`RasterBackend` and ``generator_anchor=None``, the generators
         are anchored to their morphed starting positions with strength
         ``0.25``, which keeps each region near its morphed location (see
@@ -255,7 +263,7 @@ def create_voronoi_cartogram(
 
     morph_result = None
     if premorph is not None and premorph is not False:
-        morph_result, geometries = _premorph(gdf, weights, premorph)
+        morph_result, geometries = _premorph(gdf, weights, premorph, options.prescale_components)
     else:
         geometries = list(gdf.geometry)
     areas = np.array([g.area for g in geometries], dtype=np.float64)

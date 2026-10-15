@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from numpy.typing import NDArray
 
+from .._plot_params import deprecated_params
 from .status import SymbolCartogramStatus
 
 if TYPE_CHECKING:
@@ -133,14 +134,15 @@ class SymbolCartogram:
         new_cartogram._valid_mask = self._valid_mask
         return new_cartogram
 
+    @deprecated_params(assigned_facecolor="assigned_color", unassigned_facecolor="unassigned_color")
     def plot_tiling(
         self,
         ax: plt.Axes | None = None,
         show_symbols: bool = True,
         show_assigned: bool = True,
         show_unassigned: bool = True,
-        assigned_color: str = "#d4e6f1",
-        unassigned_color: str = "#f5f5f5",
+        assigned_facecolor: str = "#d4e6f1",
+        unassigned_facecolor: str = "#f5f5f5",
         tile_edgecolor: str = "#999999",
         tile_linewidth: float = 0.5,
         tile_alpha: float = 0.5,
@@ -161,27 +163,37 @@ class SymbolCartogram:
             show_symbols=show_symbols,
             show_assigned=show_assigned,
             show_unassigned=show_unassigned,
-            assigned_color=assigned_color,
-            unassigned_color=unassigned_color,
+            assigned_facecolor=assigned_facecolor,
+            unassigned_facecolor=unassigned_facecolor,
             tile_edgecolor=tile_edgecolor,
             tile_linewidth=tile_linewidth,
             tile_alpha=tile_alpha,
             **kwargs,
         )
 
+    @deprecated_params(
+        _both="new",
+        facecolor="column",
+        legend_kwargs="legend_kwds",
+        edge_legend_kwargs="edge_legend_kwds",
+        hatch_legend_kwargs="hatch_legend_kwds",
+        linewidth_legend_kwargs="linewidth_legend_kwds",
+        alpha_legend_kwargs="alpha_legend_kwds",
+        label_legend_kwargs="label_legend_kwds",
+        labels="label",
+    )
     def plot(
         self,
-        column: str | None = None,
+        facecolor: Any = None,
         cmap: str | dict[str, Any] = "viridis",
         norm: Any | None = None,
         vmin: float | None = None,
         vmax: float | None = None,
         legend: bool = True,
-        legend_kwds: dict[str, Any] | None = None,
+        legend_kwargs: dict[str, Any] | None = None,
         ax: plt.Axes | None = None,
         figsize: tuple[float, float] = (10, 8),
         source_gdf: Any | None = None,
-        facecolor: Any = None,
         alpha: Any = 0.9,
         alpha_range: tuple[float, float] = (0.2, 1.0),
         edgecolor: Any = "none",
@@ -192,19 +204,19 @@ class SymbolCartogram:
         hatch_map: dict[str, str] | None = None,
         # Legend
         edge_legend: bool = True,
-        edge_legend_kwds: dict[str, Any] | None = None,
+        edge_legend_kwargs: dict[str, Any] | None = None,
         hatch_legend: bool = True,
-        hatch_legend_kwds: dict[str, Any] | None = None,
+        hatch_legend_kwargs: dict[str, Any] | None = None,
         linewidth_legend: bool = True,
-        linewidth_legend_kwds: dict[str, Any] | None = None,
+        linewidth_legend_kwargs: dict[str, Any] | None = None,
         alpha_legend: bool = True,
-        alpha_legend_kwds: dict[str, Any] | None = None,
+        alpha_legend_kwargs: dict[str, Any] | None = None,
         # Labels
-        label: Any = None,
+        labels: Any = None,
         label_color: Any = "black",
         label_cmap: str | dict[str, Any] | None = None,
         label_legend: bool = True,
-        label_legend_kwds: dict[str, Any] | None = None,
+        label_legend_kwargs: dict[str, Any] | None = None,
         label_fontsize: Any = 8,
         label_fontsize_range: tuple[float, float] = (6.0, 14.0),
         label_kwargs: dict[str, Any] | None = None,
@@ -219,10 +231,6 @@ class SymbolCartogram:
 
         Parameters
         ----------
-        column : str, optional
-            Convenience shorthand for ``facecolor=column``.  Kept for
-            backward compatibility.  When both *column* and *facecolor* are
-            provided, *facecolor* takes precedence.
         cmap : str or dict
             Colormap for data-driven *facecolor*.  Pass a **colormap name**
             string for numeric columns (e.g. ``"viridis"``, ``"plasma"``), or
@@ -237,7 +245,7 @@ class SymbolCartogram:
         legend : bool
             Display a colorbar (numeric) or patch legend (categorical) when
             *facecolor* is data-driven.  Default ``True``.
-        legend_kwds : dict, optional
+        legend_kwargs : dict, optional
             Extra keyword arguments forwarded to ``Figure.colorbar()``
             (numeric columns) or ``Axes.legend()`` (categorical columns).
             Use ``"title"`` to label the legend.
@@ -294,20 +302,20 @@ class SymbolCartogram:
         edge_legend : bool
             Show a separate legend for *edgecolor* when it is data-driven from
             a different column than *facecolor*.  Default ``True``.
-        edge_legend_kwds : dict, optional
-            Same as *legend_kwds* but for the edge-color legend.
+        edge_legend_kwargs : dict, optional
+            Same as *legend_kwargs* but for the edge-color legend.
         hatch_legend : bool
             Show a patch legend for the hatch ↔ category mapping when *hatch*
             is a column name.  No effect for global patterns or lists.
             Default ``True``.
-        hatch_legend_kwds : dict, optional
+        hatch_legend_kwargs : dict, optional
             ``Axes.legend()`` kwargs for the hatch legend, plus an optional
             nested ``"patch_kw"`` dict controlling legend-patch appearance.
         linewidth_legend : bool
             Show a discrete line-sample legend when *linewidth* is data-driven.
             Displays ~5 representative values as gray lines of increasing
             thickness.  Default ``True``.
-        linewidth_legend_kwds : dict, optional
+        linewidth_legend_kwargs : dict, optional
             ``Axes.legend()`` kwargs for the linewidth legend.
             Use ``"title"`` to override the legend title.
         alpha_legend : bool
@@ -315,10 +323,10 @@ class SymbolCartogram:
             is a constant color.  The colorbar displays the constant color
             ramping from transparent to opaque across the data range.
             Default ``True``.
-        alpha_legend_kwds : dict, optional
+        alpha_legend_kwargs : dict, optional
             Extra keyword arguments forwarded to ``Figure.colorbar()``.
             Use ``"title"`` to override the colorbar label.
-        label : str, column name, or sequence, optional
+        labels : str, column name, or sequence, optional
             Per-symbol text labels.  A column name uses the string
             representation of each value; a list / array provides explicit
             strings.
@@ -391,15 +399,12 @@ class SymbolCartogram:
         """
         from .visualization import plot_symbols
 
-        # Backward-compatible column kwarg: maps to facecolor when not already set
-        effective_facecolor = facecolor if facecolor is not None else column
-
         return plot_symbols(
             self,
             ax=ax,
             figsize=figsize,
             source_gdf=source_gdf,
-            facecolor=effective_facecolor,
+            facecolor=facecolor,
             cmap=cmap,
             norm=norm,
             vmin=vmin,
@@ -413,20 +418,20 @@ class SymbolCartogram:
             hatch=hatch,
             hatch_map=hatch_map,
             legend=legend,
-            legend_kwds=legend_kwds,
+            legend_kwargs=legend_kwargs,
             edge_legend=edge_legend,
-            edge_legend_kwds=edge_legend_kwds,
+            edge_legend_kwargs=edge_legend_kwargs,
             hatch_legend=hatch_legend,
-            hatch_legend_kwds=hatch_legend_kwds,
+            hatch_legend_kwargs=hatch_legend_kwargs,
             linewidth_legend=linewidth_legend,
-            linewidth_legend_kwds=linewidth_legend_kwds,
+            linewidth_legend_kwargs=linewidth_legend_kwargs,
             alpha_legend=alpha_legend,
-            alpha_legend_kwds=alpha_legend_kwds,
-            label=label,
+            alpha_legend_kwargs=alpha_legend_kwargs,
+            labels=labels,
             label_color=label_color,
             label_cmap=label_cmap,
             label_legend=label_legend,
-            label_legend_kwds=label_legend_kwds,
+            label_legend_kwargs=label_legend_kwargs,
             label_fontsize=label_fontsize,
             label_fontsize_range=label_fontsize_range,
             label_kwargs=label_kwargs,

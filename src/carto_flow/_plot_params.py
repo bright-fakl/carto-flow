@@ -12,11 +12,11 @@ from collections.abc import Collection, Mapping
 from typing import Any
 
 
-def deprecated_params(**renames: str | tuple[str, ...]):
+def deprecated_params(_both: str = "error", **renames: str | tuple[str, ...]):
     """Accept the old names ``renames`` (new name -> old name or names) of a function as deprecated aliases.
 
     An old name given in the call is passed on under the new name with a ``DeprecationWarning``. Giving an old name
-    and its new name together raises ``TypeError``.
+    and its new name together raises ``TypeError``, or with ``_both="new"`` keeps the new one and drops the old one.
     """
     mapping = {new: (old,) if isinstance(old, str) else tuple(old) for new, old in renames.items()}
 
@@ -27,14 +27,43 @@ def deprecated_params(**renames: str | tuple[str, ...]):
                 for old in olds:
                     if old not in kwargs:
                         continue
-                    if new in kwargs:
+                    if new in kwargs and _both == "error":
                         raise TypeError(f"{func.__name__}() got both '{old}' (deprecated) and '{new}'")
                     warnings.warn(
                         f"{func.__name__}(): '{old}' is deprecated; use '{new}'",
                         DeprecationWarning,
                         stacklevel=2,
                     )
-                    kwargs[new] = kwargs.pop(old)
+                    value = kwargs.pop(old)
+                    if new not in kwargs:
+                        kwargs[new] = value
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+def deprecated_to_dict(target: str, **old_to_key: str):
+    """Accept old scalar parameters as keys of the keyword dict ``target`` (``old name -> key``), with a warning.
+
+    The values of the dict given in the call win over the old parameters.
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            moved = {}
+            for old, key in old_to_key.items():
+                if old in kwargs:
+                    warnings.warn(
+                        f"{func.__name__}(): '{old}' is deprecated; use {target}={{'{key}': ...}}",
+                        DeprecationWarning,
+                        stacklevel=2,
+                    )
+                    moved[key] = kwargs.pop(old)
+            if moved:
+                kwargs[target] = {**moved, **(kwargs.get(target) or {})}
             return func(*args, **kwargs)
 
         return wrapper

@@ -149,7 +149,7 @@ result = create_symbol_cartogram(
 # Using the string key shorthand
 result = create_symbol_cartogram(gdf, "population", layout="flow_density")
 
-result.plot(column="population", cmap="YlOrRd")
+result.plot(facecolor="population", cmap="YlOrRd")
 print(f"Converged: {result.layout_result.metrics.converged}")
 print(f"Iterations: {result.layout_result.metrics.iterations}")
 print(f"Mean NN error: {result.layout_result.metrics.algorithm.final_error:.3f}")

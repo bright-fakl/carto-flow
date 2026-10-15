@@ -108,13 +108,13 @@ Classic Dorling cartogram (proportional circles, free placement):
 
 >>> from carto_flow.symbol_cartogram import create_symbol_cartogram
 >>> result = create_symbol_cartogram(gdf, "population")
->>> result.plot(column="population", cmap="Reds")
+>>> result.plot(facecolor="population", cmap="Reds")
 
 Using a preset:
 
 >>> from carto_flow.symbol_cartogram import tile_map_cartogram
 >>> result = tile_map_cartogram(gdf)
->>> result.plot(column="category", categorical=True)
+>>> result.plot(facecolor="category", categorical=True)
 
 """
 

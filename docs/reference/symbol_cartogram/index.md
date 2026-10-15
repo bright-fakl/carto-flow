@@ -61,7 +61,7 @@ graph TD
 from carto_flow.symbol_cartogram import create_symbol_cartogram
 
 result = create_symbol_cartogram(gdf, "population")
-result.plot(column="population", cmap="Reds")
+result.plot(facecolor="population", cmap="Reds")
 
 gdf_result = result.to_geodataframe()
 result.save("symbol_cartogram.gpkg")
@@ -115,7 +115,7 @@ layout = CirclePackingLayout(CirclePackingLayoutOptions(
 styling = Styling(symbol="hexagon", scale=0.85)
 
 result = create_symbol_cartogram(gdf, "population", layout=layout, styling=styling)
-result.plot(column="population", facecolor="#ff6b6b")
+result.plot(facecolor="population", facecolor="#ff6b6b")
 ```
 
 ### Using Presets
@@ -129,7 +129,7 @@ from carto_flow.symbol_cartogram import tile_map_cartogram
 
 # Uniform hexagons on a grid; no size column — a tile map, not a proportional cartogram
 result = tile_map_cartogram(gdf)
-result.plot(column="region", cmap="Set3", source_gdf=gdf)
+result.plot(facecolor="region", cmap="Set3", source_gdf=gdf)
 ```
 
 ```python
@@ -137,7 +137,7 @@ from carto_flow.symbol_cartogram import geographic_grouped_cartogram
 
 # Proportional circles that stay near their geographic position and cluster by group
 result = geographic_grouped_cartogram(gdf, "population", group_by="region")
-result.plot(column="population", cmap="Reds")
+result.plot(facecolor="population", cmap="Reds")
 ```
 
 The full set is `centroid_cartogram`, `dorling_cartogram`, `geographic_cartogram`,

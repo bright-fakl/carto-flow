@@ -29,12 +29,12 @@ symbol_carto = smb.create_symbol_cartogram(
 # Plot the cartogram.
 p = symbol_carto.plot(
     # color by population size
-    column="Population (Millions)",
+    facecolor="Population (Millions)",
     # shrink the colorbar
-    legend_kwds={"shrink": 0.75},
+    legend_kwargs={"shrink": 0.75},
     # label all states
     # the abbreviation column comes from the bundled census snapshot
-    label=us_states["State Abbreviation"],
+    labels=us_states["State Abbreviation"],
     # set label color to white and use bold font
     label_color="w",
     label_kwargs={"fontweight": "bold"},

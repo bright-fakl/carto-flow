@@ -36,11 +36,11 @@ symbol_carto = smb.create_symbol_cartogram(
 result = smb.plot_adjacency_heatmap(
     symbol_carto,
     labels=us_states["State Abbreviation"],
-    colorbar=True,
+    legend=True,
     sort_by="label",
     figsize=(10, 8),
-    tick_fontsize=8,
-    colorbar_kwds={"shrink": 0.5},
+    tick_labelsize=8,
+    legend_kwargs={"shrink": 0.5},
 )
 
 plt.tight_layout()

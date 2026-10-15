@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from numpy.typing import NDArray
 
+from ..._plot_params import deprecated_params
+
 if TYPE_CHECKING:
     from ..symbols import Symbol
     from ..tiling import TilingResult
@@ -426,6 +428,7 @@ class TiledLayoutResult(LayoutResult):
     tiling_result: TilingResult | None = None
     assignments: NDArray[np.intp] | None = None
 
+    @deprecated_params(assigned_facecolor="assigned_color", unassigned_facecolor="unassigned_color")
     def plot_tiling(
         self,
         cartogram: SymbolCartogram | None = None,
@@ -434,8 +437,8 @@ class TiledLayoutResult(LayoutResult):
         show_assigned: bool = True,
         show_unassigned: bool = True,
         show_pool: bool = False,
-        assigned_color: str = "#d4e6f1",
-        unassigned_color: str = "#f5f5f5",
+        assigned_facecolor: str = "#d4e6f1",
+        unassigned_facecolor: str = "#f5f5f5",
         core_edgecolor: str = "#e6972a",
         ring_edgecolor: str = "#d9534f",
         tile_edgecolor: str = "#999999",
@@ -542,21 +545,21 @@ class TiledLayoutResult(LayoutResult):
         # Draw order: outside -> ring -> core (pool membership visible through z-order)
         pc_unassigned = None
         if show_unassigned:
-            pc_unassigned = _pc(buckets["outside_unassigned"], unassigned_color, tile_edgecolor, tile_linewidth)
+            pc_unassigned = _pc(buckets["outside_unassigned"], unassigned_facecolor, tile_edgecolor, tile_linewidth)
 
         pc_assigned = pc_core = pc_ring = None
         if show_pool:
-            pc_ring = _pc(buckets["ring_unassigned"], unassigned_color, ring_edgecolor, pool_linewidth)
+            pc_ring = _pc(buckets["ring_unassigned"], unassigned_facecolor, ring_edgecolor, pool_linewidth)
             if show_assigned:
-                _pc(buckets["ring_assigned"], assigned_color, ring_edgecolor, pool_linewidth)
-            pc_core = _pc(buckets["core_unassigned"], unassigned_color, core_edgecolor, pool_linewidth)
+                _pc(buckets["ring_assigned"], assigned_facecolor, ring_edgecolor, pool_linewidth)
+            pc_core = _pc(buckets["core_unassigned"], unassigned_facecolor, core_edgecolor, pool_linewidth)
             if show_assigned:
                 # pc_assigned stays None: assigned tiles are split across core and ring.
-                _pc(buckets["core_assigned"], assigned_color, core_edgecolor, pool_linewidth)
+                _pc(buckets["core_assigned"], assigned_facecolor, core_edgecolor, pool_linewidth)
         elif show_assigned:
             pc_assigned = _pc(
                 buckets["core_assigned"] + buckets["ring_assigned"],
-                assigned_color,
+                assigned_facecolor,
                 tile_edgecolor,
                 tile_linewidth,
             )

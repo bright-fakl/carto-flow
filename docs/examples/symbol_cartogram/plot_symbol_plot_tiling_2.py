@@ -17,12 +17,12 @@ grid = tiling.generate()
 
 fig, axes = plt.subplots(1, 2, figsize=(8, 4))
 
-_ = tiling.plot_tile(ax=axes[0], show_vertices=False, face_color="orange", edge_color="black")
+_ = tiling.plot_tile(ax=axes[0], show_vertices=False, facecolor="orange", edgecolor="black")
 
 _ = grid.plot(
     ax=axes[1],
     color_by="aspect",
-    colormap="hot",
+    cmap="hot",
 )
 
 _ = axes[0].axis("square")

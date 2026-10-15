@@ -45,10 +45,10 @@ fig, axes = plt.subplots(
 _ = smb.plot_adjacency(
     symbol_carto,
     ax=axes[0],
-    edge_cmap="cool",
-    edge_alpha=1,
+    link_cmap="cool",
+    link_alpha=1,
     facecolor="lightblue",
-    colorbar=False,
+    link_legend=False,
     use_original_positions=True,
     show_original=True,
     original_gdf=us_states,
@@ -58,8 +58,8 @@ _ = smb.plot_adjacency(
 _ = smb.plot_adjacency(
     symbol_carto,
     ax=axes[1],
-    edge_cmap="cool",
-    edge_alpha=1,
+    link_cmap="cool",
+    link_alpha=1,
     facecolor="lightblue",
-    colorbar_kwds={"shrink": 0.4, "ax": axes, "pad": 0.01},
+    link_legend_kwargs={"shrink": 0.4, "ax": axes, "pad": 0.01},
 )

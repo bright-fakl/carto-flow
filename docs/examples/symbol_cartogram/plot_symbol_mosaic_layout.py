@@ -51,12 +51,12 @@ fig, ax = plt.subplots(1, 1, figsize=(11, 7))
 
 _ = symbol_carto.plot(
     ax=ax,
-    column="Region",
+    facecolor="Region",
     edgecolor="white",
     linewidth=1.0,
-    label="State Abbreviation",
+    labels="State Abbreviation",
     label_fontsize=7,
-    legend_kwds={"loc": "lower left", "title": "Region"},
+    legend_kwargs={"loc": "lower left", "title": "Region"},
 )
 
 ax.set_axis_off()

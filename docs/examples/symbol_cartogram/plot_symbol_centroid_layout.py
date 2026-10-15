@@ -30,12 +30,12 @@ fig, ax = plt.subplots(1, 1, figsize=(10, 6))
 _ = symbol_carto.plot(
     ax=ax,
     # color by population size
-    column="Population (Millions)",
+    facecolor="Population (Millions)",
     # shrink the colorbar
-    legend_kwds={"shrink": 0.5},
+    legend_kwargs={"shrink": 0.5},
     # label the largest states
     # the abbreviation column comes from the bundled census snapshot
-    label=[
+    labels=[
         row["State Abbreviation"] if row["State Abbreviation"] in ["CA", "TX", "FL", "NY"] else ""
         for _, row in us_states.iterrows()
     ],

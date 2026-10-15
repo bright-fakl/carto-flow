@@ -43,11 +43,11 @@ fig, ax = plt.subplots(1, 1, figsize=(10, 7))
 
 _ = symbol_carto.plot(
     ax=ax,
-    column="Population (Millions)",
+    facecolor="Population (Millions)",
     cmap="YlOrRd",
-    label="State Abbreviation",
+    labels="State Abbreviation",
     label_fontsize=7,
-    legend_kwds={"shrink": 0.5, "label": "Population (Millions)"},
+    legend_kwargs={"shrink": 0.5, "label": "Population (Millions)"},
 )
 
 plt.tight_layout()

@@ -41,7 +41,7 @@ _ = smb.plot_displacement(
     symbol_carto,
     ax=ax,
     arrow_scale=2,
-    arrow_color="black",
+    arrows_kwargs={"color": "black"},
     alpha=0.4,
     facecolor="lightblue",
 )

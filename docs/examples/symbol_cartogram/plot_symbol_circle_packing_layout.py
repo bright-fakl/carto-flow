@@ -33,12 +33,12 @@ fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 _ = symbol_carto.plot(
     ax=ax,
     # color by population size
-    column="Population (Millions)",
+    facecolor="Population (Millions)",
     # shrink the colorbar
-    legend_kwds={"shrink": 0.75},
+    legend_kwargs={"shrink": 0.75},
     # label all states
     # the abbreviation column comes from the bundled census snapshot
-    label=us_states["State Abbreviation"],
+    labels=us_states["State Abbreviation"],
     # set label color to white and use small bold font
     label_color="w",
     label_kwargs={"fontweight": "bold"},

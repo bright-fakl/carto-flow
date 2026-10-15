@@ -43,9 +43,9 @@ fig, ax = plt.subplots(1, 1, figsize=(8, 6))
 
 result = symbol_carto_restyled.plot(
     ax=ax,
-    column="Population (Millions)",
-    legend_kwds={"shrink": 0.75},
-    label=us_states["State Abbreviation"],
+    facecolor="Population (Millions)",
+    legend_kwargs={"shrink": 0.75},
+    labels=us_states["State Abbreviation"],
     label_color="w",
     label_kwargs={"fontweight": "bold"},
 )

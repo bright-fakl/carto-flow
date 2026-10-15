@@ -329,8 +329,8 @@ class TestVisualization:
         assert isinstance(plot_result, AdjacencyPlotResult)
         assert plot_result.ax is not None
 
-    def test_plot_adjacency_with_edge_color(self):
-        """plot_adjacency accepts edge_color parameter."""
+    def test_plot_adjacency_with_link_color(self):
+        """plot_adjacency accepts link_color parameter."""
         import matplotlib
 
         matplotlib.use("Agg")
@@ -344,7 +344,7 @@ class TestVisualization:
             layout=layout,
             show_progress=False,
         )
-        plot_result = plot_adjacency(result, edge_color="red", show_symbols=False)
+        plot_result = plot_adjacency(result, link_color="red", show_symbols=False)
         assert plot_result.ax is not None
 
     def test_plot_tiling_runs(self):

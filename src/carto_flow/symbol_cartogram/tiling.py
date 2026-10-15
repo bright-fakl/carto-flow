@@ -33,6 +33,8 @@ from shapely.affinity import rotate, scale, translate
 from shapely.geometry import Point, Polygon, box
 from typing_extensions import Self
 
+from .._plot_params import deprecated_params
+
 if TYPE_CHECKING:
     from .symbols import Symbol
 
@@ -198,14 +200,15 @@ class TilingResult:
             n_base_vertices=self.n_base_vertices,
         )
 
+    @deprecated_params(facecolor="face_color", edgecolor="edge_color", cmap="colormap")
     def plot(
         self,
         ax=None,
         *,
         color_by: str = "uniform",
-        face_color: str = "#4e9af1",
-        edge_color: str = "#333333",
-        colormap: str = "tab10",
+        facecolor: str = "#4e9af1",
+        edgecolor: str = "#333333",
+        cmap: str = "tab10",
         alpha: float = 0.85,
         linewidth: float = 0.5,
     ):
@@ -218,18 +221,18 @@ class TilingResult:
         color_by : {"uniform", "aspect", "index", "x", "y", "random"}
             Coloring scheme:
 
-            * ``"uniform"`` — all tiles use *face_color*.
-            * ``"aspect"`` — color by tile rotation angle (0–360 → colormap).
-            * ``"index"`` — color by tile index (0…n−1 → colormap).
+            * ``"uniform"`` — all tiles use *facecolor*.
+            * ``"aspect"`` — color by tile rotation angle (0–360 → cmap).
+            * ``"index"`` — color by tile index (0…n−1 → cmap).
             * ``"x"`` — color by tile centroid x coordinate (normalized).
             * ``"y"`` — color by tile centroid y coordinate (normalized).
-            * ``"random"`` — random color per tile drawn from *colormap*.
-        face_color : str
+            * ``"random"`` — random color per tile drawn from *cmap*.
+        facecolor : str
             Hex fill color used in ``"uniform"`` mode.
-        edge_color : str
+        edgecolor : str
             Stroke color for tile outlines.
-        colormap : str
-            Matplotlib colormap name used in ``"aspect"`` and ``"index"`` modes.
+        cmap : str
+            Matplotlib cmap name used in ``"aspect"`` and ``"index"`` modes.
         alpha : float
             Tile fill transparency.
         linewidth : float
@@ -266,32 +269,32 @@ class TilingResult:
             )
 
         n = len(self.polygons)
-        cmap = plt.get_cmap(colormap)
+        colormap = plt.get_cmap(cmap)
 
         coords = [list(zip(*p.exterior.xy, strict=False)) for p in self.polygons]
         if color_by == "uniform":
-            colors = [face_color] * n
+            colors = [facecolor] * n
         elif color_by == "aspect":
-            colors = [mcolors.to_hex(cmap((tr.rotation % 360) / 360.0)) for tr in self.transforms]
+            colors = [mcolors.to_hex(colormap((tr.rotation % 360) / 360.0)) for tr in self.transforms]
         elif color_by == "index":
-            colors = [mcolors.to_hex(cmap(i / max(n - 1, 1))) for i in range(n)]
+            colors = [mcolors.to_hex(colormap(i / max(n - 1, 1))) for i in range(n)]
         elif color_by == "x":
             xs = self.centers[:, 0]
             lo, hi = xs.min(), xs.max()
             values = (xs - lo) / max(hi - lo, 1e-9)
-            colors = [mcolors.to_hex(cmap(v)) for v in values]
+            colors = [mcolors.to_hex(colormap(v)) for v in values]
         elif color_by == "y":
             ys = self.centers[:, 1]
             lo, hi = ys.min(), ys.max()
             values = (ys - lo) / max(hi - lo, 1e-9)
-            colors = [mcolors.to_hex(cmap(v)) for v in values]
+            colors = [mcolors.to_hex(colormap(v)) for v in values]
         else:  # random
-            colors = [mcolors.to_hex(cmap(v)) for v in np.random.default_rng().random(n)]
+            colors = [mcolors.to_hex(colormap(v)) for v in np.random.default_rng().random(n)]
 
         col = PolyCollection(
             coords,
             facecolors=colors,
-            edgecolors=edge_color,
+            edgecolors=edgecolor,
             linewidths=linewidth,
             alpha=alpha,
         )
@@ -300,12 +303,13 @@ class TilingResult:
         ax.axis("off")
         return TilingGridPlotResult(ax=ax, fig=fig, tiles=col)
 
+    @deprecated_params(facecolor="face_color", edgecolor="edge_color")
     def plot_tile(
         self,
         ax=None,
         *,
-        face_color: str | None = None,
-        edge_color: str = "#1971c2",
+        facecolor: str | None = None,
+        edgecolor: str = "#1971c2",
         alpha: float = 0.7,
         show_vertices: bool = True,
         show_vertex_labels: bool = False,
@@ -317,11 +321,11 @@ class TilingResult:
         ----------
         ax : matplotlib.axes.Axes, optional
             Axes to draw on. A new figure is created if *ax* is ``None``.
-        face_color : str, optional
+        facecolor : str, optional
             Fill color.  When ``None`` the color is chosen automatically by
             vertex count to match the panel UI palette
             (3 → pink, 4 → blue, 5 → yellow, 6 → green).
-        edge_color : str
+        edgecolor : str
             Outline color.
         alpha : float
             Fill transparency.
@@ -348,8 +352,8 @@ class TilingResult:
         return _plot_polygon_tile(
             self.canonical_tile,
             ax,
-            face_color,
-            edge_color,
+            facecolor,
+            edgecolor,
             alpha,
             show_vertices,
             show_vertex_labels,
@@ -432,12 +436,13 @@ class Tiling(ABC):
             n_tiles = DEFAULT_N_TILES
         return bounds, n_tiles, tile_size
 
+    @deprecated_params(facecolor="face_color", edgecolor="edge_color")
     def plot_tile(
         self,
         ax=None,
         *,
-        face_color: str | None = None,
-        edge_color: str = "#1971c2",
+        facecolor: str | None = None,
+        edgecolor: str = "#1971c2",
         alpha: float = 0.7,
         show_vertices: bool = True,
         show_vertex_labels: bool = False,
@@ -452,11 +457,11 @@ class Tiling(ABC):
         ----------
         ax : matplotlib.axes.Axes, optional
             Axes to draw on. A new figure is created if *ax* is ``None``.
-        face_color : str, optional
+        facecolor : str, optional
             Fill color.  When ``None`` the color is chosen automatically by
             vertex count to match the panel UI palette
             (3 → pink, 4 → blue, 5 → yellow, 6 → green).
-        edge_color : str
+        edgecolor : str
             Outline color.
         alpha : float
             Fill transparency.
@@ -476,8 +481,8 @@ class Tiling(ABC):
         return _plot_polygon_tile(
             self.canonical_tile,
             ax,
-            face_color,
-            edge_color,
+            facecolor,
+            edgecolor,
             alpha,
             show_vertices,
             show_vertex_labels,

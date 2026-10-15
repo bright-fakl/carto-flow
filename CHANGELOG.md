@@ -154,8 +154,8 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Deprecated
 
-- **Old parameter names of the flow plot, animate and preview functions.** Each
-  concept now has one name, shared by all plot functions (the symbol, Voronoi and
+- **Old parameter names of the flow and symbol plot, animate and preview functions.** Each
+  concept now has one name, shared by all plot functions (the Voronoi and
   proportional functions follow in later releases). The old names still work and
   warn, and will be removed in the next major release:
 
@@ -179,6 +179,14 @@ Releases before 2.0.0 have no changelog entry; see the
   will be removed in the next major release; use `ElasticBoundary` (strength 0.02 to
   0.05), or `generator_anchor` with `premorph`.
   ([#126](https://github.com/bright-fakl/carto-flow/pull/126))
+  | `SymbolCartogram.plot`, `plot_symbols` | `column`, `label` | `facecolor`, `labels` |
+  | `SymbolCartogram.plot`, `plot_symbols` | `legend_kwds`, `edge_legend_kwds`, `hatch_legend_kwds`, `linewidth_legend_kwds`, `alpha_legend_kwds`, `label_legend_kwds` | the same with `_kwargs` |
+  | `plot_comparison` (symbol) | `column` | `facecolor` |
+  | `plot_adjacency` | `edge_color`, `edge_cmap`, `edge_alpha`, `edge_width`, `node_size`, `colorbar`, `colorbar_kwds` | `link_color`, `link_cmap`, `link_alpha`, `link_linewidth`, `node_markersize`, `link_legend`, `link_legend_kwargs` |
+  | `plot_adjacency_heatmap` | `colorbar`, `colorbar_kwds`, `tick_fontsize` | `legend`, `legend_kwargs`, `tick_labelsize` |
+  | `plot_displacement` | `arrow_color`, `arrow_alpha` | keys of `arrows_kwargs` |
+  | the `plot_tiling` functions | `assigned_color`, `unassigned_color` | `assigned_facecolor`, `unassigned_facecolor` |
+  | the plot methods of a tiling and of a tile | `face_color`, `edge_color`, `colormap` | `facecolor`, `edgecolor`, `cmap` |
 
 - **`morph_gdf` and `multiresolution_morph`** are deprecated and will be removed in the
   next major release; use `create_flow_cartogram`, with `MorphOptions(grid=LadderSpec(...))`

@@ -113,10 +113,10 @@ class AdjacencyPlotResult:
         *edges* is ``None``.
     nodes : PathCollection or None
         ``PathCollection`` (from ``ax.scatter``) for node markers.  ``None``
-        when *node_size* = 0.  Positional index *i* corresponds to symbol *i*
+        when *node_markersize* = 0.  Positional index *i* corresponds to symbol *i*
         in ``result.symbols``.
     colorbar : Colorbar or None
-        Colorbar for edge weights.  Present when *edge_color* is ``None``
+        Colorbar for edge weights.  Present when *link_color* is ``None``
         (edges colored by weight via *edge_cmap*) and *colorbar* = ``True``.
     original_collections : list[Collection]
         Collections added by the ``original_gdf.plot()`` underlay when

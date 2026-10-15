@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from .._plot_params import classify_string, deprecated_params
+from .._plot_params import deprecated_params, resolve_fill
 
 if TYPE_CHECKING:
     import geopandas as gpd
@@ -65,19 +65,14 @@ def _resolve_fill(facecolor: Any, result: VoronoiCartogram, stacklevel: int = 4)
     ``("array", values)`` or ``("color", literal)``.
 
     A string is a column of the source GeoDataFrame, the built-in quantity ``"area_error_pct"`` (the signed area
-    error of the cells) or a color, in this order (see :func:`carto_flow._plot_params.classify_string`).
+    error of the cells) or a color, in this order (see :func:`carto_flow._plot_params.resolve_fill`).
     """
-    if facecolor is None:
+    columns = result._source_gdf.columns if result._source_gdf is not None else ()
+    builtins = _BUILTIN_FILLS if result.area_errors is not None else ()
+    kind, value = resolve_fill(facecolor, columns, builtins, n=len(result.cells), stacklevel=stacklevel)
+    if kind == "none":
         return "categorical", None
-    if isinstance(facecolor, str):
-        columns = result._source_gdf.columns if result._source_gdf is not None else ()
-        builtins = _BUILTIN_FILLS if result.area_errors is not None else ()
-        kind = classify_string(facecolor, columns, builtins, stacklevel=stacklevel)
-        return kind, facecolor
-    values = np.asarray(facecolor)
-    if values.ndim == 1 and len(values) == len(result.cells) and values.dtype.kind in "iufb":
-        return "array", values
-    return "color", facecolor
+    return ("array" if kind == "values" else kind), value
 
 
 @deprecated_params(facecolor="column")

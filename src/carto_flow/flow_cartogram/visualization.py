@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING, Any, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .._plot_params import classify_string, deprecated_init_params, deprecated_params
+from .._plot_params import deprecated_init_params, deprecated_params, resolve_fill
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -542,20 +542,23 @@ def _fill_arguments(gdf: Any, facecolor: Any) -> tuple[Any, dict[str, Any]]:
 
     Returns the GeoDataFrame (a copy when a column was added) and ``{"column": name}`` for data or
     ``{"facecolor": value}`` for a literal or an array of colors. A string is resolved by
-    :func:`carto_flow._plot_params.classify_string`.
+    :func:`carto_flow._plot_params.resolve_fill`.
     """
-    if facecolor is None:
+    kind, value = resolve_fill(facecolor, set(gdf.columns), _BUILTIN_COLUMNS, n=len(gdf), stacklevel=4)
+    if kind == "none":
         return gdf, {}
-    if isinstance(facecolor, str):
-        kind = classify_string(facecolor, set(gdf.columns), _BUILTIN_COLUMNS, stacklevel=4)
-        if kind == "column":
-            return gdf, {"column": facecolor}
-        if kind == "builtin":
-            column = _BUILTIN_COLUMNS[facecolor]
-            if column not in gdf.columns:
-                raise ValueError(f"'{facecolor}' is not available for this cartogram (no column '{column}')")
-            return gdf, {"column": column}
-        return gdf, {"facecolor": facecolor}
+    if kind == "column":
+        return gdf, {"column": value}
+    if kind == "builtin":
+        column = _BUILTIN_COLUMNS[value]
+        if column not in gdf.columns:
+            raise ValueError(f"'{value}' is not available for this cartogram (no column '{column}')")
+        return gdf, {"column": column}
+    if kind == "values":
+        gdf = gdf.copy()
+        gdf["_facecolor"] = value
+        return gdf, {"column": "_facecolor"}
+    return gdf, {"facecolor": value}
     values = np.asarray(facecolor)
     if values.ndim == 1 and len(values) == len(gdf) and values.dtype.kind in "iufb":
         gdf = gdf.copy()

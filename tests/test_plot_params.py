@@ -2,6 +2,7 @@
 
 import warnings
 
+import numpy as np
 import pytest
 
 from carto_flow._plot_params import classify_string, deprecated_init_params, deprecated_params
@@ -55,3 +56,21 @@ def test_classify_string_order_and_warning():
         assert classify_string("density", ["density"], ["density"]) == "column"
     with pytest.raises(ValueError, match="neither a column"):
         classify_string("nope", ["pop"], ["density"])
+
+
+def test_resolve_fill_kinds():
+    from carto_flow._plot_params import resolve_fill
+
+    assert resolve_fill(None, ["pop"]) == ("none", None)
+    assert resolve_fill("pop", ["pop"]) == ("column", "pop")
+    assert resolve_fill("density", ["pop"], ["density"]) == ("builtin", "density")
+    assert resolve_fill("#d4e6f1", ["pop"]) == ("color", "#d4e6f1")
+    kind, values = resolve_fill(np.arange(3.0), ["pop"], n=3)
+    assert kind == "values" and np.array_equal(values, np.arange(3.0))
+    # a numeric array of another length, or an array of colors, is passed on as colors
+    assert resolve_fill(np.arange(4.0), ["pop"], n=3)[0] == "color"
+    assert resolve_fill(["red", "blue", "green"], ["pop"], n=3)[0] == "color"
+    with pytest.warns(UserWarning, match="column and a color"):
+        assert resolve_fill("wheat", ["wheat"]) == ("column", "wheat")
+    with pytest.raises(ValueError, match="neither a column"):
+        resolve_fill("nope", ["pop"])

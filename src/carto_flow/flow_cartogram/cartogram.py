@@ -454,10 +454,15 @@ class Cartogram:
         self,
         facecolor: Any = None,
         iteration: int | None = None,
-        cmap: str = "RdYlGn_r",
+        cmap: Any = None,
         legend: bool = True,
         ax: Any | None = None,
         legend_kwargs: dict | None = None,
+        legend_label: str | None = None,
+        norm: Any = None,
+        center: float | None = None,
+        categorical: bool | None = None,
+        style: Any = None,
         **kwargs,
     ) -> "CartogramPlotResult":
         """Plot the cartogram.
@@ -471,12 +476,23 @@ class Cartogram:
             :func:`carto_flow.flow_cartogram.visualization.plot_cartogram`.
         iteration : int, optional
             Which iteration to plot (default: latest).
-        cmap : str, default='RdYlGn_r'
-            Matplotlib colormap name, used when the fill is data.
+        cmap : str or Colormap, optional
+            Colormap of continuous data. Defaults to the palette of the style for the data role, else
+            ``'RdYlGn_r'``.
         legend : bool, default=True
             Show colorbar legend.
         legend_kwargs : dict, optional
             Keyword arguments of the legend of the fill.
+        legend_label : str, optional
+            Label of the colorbar. Defaults to the name of the data.
+        norm : Normalize, {"linear", "log", "auto"}, optional
+            Normalization of continuous data: an instance, or the scale of the style's normalization.
+        center : float, optional
+            Treat the data as diverging around this value.
+        categorical : bool, optional
+            Force (True) or prevent (False) the categorical treatment of the data.
+        style : PlotStyle or str, optional
+            Style of the plot (default: the style of the block or session, else ``"default"``).
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, creates new figure.
         **kwargs
@@ -502,6 +518,11 @@ class Cartogram:
             cmap=cmap,
             legend=legend,
             legend_kwargs=legend_kwargs,
+            legend_label=legend_label,
+            norm=norm,
+            center=center,
+            categorical=categorical,
+            style=style,
             **kwargs,
         )
 

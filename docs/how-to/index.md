@@ -19,6 +19,9 @@ Capture intermediate frames with `snapshot_every`, build an animation with `anim
 ### [Co-Morph Landmarks and Coordinates](co-morph-landmarks-and-coordinates.ipynb)
 Displace cities, annotations, or point coordinates consistently with the cartogram using `landmarks` (GeoDataFrames) or `displacement_coords` (NumPy arrays).
 
+### [Style Plots and Animations](style-plots.md)
+Set the look of the plots and animations in one place with `PlotStyle`: the built-in `default`, `dark` and `classic` styles, palettes by data type, the color scale and the colorbar, and your own registered styles.
+
 ## Proportional Cartogram
 
 ### [Apply Partitions to a Flow Cartogram](partitions-on-flow-cartogram.ipynb)

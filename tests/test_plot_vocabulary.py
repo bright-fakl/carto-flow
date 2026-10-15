@@ -46,6 +46,11 @@ ALLOWED = {
         "max_scale",
         "normalize",
         "imshow_kwargs",
+        # style, normalization and role of the data
+        "categorical",
+        "center",
+        "norm",
+        "style",
         # element dicts and previews
         "arrows_kwargs",
         "diff_arrows_kwargs",

@@ -27,6 +27,7 @@ nav:
       - Reduce Boundary Distortion: how-to/reduce-boundary-distortion.ipynb
       - Animate the Morphing Process: how-to/create-animation.ipynb
       - Co-Morph Landmarks and Coordinates: how-to/co-morph-landmarks-and-coordinates.ipynb
+      - Style Plots and Animations: how-to/style-plots.md
     - Proportional Cartogram:
       - Apply Partitions to a Flow Cartogram: how-to/partitions-on-flow-cartogram.ipynb
     - Symbol Cartogram:
@@ -104,6 +105,7 @@ nav:
         - Output:
             - Visualization: reference/voronoi_cartogram/visualization.md
             - Animation: reference/voronoi_cartogram/animation.md
+    - Plot Styles: reference/style.md
     - Geo Utilities:
         - Overview: reference/geo_utils/index.md
         - API: reference/geo_utils/geo_utils.md

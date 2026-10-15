@@ -11,6 +11,26 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`PlotStyle` sets the look of the flow plots and animations in one place.** The surface
+  and text colors, the boundary, one palette per data role (sequential, diverging,
+  categorical), the color scale and the colorbar are fields of a frozen `PlotStyle`, with
+  a matplotlib `rc` dict for the generic settings (`PlotStyle.from_mplstyle` reads a
+  matplotlib style sheet). The built-in styles are `"default"`, `"dark"` and `"classic"`
+  (the look before styles). `style=` selects a style for a call, `style_context(...)` for a
+  block, `set_style(...)` for the session, and `register_style(name, style)` adds one;
+  an argument of the call wins over the style. `Cartogram.plot`, `plot_cartogram`,
+  `plot_comparison`, the field and convergence plots and all the `animate_*` functions take
+  `style=`. The role of the data is decided by the data: `"errors_pct"` and any data with
+  `center=` are diverging (symmetric around the center), text, categorical and boolean
+  columns (or `categorical=True`) are categorical, the rest is sequential. `norm=` (a
+  `Normalize`, or `"linear"`, `"log"`, `"auto"`) is accepted by `Cartogram.plot`,
+  `plot_cartogram`, `plot_comparison` and the animations of geometry, with `center=` and
+  `categorical=`; a logarithmic colorbar has ticks at 1, 2 and 5 per decade in real
+  numbers (`1M`, `2M`, `5M`). `save_animation` saves the frames with the surface of the
+  figure.
+- **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
+  through the morph, holds and returns**, for `animate_geometry_keyframes` with
+  `position_mapper=linear_over("time")`.
 - **`Cartogram.landmark_area_scaling` and `Cartogram.get_landmarks(iteration, uniform=True)`:**
   the morph sums the divergence of the velocity field along the path of every landmark
   vertex (one bilinear sample per vertex and iteration), which gives the area scaling of
@@ -65,6 +85,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **The flow plots and animations have a new default look.** A tinted surface, a boundary
+  slightly darker than the surface, a truncated `YlGnBu` for continuous data, `RdYlBu_r`
+  for errors, a logarithmic colorbar for positive data that spans more than one decade,
+  and a colorbar with an outline. `style="classic"` (or `set_style("classic")`) gives the
+  look of earlier releases. The `cmap` of `Cartogram.plot`, `plot_cartogram` and the
+  three animations of geometry is `None` in the signature and resolves to the palette of
+  the style for the data role, else to the former default (`"RdYlGn_r"` or `"viridis"`).
 - **`facecolor` is the fill of the flow plot and animate functions.** It takes a column
   of the data, a built-in quantity (`"errors_pct"`, `"density"`, and in the animations
   `"original"`), a numeric array with one value per geometry, a list of arrays for the

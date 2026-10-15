@@ -28,6 +28,7 @@ Examples
 >>> save_animation(anim, "morph.gif", fps=15)
 """
 
+import contextlib
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, Optional
@@ -35,8 +36,10 @@ from typing import TYPE_CHECKING, Any, Literal, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
+from matplotlib.colors import Normalize
 
 from .._plot_params import classify_string, deprecated_params
+from ..style import PlotStyle, rc_wrapped, resolve_style
 
 if TYPE_CHECKING:
     from geopandas import GeoDataFrame
@@ -54,6 +57,7 @@ __all__ = [
     "animate_workflow",
     "animate_workflow_fields",
     "linear_over",
+    "morph_timeline",
     "save_animation",
     "weights_to_position_mapper",
 ]
@@ -214,6 +218,7 @@ def _create_patch_collection(
     ax: Any,
     fig: Any,
     cbar_added: list,
+    style: PlotStyle | None = None,
 ) -> Any:
     """Create a PatchCollection from the first frame and add it to the axes.
 
@@ -233,12 +238,40 @@ def _create_patch_collection(
         patch_coll.set_array(np.asarray(frame0_colors).ravel())
     ax.add_collection(patch_coll)
     if legend:
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-        _cbar_kw = {"label": legend_label, **(legend_kwargs or {})}
-        fig.colorbar(sm, ax=ax, **_cbar_kw)
+        with style.rc_context() if style is not None else contextlib.nullcontext():
+            _add_colorbar(style, fig, ax, cmap, norm, legend_label, legend_kwargs)
     cbar_added[0] = True
     return patch_coll
+
+
+def _add_colorbar(
+    style: PlotStyle | None, fig: Any, ax: Any, cmap: Any, norm: Any, label: str | None, kwargs: dict | None
+) -> None:
+    """Add the colorbar of an animation: drawn by the style if it sets the colorbar or the scale is not linear."""
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    guide = {"label": label, **(kwargs or {})}
+    if style is not None and (style.draws_guide or type(norm) is not Normalize):
+        style.colorbar(fig, ax, sm, label=guide.pop("label"), **guide)
+    else:
+        fig.colorbar(sm, ax=ax, **guide)
+
+
+def _animation_norm(
+    style: PlotStyle, role: str, norm: Any, center: float | None, vmin: float, vmax: float, limits_given: bool
+) -> Normalize:
+    """Normalization of the colors of an animation: the ``norm`` of the call, else the style, else linear."""
+    if isinstance(norm, Normalize):
+        return norm
+    extremes = np.array([vmin, vmax], dtype=float)
+    if isinstance(norm, str):
+        return style.norm(extremes, role, center=center, scale=norm)
+    if not limits_given:
+        if role == "diverging" and (style.palettes.diverging is not None or center is not None):
+            return style.norm(extremes, role, center=center)
+        if role == "sequential" and style.color_scale in ("log", "auto"):
+            return style.norm(extremes, role)
+    return Normalize(vmin=vmin, vmax=vmax)
 
 
 class _SafeFormatDict(dict):
@@ -712,6 +745,12 @@ def save_animation(
     """
     path = Path(path)
 
+    # The saved frames have the surface of the figure (the style's), not the default white of the writer
+    figure_facecolor = anim._fig.get_facecolor()  # type: ignore[attr-defined]
+    savefig_kwargs = dict(kwargs.pop("savefig_kwargs", None) or {})
+    savefig_kwargs.setdefault("facecolor", figure_facecolor)
+    kwargs["savefig_kwargs"] = savefig_kwargs
+
     if path.suffix.lower() == ".gif":
         try:
             anim.save(str(path), writer="pillow", fps=fps, dpi=dpi, **kwargs)
@@ -734,7 +773,7 @@ def save_animation(
         # Save each frame
         for i, _ in enumerate(range(len(anim._save_seq) if hasattr(anim, "_save_seq") else anim.save_count)):  # type: ignore[attr-defined]
             anim._draw_frame(i)  # type: ignore[attr-defined]
-            fig.savefig(path / f"frame_{i:04d}.png", dpi=dpi)
+            fig.savefig(path / f"frame_{i:04d}.png", dpi=dpi, facecolor=savefig_kwargs["facecolor"])
 
     else:
         raise ValueError(
@@ -783,7 +822,7 @@ def animate_morph_history(
     facecolor: str | np.ndarray | list | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
-    cmap: str = "viridis",
+    cmap: Any = None,
     legend: bool = False,
     legend_label: str | None = None,
     show_axes: bool = True,
@@ -792,6 +831,9 @@ def animate_morph_history(
     precompute: bool = True,
     figsize: tuple[float, float] = (10, 8),
     through: Literal["best", "last"] = "best",
+    norm: Any = None,
+    center: float | None = None,
+    style: Any = None,
     **kwargs: Any,
 ) -> FuncAnimation:
     """Animate through algorithm snapshots from a Cartogram's history.
@@ -833,8 +875,8 @@ def animate_morph_history(
         Minimum value for color scale. If None, computed from all values.
     vmax : float, optional
         Maximum value for color scale. If None, computed from all values.
-    cmap : str, default="viridis"
-        Colormap name for coloring geometries.
+    cmap : str or Colormap, optional
+        Colormap of the colors. Defaults to the palette of the style for the data role, else ``"viridis"``.
     legend : bool, default=False
         Whether to show a colorbar.
     legend_label : str, optional
@@ -867,6 +909,13 @@ def animate_morph_history(
     **kwargs
         Additional arguments passed to GeoDataFrame.plot()
 
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of the colors: an instance, or the scale of the style's normalization. A ``vmin`` or ``vmax``
+        of the call fixes a linear normalization.
+    center : float, optional
+        Treat the colors as diverging around this value.
+    style : PlotStyle or str, optional
+        Style of the animation (default: the style of the block or session, else ``"default"``).
     Returns
     -------
     FuncAnimation
@@ -1060,7 +1109,20 @@ def animate_morph_history(
     errors = variables_arrays.get("mean_error")
 
     # Set up figure
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    st = resolve_style(style)
+    _role = (
+        "diverging"
+        if ((isinstance(facecolor, str) and facecolor == "errors_pct") or center is not None)
+        else "sequential"
+    )
+    cmap = cmap if cmap is not None else (st.colormap(_role) or "viridis")
+    _norm_obj = (
+        _animation_norm(st, _role, norm, center, color_vmin, color_vmax, vmin is not None or vmax is not None)
+        if color_vmin is not None and color_vmax is not None
+        else None
+    )
+    with st.rc_context():
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     # Get consistent bounds from all geometries
     all_bounds = [gdf.total_bounds for gdf in gdfs]
@@ -1177,7 +1239,7 @@ def animate_morph_history(
         _precomputed_paths, _precomputed_colors, _precomputed_meta = _fast_precompute_paths(
             gdfs, _snap_colors, n_frames, n_snapshots, _pos_fn, interpolation
         )
-        _norm = plt.Normalize(vmin=color_vmin, vmax=color_vmax)
+        _norm = _norm_obj
         _coll_kwargs = {k: v for k, v in kwargs.items() if k not in ("markersize", "marker")}
         _patch_coll = _create_patch_collection(
             _precomputed_paths[0],
@@ -1191,6 +1253,7 @@ def animate_morph_history(
             ax,
             fig,
             cbar_added,
+            style=st,
         )
 
     elif precompute:
@@ -1241,19 +1304,14 @@ def animate_morph_history(
 
             # Determine how to plot
             if use_coloring and _has_colors and color_vmin is not None:
-                mappable = plot_gdf.plot(
-                    ax=ax, column="_plot_color", legend=False, vmin=color_vmin, vmax=color_vmax, cmap=cmap, **kwargs
-                )
+                mappable = plot_gdf.plot(ax=ax, column="_plot_color", legend=False, norm=_norm_obj, cmap=cmap, **kwargs)
             else:
                 plot_gdf.plot(ax=ax, **kwargs)
                 mappable = None
 
             # Add colorbar on first frame if requested
             if legend and not cbar_added[0] and mappable is not None and color_vmin is not None:
-                sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
-                sm.set_array([])
-                _cbar_kw = {"label": legend_label, **(legend_kwargs or {})}
-                fig.colorbar(sm, ax=ax, **_cbar_kw)
+                _add_colorbar(st, fig, ax, cmap, _norm_obj, legend_label, legend_kwargs)
                 cbar_added[0] = True
 
             ax.set_xlim(xmin, xmax)
@@ -1293,14 +1351,82 @@ def animate_morph_history(
 
     anim = FuncAnimation(
         fig,
-        update,
+        rc_wrapped(st, update),
         frames=n_frames,
-        init_func=init,
+        init_func=rc_wrapped(st, init),
         blit=False,
         interval=1000 / fps,
     )
 
     return anim
+
+
+def morph_timeline(
+    snapshots: Any,
+    *,
+    hold_start: float = 1.5,
+    morph: float = 7.0,
+    hold_end: float = 2.5,
+    back: float = 5.0,
+    easing: Literal["cosine", "linear"] = "cosine",
+) -> tuple[list[Any], np.ndarray]:
+    """Keyframes and times of a morph that holds, morphs, holds and returns, for ``animate_geometry_keyframes``.
+
+    Parameters
+    ----------
+    snapshots : Cartogram or sequence
+        A cartogram (its saved snapshots are used) or the geometry states of the morph, in order.
+    hold_start, morph, hold_end, back : float
+        Seconds of the hold on the first state, of the morph, of the hold on the last state and of the return to the
+        first state. ``back=0`` leaves out the return (a morph that plays forward only).
+    easing : {"cosine", "linear"}
+        ``"cosine"`` plays the morph slowly, fast, slowly; ``"linear"`` at constant speed.
+
+    Returns
+    -------
+    keyframes : list
+        The states, repeated for the holds.
+    times : np.ndarray
+        The time in seconds of every keyframe, non-decreasing.
+
+    Examples
+    --------
+    >>> keyframes, times = morph_timeline(cartogram)
+    >>> anim = animate_geometry_keyframes(
+    ...     keyframes, keyframe_times=times, position_mapper=linear_over("time"), duration=times[-1]
+    ... )
+    """
+    if hasattr(snapshots, "snapshots") and hasattr(snapshots, "to_geodataframe"):
+        frames = [snapshots.to_geodataframe(iteration=snap.iteration) for snap in snapshots.snapshots]
+    else:
+        frames = list(snapshots)
+    n = len(frames)
+    if n < 2:
+        raise ValueError("morph_timeline needs at least 2 states")
+    if easing == "cosine":
+
+        def ease(p: float) -> float:
+            return float(np.arccos(np.clip(1.0 - 2.0 * p, -1.0, 1.0)) / np.pi)
+
+    elif easing == "linear":
+
+        def ease(p: float) -> float:
+            return p
+
+    else:
+        raise ValueError(f"easing must be 'cosine' or 'linear', got {easing!r}")
+    keyframes = [frames[0]]
+    times = [0.0]
+    for i, frame in enumerate(frames):
+        keyframes.append(frame)
+        times.append(hold_start + morph * ease(i / (n - 1)))
+    keyframes.append(frames[-1])
+    times.append(hold_start + morph + hold_end)
+    if back > 0:
+        for i in range(n - 2, -1, -1):
+            keyframes.append(frames[i])
+            times.append(hold_start + morph + hold_end + back * ease(1.0 - i / (n - 1)))
+    return keyframes, np.asarray(times, dtype=float)
 
 
 # Default position mapper for keyframes (index-linear)
@@ -1324,7 +1450,7 @@ def animate_geometry_keyframes(
     facecolor: str | list[np.ndarray] | np.ndarray | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
-    cmap: str = "viridis",
+    cmap: Any = None,
     legend: bool = False,
     legend_label: str | None = None,
     show_axes: bool = True,
@@ -1332,6 +1458,9 @@ def animate_geometry_keyframes(
     title: str | bool | Callable[..., str] | None = None,
     precompute: bool = True,
     figsize: tuple[float, float] = (10, 8),
+    norm: Any = None,
+    center: float | None = None,
+    style: Any = None,
     **kwargs: Any,
 ) -> FuncAnimation:
     """Animate between arbitrary geometry states (keyframes).
@@ -1381,8 +1510,8 @@ def animate_geometry_keyframes(
         Minimum value for color scale. If None, computed from all values.
     vmax : float, optional
         Maximum value for color scale. If None, computed from all values.
-    cmap : str, default="viridis"
-        Colormap name for coloring geometries.
+    cmap : str or Colormap, optional
+        Colormap of the colors. Defaults to the palette of the style for the data role, else ``"viridis"``.
     legend : bool, default=False
         Whether to show a colorbar.
     legend_label : str, optional
@@ -1416,6 +1545,13 @@ def animate_geometry_keyframes(
     **kwargs
         Additional arguments passed to GeoDataFrame.plot()
 
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of the colors: an instance, or the scale of the style's normalization. A ``vmin`` or ``vmax``
+        of the call fixes a linear normalization.
+    center : float, optional
+        Treat the colors as diverging around this value.
+    style : PlotStyle or str, optional
+        Style of the animation (default: the style of the block or session, else ``"default"``).
     Returns
     -------
     FuncAnimation
@@ -1565,7 +1701,16 @@ def animate_geometry_keyframes(
         mapper = None  # Not used in legacy mode
 
     # Set up figure
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    st = resolve_style(style)
+    _role = "diverging" if center is not None else "sequential"
+    cmap = cmap if cmap is not None else (st.colormap(_role) or "viridis")
+    _norm_obj = (
+        _animation_norm(st, _role, norm, center, color_vmin, color_vmax, vmin is not None or vmax is not None)
+        if color_vmin is not None and color_vmax is not None
+        else None
+    )
+    with st.rc_context():
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     # Get consistent bounds from all geometries
     all_bounds = [gdf.total_bounds for gdf in gdfs]
@@ -1716,7 +1861,7 @@ def animate_geometry_keyframes(
         _precomputed_paths, _precomputed_colors, _precomputed_meta = _fast_precompute_paths(
             gdfs, _kf_colors, actual_n_frames, n_keyframes, _pos_fn, interpolation
         )
-        _norm = plt.Normalize(vmin=color_vmin, vmax=color_vmax)
+        _norm = _norm_obj
         _coll_kwargs = {k: v for k, v in kwargs.items() if k not in ("markersize", "marker")}
         _patch_coll = _create_patch_collection(
             _precomputed_paths[0],
@@ -1730,6 +1875,7 @@ def animate_geometry_keyframes(
             ax,
             fig,
             cbar_added,
+            style=st,
         )
 
     elif precompute:
@@ -1778,23 +1924,16 @@ def animate_geometry_keyframes(
 
             # Determine how to plot
             if use_coloring and _has_colors and color_vmin is not None:
-                mappable = plot_gdf.plot(
-                    ax=ax, column="_plot_color", legend=False, vmin=color_vmin, vmax=color_vmax, cmap=cmap, **kwargs
-                )
+                mappable = plot_gdf.plot(ax=ax, column="_plot_color", legend=False, norm=_norm_obj, cmap=cmap, **kwargs)
             elif use_coloring and column is not None and column in plot_gdf.columns and color_vmin is not None:
-                mappable = plot_gdf.plot(
-                    ax=ax, column=column, legend=False, vmin=color_vmin, vmax=color_vmax, cmap=cmap, **kwargs
-                )
+                mappable = plot_gdf.plot(ax=ax, column=column, legend=False, norm=_norm_obj, cmap=cmap, **kwargs)
             else:
                 plot_gdf.plot(ax=ax, **kwargs)
                 mappable = None
 
             # Add colorbar on first frame if requested
             if legend and not cbar_added[0] and mappable is not None and color_vmin is not None:
-                sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
-                sm.set_array([])
-                _cbar_kw = {"label": legend_label, **(legend_kwargs or {})}
-                fig.colorbar(sm, ax=ax, **_cbar_kw)
+                _add_colorbar(st, fig, ax, cmap, _norm_obj, legend_label, legend_kwargs)
                 cbar_added[0] = True
 
             ax.set_xlim(xmin, xmax)
@@ -1819,9 +1958,9 @@ def animate_geometry_keyframes(
 
     anim = FuncAnimation(
         fig,
-        update,
+        rc_wrapped(st, update),
         frames=actual_n_frames,
-        init_func=init,
+        init_func=rc_wrapped(st, init),
         blit=False,
         interval=1000 / fps,
     )
@@ -1850,6 +1989,7 @@ def animate_fields(
     title: str | bool | None = None,
     figsize: tuple[float, float] = (10, 8),
     through: Literal["best", "last"] = "best",
+    style: Any = None,
 ) -> FuncAnimation:
     """Animate density and/or velocity fields over iterations.
 
@@ -1906,6 +2046,8 @@ def animate_fields(
         Where the animation ends. ``"best"`` stops at the returned state
         (``best_iteration``); ``"last"`` continues through the iterations run after it.
 
+    style : PlotStyle or str, optional
+        Style of the animation (default: the style of the block or session, else ``"default"``).
     Returns
     -------
     FuncAnimation
@@ -2038,7 +2180,9 @@ def animate_fields(
     mapper = position_mapper if position_mapper is not None else _default_position_mapper
 
     # Set up figure
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    st = resolve_style(style)
+    with st.rc_context():
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
     extent = [grid.xmin, grid.xmax, grid.ymin, grid.ymax]
 
     # Get target density for normalization
@@ -2245,9 +2389,9 @@ def animate_fields(
 
     anim = FuncAnimation(
         fig,
-        update,
+        rc_wrapped(st, update),
         frames=n_frames,
-        init_func=init,
+        init_func=rc_wrapped(st, init),
         blit=False,
         interval=1000 / fps,
     )
@@ -2267,6 +2411,7 @@ def animate_density_field(
     show_axes: bool = True,
     title: str | bool | None = None,
     figsize: tuple[float, float] = (10, 8),
+    style: Any = None,
 ) -> FuncAnimation:
     """Animate density field evolution. Convenience wrapper for animate_fields.
 
@@ -2285,6 +2430,7 @@ def animate_density_field(
         show_axes=show_axes,
         title=title,
         figsize=figsize,
+        style=style,
     )
 
 
@@ -2300,6 +2446,7 @@ def animate_velocity_field(
     show_axes: bool = True,
     title: str | bool | None = None,
     figsize: tuple[float, float] = (10, 8),
+    style: Any = None,
 ) -> FuncAnimation:
     """Animate velocity field evolution. Convenience wrapper for animate_fields.
 
@@ -2318,6 +2465,7 @@ def animate_velocity_field(
         show_axes=show_axes,
         title=title,
         figsize=figsize,
+        style=style,
     )
 
 
@@ -2336,7 +2484,7 @@ def animate_workflow(
     interpolation: str = "linear",
     hold_at_keyframes: float = 0.5,
     facecolor: str | np.ndarray | list | None = "errors_pct",
-    cmap: str = "RdYlGn_r",
+    cmap: Any = None,
     vmin: float | None = None,
     vmax: float | None = None,
     legend: bool = True,
@@ -2347,6 +2495,9 @@ def animate_workflow(
     title: str | bool | None = None,
     precompute: bool = True,
     figsize: tuple[float, float] = (10, 8),
+    norm: Any = None,
+    center: float | None = None,
+    style: Any = None,
     **kwargs: Any,
 ) -> FuncAnimation:
     """Animate through all cartograms in a workflow.
@@ -2385,8 +2536,8 @@ def animate_workflow(
         A string that is a column and also a built-in quantity or a color is read as the
         column, then as the built-in quantity, and a warning is issued. A string that is
         none of these raises ``ValueError``.
-    cmap : str, default="RdYlGn_r"
-        Colormap for coloring geometries.
+    cmap : str or Colormap, optional
+        Colormap of the colors. Defaults to the palette of the style for the data role, else ``"RdYlGn_r"``.
     vmin : float, optional
         Minimum value for color scale. If None, computed from all values.
     vmax : float, optional
@@ -2425,6 +2576,13 @@ def animate_workflow(
     **kwargs
         Additional arguments passed to GeoDataFrame.plot().
 
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of the colors: an instance, or the scale of the style's normalization. A ``vmin`` or ``vmax``
+        of the call fixes a linear normalization.
+    center : float, optional
+        Treat the colors as diverging around this value.
+    style : PlotStyle or str, optional
+        Style of the animation (default: the style of the block or session, else ``"default"``).
     Returns
     -------
     FuncAnimation
@@ -2587,7 +2745,20 @@ def animate_workflow(
     keyframe_positions = np.array(keyframe_times) / total_time if total_time > 0 else np.zeros(n_keyframes)
 
     # Set up figure
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    st = resolve_style(style)
+    _role = (
+        "diverging"
+        if ((isinstance(facecolor, str) and facecolor == "errors_pct") or center is not None)
+        else "sequential"
+    )
+    cmap = cmap if cmap is not None else (st.colormap(_role) or "RdYlGn_r")
+    _norm_obj = (
+        _animation_norm(st, _role, norm, center, color_vmin, color_vmax, vmin is not None or vmax is not None)
+        if color_vmin is not None and color_vmax is not None
+        else None
+    )
+    with st.rc_context():
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     # Get consistent bounds from all geometries
     all_bounds = [gdf.total_bounds for gdf in keyframes]
@@ -2705,7 +2876,7 @@ def animate_workflow(
         _precomputed_paths, _precomputed_colors, _precomputed_meta = _fast_precompute_paths(
             keyframes, color_values, n_frames, n_keyframes, _pos_fn, interpolation
         )
-        _norm = plt.Normalize(vmin=color_vmin, vmax=color_vmax)
+        _norm = _norm_obj
         _coll_kwargs = {k: v for k, v in kwargs.items() if k not in ("markersize", "marker")}
         _patch_coll = _create_patch_collection(
             _precomputed_paths[0],
@@ -2719,6 +2890,7 @@ def animate_workflow(
             ax,
             fig,
             cbar_added,
+            style=st,
         )
 
     elif precompute:
@@ -2767,18 +2939,13 @@ def animate_workflow(
 
             # Determine how to plot
             if use_coloring and _has_colors and color_vmin is not None:
-                plot_gdf.plot(
-                    ax=ax, column="_plot_color", legend=False, vmin=color_vmin, vmax=color_vmax, cmap=cmap, **kwargs
-                )
+                plot_gdf.plot(ax=ax, column="_plot_color", legend=False, norm=_norm_obj, cmap=cmap, **kwargs)
             else:
                 plot_gdf.plot(ax=ax, **kwargs)
 
             # Add colorbar on first frame if requested
             if legend and not cbar_added[0] and use_coloring and color_vmin is not None:
-                sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
-                sm.set_array([])
-                _cbar_kw = {"label": resolved_legend_label, **(legend_kwargs or {})}
-                fig.colorbar(sm, ax=ax, **_cbar_kw)
+                _add_colorbar(st, fig, ax, cmap, _norm_obj, resolved_legend_label, legend_kwargs)
                 cbar_added[0] = True
 
             ax.set_xlim(xmin, xmax)
@@ -2819,9 +2986,9 @@ def animate_workflow(
 
     anim = FuncAnimation(
         fig,
-        update,
+        rc_wrapped(st, update),
         frames=n_frames,
-        init_func=init,
+        init_func=rc_wrapped(st, init),
         blit=False,
         interval=1000 / fps,
     )
@@ -2844,6 +3011,7 @@ def animate_workflow_fields(
     title: str | bool | None = None,
     figsize: tuple[float, float] = (10, 8),
     through: Literal["best", "last"] = "best",
+    style: Any = None,
 ) -> FuncAnimation:
     """Animate density and/or velocity fields across all cartograms in a workflow.
 
@@ -2892,6 +3060,8 @@ def animate_workflow_fields(
         Where the animation ends. ``"best"`` stops at the returned state
         (``best_iteration``); ``"last"`` continues through the iterations run after it.
 
+    style : PlotStyle or str, optional
+        Style of the animation (default: the style of the block or session, else ``"default"``).
     Returns
     -------
     FuncAnimation
@@ -3060,7 +3230,9 @@ def animate_workflow_fields(
     n_runs = max(snap[0] for snap in all_snapshots) + 1
 
     # Set up figure
-    fig, ax = plt.subplots(1, 1, figsize=figsize)
+    st = resolve_style(style)
+    with st.rc_context():
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     def init() -> list:
         ax.set_aspect("equal")
@@ -3205,9 +3377,9 @@ def animate_workflow_fields(
 
     anim = FuncAnimation(
         fig,
-        update,
+        rc_wrapped(st, update),
         frames=n_frames,
-        init_func=init,
+        init_func=rc_wrapped(st, init),
         blit=False,
         interval=1000 / fps,
     )

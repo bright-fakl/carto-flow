@@ -453,13 +453,14 @@ def morph_geometries(
         coords_format, coords_sz = _detect_coordinate_format(coords)
         flat_coords = _normalize_coordinates(coords, coords_format)
 
-    # The pre-scaling moves the landmarks and the displacement coordinates with the component that contains them
+    # The pre-scaling moves the landmarks, and with prescale_coords the displacement coordinates, with the component that
+    # contains them
     if prescaling is not None:
         from ..geo_utils.prescale import scale_points
 
         if flat_landmarks_geoms is not None:
             flat_landmarks_geoms.coords, _ = scale_points(flat_landmarks_geoms.coords, *prescaling)
-        if flat_coords is not None:
+        if flat_coords is not None and options.prescale_coords:
             flat_coords[:], _ = scale_points(flat_coords, *prescaling)
 
     if _pt is not None:

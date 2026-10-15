@@ -34,13 +34,25 @@ def test_landmarks_stay_in_their_region_with_prescale_components():
         assert shapely.contains(geoms[r], shapely.points(carried[owner == r])).mean() > 0.99
 
 
-def test_displacement_coordinates_stay_in_their_region_with_prescale_components():
+def test_displacement_coordinates_are_scaled_with_prescale_coords():
     gdf, points, owner = _two_far_squares()
-    cartogram = flow.create_flow_cartogram(gdf, "v", displacement_coords=points, options=_options())
+    options = _options().copy_with(prescale_coords=True)
+    cartogram = flow.create_flow_cartogram(gdf, "v", displacement_coords=points, options=options)
     geoms = list(cartogram.get_geometry())
     carried = np.asarray(cartogram.get_coords())
     for r in (0, 1):
         assert shapely.contains(geoms[r], shapely.points(carried[owner == r])).mean() > 0.99
+
+
+def test_displacement_coordinates_are_not_scaled_by_default():
+    """A grid that is carried along to show the deformation of the plane is not affected by the pre-scaling: its points
+    start where they are given, so most points of the unit square that is scaled down to 0.4 of its area are not inside it."""
+    gdf, points, owner = _two_far_squares()
+    cartogram = flow.create_flow_cartogram(gdf, "v", displacement_coords=points, options=_options())
+    geoms = list(cartogram.get_geometry())
+    carried = np.asarray(cartogram.get_coords())
+    inside = shapely.contains(geoms[0], shapely.points(carried[owner == 0])).mean()
+    assert inside < 0.7
 
 
 def test_scale_points_scales_like_the_geometries():

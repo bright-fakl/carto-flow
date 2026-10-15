@@ -164,12 +164,14 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
-- **`prescale_components` moves the landmarks and the displacement coordinates with their
-  component.** The pre-scaling scaled the geometries but left the landmarks and the
-  displacement coordinates where they were, so for a region that was scaled down they
-  started outside it (only 39 % of the dots of a shrunken region of a two-component test
-  case were inside it at the end). Points are scaled with the component that contains
-  them; points outside every region are not moved.
+- **`prescale_components` moves the landmarks with their component.** The pre-scaling
+  scaled the geometries but left the landmarks where they were, so for a region that was
+  scaled down they started outside it (only 39 % of the dots of a shrunken region of a
+  two-component test case were inside it at the end). Landmarks are scaled with the
+  component that contains them; points outside every region are not moved. The
+  displacement coordinates are not: they are not tied to the geometries (a grid carried
+  along to show the deformation of the plane may be wanted without the pre-scaling); the
+  new `MorphOptions.prescale_coords` scales them too.
 - **The `MorphOptions` presets stopped before converging.** Their iteration limits
   (30, 100 and 300) date from before the stall rule, the exact rasterization and the
   adaptive step: on the bundled states the three presets ended with a mean area

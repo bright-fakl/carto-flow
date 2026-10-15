@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
+from .._plot_params import deprecated_params
 from ..geo_utils.validity import invalid_indices, repair_polygons
 
 if TYPE_CHECKING:
@@ -448,31 +449,34 @@ class Cartogram:
     # Visualization
     # ========================================================================
 
+    @deprecated_params(facecolor="column", legend_kwargs="legend_kwds")
     def plot(
         self,
-        column: str | None = None,
+        facecolor: Any = None,
         iteration: int | None = None,
         cmap: str = "RdYlGn_r",
         legend: bool = True,
         ax: Any | None = None,
+        legend_kwargs: dict | None = None,
         **kwargs,
     ) -> "CartogramPlotResult":
         """Plot the cartogram.
 
         Parameters
         ----------
-        column : str, optional
-            Column to use for coloring. Special values:
-            - '_morph_error_pct': Percentage errors (default)
-            - '_morph_density': Density values
-            - Any column from source GeoDataFrame
-            If None, plots without color mapping.
+        facecolor : str or array-like, optional
+            Fill of the geometries: a column of the source GeoDataFrame, the built-in quantity
+            ``"errors_pct"`` (percentage errors, the default if available) or ``"density"``,
+            a numeric array with one value per geometry, or a color. See
+            :func:`carto_flow.flow_cartogram.visualization.plot_cartogram`.
         iteration : int, optional
             Which iteration to plot (default: latest).
         cmap : str, default='RdYlGn_r'
-            Matplotlib colormap name.
+            Matplotlib colormap name, used when the fill is data.
         legend : bool, default=True
             Show colorbar legend.
+        legend_kwargs : dict, optional
+            Keyword arguments of the legend of the fill.
         ax : matplotlib.axes.Axes, optional
             Axes to plot on. If None, creates new figure.
         **kwargs
@@ -486,17 +490,18 @@ class Cartogram:
         Examples
         --------
         >>> cartogram.plot()
-        >>> cartogram.plot(column='population', cmap='Blues')
+        >>> cartogram.plot(facecolor='population', cmap='Blues')
         """
         from .visualization import plot_cartogram
 
         return plot_cartogram(
             self,
             ax=ax,
-            column=column,
+            facecolor=facecolor,
             iteration=iteration,
             cmap=cmap,
             legend=legend,
+            legend_kwargs=legend_kwargs,
             **kwargs,
         )
 

@@ -29,11 +29,11 @@ anim = animate_morph_history(
     cartogram,
     duration=2.0,  # total animation length in seconds
     fps=15,
-    color_by="errors_pct",
+    facecolor="errors_pct",
     cmap="PiYG",
     figsize=(8, 5),
     show_axes=False,
-    colorbar=True,
+    legend=True,
     vmin=-1000,
     vmax=1000,
     linewidth=0.5,

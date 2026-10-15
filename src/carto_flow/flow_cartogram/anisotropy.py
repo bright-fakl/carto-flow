@@ -62,6 +62,7 @@ Examples
 import numpy as np
 from scipy.ndimage import distance_transform_edt, gaussian_filter
 
+from .._plot_params import deprecated_params
 from .grid import Grid
 
 # Module-level exports - Public API
@@ -925,6 +926,12 @@ def build_axis_aligned_tensor(nx, ny, Dx=1.0, Dy=1.0, theta_field=None):
         return Axx, Axy, Ayx, Ayy
 
 
+@deprecated_params(
+    legend="show_colorbar",
+    legend_kwargs="colorbar_kwargs",
+    diff_legend_kwargs="diff_colorbar_kwargs",
+    heatmap_legend_kwargs="heatmap_colorbar_kwargs",
+)
 def preview_modulator(
     modulator: VelocityModulator | None = None,
     gdf=None,
@@ -935,9 +942,9 @@ def preview_modulator(
     show_geometry: bool = True,
     ax=None,
     cmap="viridis",
-    show_colorbar: bool = True,
+    legend: bool = True,
     arrows_kwargs: dict | None = None,
-    colorbar_kwargs: dict | None = None,
+    legend_kwargs: dict | None = None,
     values=None,
     column: str | None = None,
     Dx: float = 1.0,
@@ -946,12 +953,12 @@ def preview_modulator(
     input_arrows_kwargs: dict | None = None,
     diff_cmap: str = "Reds",
     diff_arrows_kwargs: dict | None = None,
-    diff_colorbar_kwargs: dict | None = None,
+    diff_legend_kwargs: dict | None = None,
     heatmap: str | None = None,
     heatmap_type: str = "magnitude",
     heatmap_cmap: str | None = None,
     heatmap_kwargs: dict | None = None,
-    heatmap_colorbar_kwargs: dict | None = None,
+    heatmap_legend_kwargs: dict | None = None,
     heatmap_alpha_from_magnitude: bool = False,
     arrow_scale: float = 1.0,
 ):
@@ -989,7 +996,7 @@ def preview_modulator(
         matching the convention used by the real algorithm.
     show_geometry : bool, default True
         When ``True``, draw the geometry outlines as a light background layer.
-    show_colorbar : bool, default True
+    legend : bool, default True
         When ``False``, the colorbar for the arrows is omitted.  Useful when
         embedding the preview in a figure that provides its own colorbar.
     ax : matplotlib.axes.Axes, optional
@@ -1035,7 +1042,7 @@ def preview_modulator(
         Extra keyword arguments merged into the ``ax.quiver`` call for the
         modulated-velocity arrows.  Override any of the defaults (``cmap``,
         ``pivot``, ``zorder``, …).
-    colorbar_kwargs : dict, optional
+    legend_kwargs : dict, optional
         Extra keyword arguments merged into the ``plt.colorbar`` call (e.g.
         ``label``, ``shrink``, ``pad``).
     heatmap : {'weight', 'input', 'output', 'diff'} or None, default None
@@ -1203,8 +1210,8 @@ def preview_modulator(
                     **(heatmap_kwargs or {}),
                 }
                 heatmap_image = ax.imshow(W, **_hkw)
-                if show_colorbar:
-                    _hcb_kw = {"label": "Weight", **(heatmap_colorbar_kwargs or {})}
+                if legend:
+                    _hcb_kw = {"label": "Weight", **(heatmap_legend_kwargs or {})}
                     heatmap_cb = plt.colorbar(heatmap_image, ax=ax, **_hcb_kw)
         elif heatmap in ("input", "output", "diff"):
             if heatmap == "input":
@@ -1255,14 +1262,14 @@ def preview_modulator(
                 _hmax = float(_hmag.max())
                 _hkw["alpha"] = (_hmag / _hmax) if _hmax > 1e-12 else np.ones_like(_hmag)
             heatmap_image = ax.imshow(_hdata, **_hkw)
-            if show_colorbar:
+            if legend:
                 _hlabel = {
                     "magnitude": f"{heatmap} magnitude",
                     "angle": f"{heatmap} direction",
                     "magnitude_diff": "speed change (\u2016out\u2016 \u2212 \u2016in\u2016)",
                     "angle_diff": "rotation (angle out \u2212 angle in)",
                 }.get(heatmap_type, heatmap_type)
-                _hcb_kw = {"label": _hlabel, **(heatmap_colorbar_kwargs or {})}
+                _hcb_kw = {"label": _hlabel, **(heatmap_legend_kwargs or {})}
                 heatmap_cb = plt.colorbar(heatmap_image, ax=ax, **_hcb_kw)
                 if heatmap_type == "angle":
                     heatmap_cb.set_ticks(np.array([-1.0, -0.5, 0.0, 0.5, 1.0]) * np.pi)  # type: ignore[arg-type]
@@ -1294,12 +1301,12 @@ def preview_modulator(
             magnitude[::skip, ::skip],
             **_arrows_kw,
         )
-        if show_colorbar:
+        if legend:
             _colorbar_kw = {
                 "label": (
                     "Output velocity magnitude" if values is not None else "Amplification (output / input magnitude)"
                 ),
-                **(colorbar_kwargs or {}),
+                **(legend_kwargs or {}),
             }
             cb = plt.colorbar(q, ax=ax, **_colorbar_kw)
 
@@ -1320,8 +1327,8 @@ def preview_modulator(
             **_diff_kw,
         )
         cb_diff = None
-        if show_colorbar:
-            _diff_cb_kw = {"label": "Difference magnitude", **(diff_colorbar_kwargs or {})}
+        if legend:
+            _diff_cb_kw = {"label": "Difference magnitude", **(diff_legend_kwargs or {})}
             cb_diff = plt.colorbar(q_diff, ax=ax, **_diff_cb_kw)
 
     # Input quiver

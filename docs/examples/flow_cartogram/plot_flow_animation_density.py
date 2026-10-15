@@ -36,7 +36,7 @@ anim = animate_density_field(
     show_axes=False,
     figsize=(8, 5),
     density=flow.DensityPlotOptions(
-        colorbar_kwargs={"shrink": 0.7},
+        legend_kwargs={"shrink": 0.7},
         normalize="ratio",
     ),
 )

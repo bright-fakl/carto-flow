@@ -27,6 +27,7 @@ from numba import njit
 from scipy.ndimage import distance_transform_edt, gaussian_filter
 
 # Import grid utilities
+from .._plot_params import deprecated_params
 from .grid import Grid
 
 # Module-level exports - Public API
@@ -624,6 +625,7 @@ class Smooth(DensityModulator):
         return f"DensitySmooth(sigma={self.sigma})"
 
 
+@deprecated_params(legend="show_colorbar", legend_kwargs="colorbar_kwargs")
 def preview_modulator(
     modulator: DensityModulator,
     gdf,
@@ -635,8 +637,8 @@ def preview_modulator(
     show: str = "output",
     ax=None,
     cmap: str = "RdBu_r",
-    show_colorbar: bool = True,
-    colorbar_kwargs: dict | None = None,
+    legend: bool = True,
+    legend_kwargs: dict | None = None,
     image_kwargs: dict | None = None,
     area_scale: float = 1.0,
 ):
@@ -681,9 +683,9 @@ def preview_modulator(
         recommended: for ``'input'`` and ``'output'`` the center is anchored
         at *target_density* (white = equilibrium, blue = below, red = above);
         for ``'ratio'`` the center is anchored at 1 (no change).
-    show_colorbar : bool, default True
+    legend : bool, default True
         When ``False``, the colorbar is omitted.
-    colorbar_kwargs : dict, optional
+    legend_kwargs : dict, optional
         Extra keyword arguments for ``plt.colorbar``.
     image_kwargs : dict, optional
         Extra keyword arguments merged into the ``ax.imshow`` call.
@@ -794,8 +796,8 @@ def preview_modulator(
     img = ax.imshow(display, **_img_kw)
 
     cb = None
-    if show_colorbar:
-        _cb_kw = {"label": cb_label, **(colorbar_kwargs or {})}
+    if legend:
+        _cb_kw = {"label": cb_label, **(legend_kwargs or {})}
         cb = plt.colorbar(img, ax=ax, **_cb_kw)
 
     if cb is not None:

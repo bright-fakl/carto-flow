@@ -36,6 +36,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.animation import FuncAnimation
 
+from .._plot_params import classify_string, deprecated_params
+
 if TYPE_CHECKING:
     from geopandas import GeoDataFrame
 
@@ -745,20 +747,47 @@ def save_animation(
 # =============================================================================
 
 
+# Built-in quantities of a cartogram that ``facecolor`` accepts in the animations
+_FILL_QUANTITIES = ("errors_pct", "density", "original")
+
+
+def _resolve_fill(facecolor: Any, label: str | None, sources: list, builtins: Any, kwargs: dict) -> tuple[Any, Any]:
+    """Resolve a string ``facecolor`` of an animation: a color becomes a constant fill in ``kwargs``.
+
+    A string that is a column and also a built-in quantity is read as the column (as a static array per source), so
+    the rule of :func:`carto_flow._plot_params.classify_string` holds. Returns the resolved ``facecolor`` and label.
+    """
+    if not isinstance(facecolor, str):
+        return facecolor, label
+    sources = [src for src in sources if src is not None]
+    columns = {c for src in sources for c in src.columns}
+    kind = classify_string(facecolor, columns, builtins, stacklevel=4)
+    if kind == "color":
+        kwargs.setdefault("facecolor", facecolor)
+        return None, label
+    if kind == "column" and facecolor in builtins:
+        arrays = [np.asarray(src[facecolor].values) for src in sources if facecolor in src.columns]
+        return (arrays[0] if len(arrays) == 1 else arrays), (label if label is not None else facecolor)
+    return facecolor, label
+
+
+@deprecated_params(
+    facecolor="color_by", legend="colorbar", legend_label="colorbar_label", legend_kwargs="colorbar_kwargs"
+)
 def animate_morph_history(
     cartogram: "Cartogram",
     duration: float = 5.0,
     fps: int = 15,
     interpolation: str = "nearest",
     position_mapper: PositionMapper | None = None,
-    color_by: str | np.ndarray | list | None = None,
+    facecolor: str | np.ndarray | list | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
     cmap: str = "viridis",
-    colorbar: bool = False,
-    colorbar_label: str | None = None,
+    legend: bool = False,
+    legend_label: str | None = None,
     show_axes: bool = True,
-    colorbar_kwargs: dict | None = None,
+    legend_kwargs: dict | None = None,
     title: str | bool | None = None,
     precompute: bool = True,
     figsize: tuple[float, float] = (10, 8),
@@ -787,30 +816,33 @@ def animate_morph_history(
         - linear_over("max_error"): Linear time-to-max-error
         - linear_over(custom_values): Linear over any custom array
         Use weights_to_position_mapper() for weight-based functions.
-    color_by : str, np.ndarray, or list of np.ndarray, optional
-        What to color geometries by:
+    facecolor : str, np.ndarray, or list of np.ndarray, optional
+        Fill of the geometries:
+        - a column name looked up in ``cartogram._source_gdf`` (static across snapshots)
         - ``"errors_pct"``: per-geometry percentage error at each snapshot
         - ``"density"``: per-geometry density (values/area) at each snapshot
         - ``"original"``: values from the column used to build the cartogram
           (static across snapshots; requires ``cartogram._value_column``)
-        - any other str: column name looked up in ``cartogram._source_gdf``
-          (static across snapshots)
+        - a color (``"red"``, ``"#d4e6f1"``): constant fill
         - np.ndarray: single array broadcast to all snapshots (static)
         - list of np.ndarray: one array per snapshot
+
+        A string that is a column and also a built-in quantity or a color is read as
+        the column, then as the built-in quantity, and a warning is issued.
     vmin : float, optional
         Minimum value for color scale. If None, computed from all values.
     vmax : float, optional
         Maximum value for color scale. If None, computed from all values.
     cmap : str, default="viridis"
         Colormap name for coloring geometries.
-    colorbar : bool, default=False
+    legend : bool, default=False
         Whether to show a colorbar.
-    colorbar_label : str, optional
-        Label for the colorbar. Auto-set from color_by if not provided.
+    legend_label : str, optional
+        Label for the colorbar. Auto-set from ``facecolor`` if not provided.
     show_axes : bool, default=True
         If False, hides the axes frame, ticks, and labels (``ax.axis("off")``).
         Useful for clean map-style animations.
-    colorbar_kwargs : dict, optional
+    legend_kwargs : dict, optional
         Additional keyword arguments passed to ``fig.colorbar()``.
         Example: ``dict(shrink=0.8, pad=0.02)``.
         The ``"label"`` key overrides the auto-set label.
@@ -865,21 +897,21 @@ def animate_morph_history(
 
     >>> # Color by per-geometry error percentage
     >>> anim = animate_morph_history(
-    ...     cartogram, color_by="errors_pct", cmap="RdYlGn_r", colorbar=True
+    ...     cartogram, facecolor="errors_pct", cmap="RdYlGn_r", legend=True
     ... )
 
     >>> # Color by per-snapshot density
-    >>> anim = animate_morph_history(cartogram, color_by="density", cmap="plasma", colorbar=True)
+    >>> anim = animate_morph_history(cartogram, facecolor="density", cmap="plasma", legend=True)
 
     >>> # Color by original data column (static)
-    >>> anim = animate_morph_history(cartogram, color_by="original", colorbar=True)
-    >>> anim = animate_morph_history(cartogram, color_by="population", colorbar=True)
+    >>> anim = animate_morph_history(cartogram, facecolor="original", legend=True)
+    >>> anim = animate_morph_history(cartogram, facecolor="population", legend=True)
 
     >>> # Single static array
-    >>> anim = animate_morph_history(cartogram, color_by=gdf["population"].values)
+    >>> anim = animate_morph_history(cartogram, facecolor=gdf["population"].values)
 
     >>> # Per-snapshot arrays
-    >>> anim = animate_morph_history(cartogram, color_by=[snap.density for snap in cartogram.snapshots])
+    >>> anim = animate_morph_history(cartogram, facecolor=[snap.density for snap in cartogram.snapshots])
     """
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
@@ -937,6 +969,11 @@ def animate_morph_history(
 
     n_snapshots = len(geometries)
     n_frames = int(duration * fps)
+
+    color_by, colorbar, colorbar_label, colorbar_kwargs = facecolor, legend, legend_label, legend_kwargs
+    color_by, colorbar_label = _resolve_fill(
+        color_by, colorbar_label, [getattr(cartogram, "_source_gdf", None)], _FILL_QUANTITIES, kwargs
+    )
 
     # Resolve color_by to a list of per-snapshot arrays and a default label
     resolved_colorbar_label = colorbar_label
@@ -1271,6 +1308,12 @@ def animate_morph_history(
 _default_keyframe_position_mapper = linear_over("index")
 
 
+@deprecated_params(
+    facecolor=("column", "color_values"),
+    legend="colorbar",
+    legend_label="colorbar_label",
+    legend_kwargs="colorbar_kwargs",
+)
 def animate_geometry_keyframes(
     keyframes: list[Any],
     duration: float = 5.0,
@@ -1279,15 +1322,14 @@ def animate_geometry_keyframes(
     position_mapper: PositionMapper | None = None,
     keyframe_times: np.ndarray | None = None,
     hold_frames: int = 0,
-    column: str | None = None,
-    color_values: list[np.ndarray] | None = None,
+    facecolor: str | list[np.ndarray] | np.ndarray | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
     cmap: str = "viridis",
-    colorbar: bool = False,
-    colorbar_label: str | None = None,
+    legend: bool = False,
+    legend_label: str | None = None,
     show_axes: bool = True,
-    colorbar_kwargs: dict | None = None,
+    legend_kwargs: dict | None = None,
     title: str | bool | Callable[..., str] | None = None,
     precompute: bool = True,
     figsize: tuple[float, float] = (10, 8),
@@ -1323,27 +1365,33 @@ def animate_geometry_keyframes(
     hold_frames : int, default=0
         Number of frames to hold at each keyframe before transitioning.
         Note: When using a position_mapper, hold_frames is ignored.
-    column : str, optional
-        Column to use for coloring geometries. Values are read from each
-        keyframe's GeoDataFrame and color limits are computed globally.
-    color_values : list of arrays, optional
-        Per-keyframe color values. Each array has one value per geometry.
-        When provided, takes precedence over column. Color values are
-        interpolated when using linear geometry interpolation.
+    facecolor : str, list of arrays, or array, optional
+        Fill of the geometries:
+
+        - a column name: values are read from each keyframe's GeoDataFrame and
+          color limits are computed globally.
+        - a color (``"red"``, ``"#d4e6f1"``): constant fill.
+        - a list of arrays: per-keyframe color values, each with one value per
+          geometry. Color values are interpolated when using linear geometry
+          interpolation.
+        - an array: one array used for every keyframe.
+
+        A string that is a column and also a color is read as the column, and a
+        warning is issued.
     vmin : float, optional
         Minimum value for color scale. If None, computed from all values.
     vmax : float, optional
         Maximum value for color scale. If None, computed from all values.
     cmap : str, default="viridis"
         Colormap name for coloring geometries.
-    colorbar : bool, default=False
+    legend : bool, default=False
         Whether to show a colorbar.
-    colorbar_label : str, optional
-        Label for the colorbar. Defaults to column name if using column.
+    legend_label : str, optional
+        Label for the colorbar. Defaults to the column name if ``facecolor`` is a column.
     show_axes : bool, default=True
         If False, hides the axes frame, ticks, and labels (``ax.axis("off")``).
         Useful for clean map-style animations.
-    colorbar_kwargs : dict, optional
+    legend_kwargs : dict, optional
         Additional keyword arguments passed to ``fig.colorbar()``.
         Example: ``dict(shrink=0.8, pad=0.02)``.
         The ``"label"`` key overrides the auto-set label.
@@ -1396,17 +1444,17 @@ def animate_geometry_keyframes(
     >>> # Animate with changing colors (e.g., population over years)
     >>> anim = animate_geometry_keyframes(
     ...     keyframes=[gdf_2020, gdf_2021, gdf_2022],
-    ...     color_values=[pop_2020, pop_2021, pop_2022],
+    ...     facecolor=[pop_2020, pop_2021, pop_2022],
     ...     interpolation="linear",
     ...     cmap="plasma",
-    ...     colorbar=True,
-    ...     colorbar_label="Population"
+    ...     legend=True,
+    ...     legend_label="Population"
     ... )
 
     >>> # Use column from GeoDataFrames with consistent limits
     >>> anim = animate_geometry_keyframes(
     ...     keyframes=[gdf1, gdf2, gdf3],
-    ...     column="value",
+    ...     facecolor="value",
     ...     cmap="RdYlGn",
     ... )
 
@@ -1439,6 +1487,20 @@ def animate_geometry_keyframes(
 
     n_keyframes = len(gdfs)
     n_frames = int(duration * fps)
+
+    colorbar, colorbar_label, colorbar_kwargs = legend, legend_label, legend_kwargs
+    column: str | None = None
+    color_values: list[np.ndarray] | None = None
+    if isinstance(facecolor, str):
+        kind = classify_string(facecolor, {c for gdf in gdfs for c in gdf.columns}, (), stacklevel=3)
+        if kind == "column":
+            column = facecolor
+        else:
+            kwargs.setdefault("facecolor", facecolor)
+    elif isinstance(facecolor, np.ndarray):
+        color_values = [facecolor] * n_keyframes
+    elif facecolor is not None:
+        color_values = list(facecolor)
 
     # Validate keyframe_times if provided
     if keyframe_times is not None:
@@ -1878,7 +1940,7 @@ def animate_fields(
     )
 
     density_opts = density or DensityPlotOptions()
-    velocity_opts = velocity or VelocityPlotOptions(colorbar=False)
+    velocity_opts = velocity or VelocityPlotOptions(legend=False)
 
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
@@ -2114,7 +2176,7 @@ def animate_fields(
                 override_vmax=density_vmax,
             )
             if not density_cbar_added[0]:
-                _cbar_kw = {"label": label, **density_opts.colorbar_kwargs}
+                _cbar_kw = {"label": label, **density_opts.legend_kwargs}
                 fig.colorbar(im, ax=ax, **_cbar_kw)
                 density_cbar_added[0] = True
 
@@ -2137,14 +2199,14 @@ def animate_fields(
 
             ax.quiver(X_sub, Y_sub, vx_sub, vy_sub, color=colors, **quiver_kw)
 
-            if velocity_opts.colorbar and not velocity_cbar_added[0] and velocity_opts.color_by is not None:
+            if velocity_opts.legend and not velocity_cbar_added[0] and velocity_opts.color_by is not None:
                 sm = plt.cm.ScalarMappable(cmap=_vcmap, norm=plt.Normalize(vmin=0, vmax=1))
                 if velocity_opts.color_by == "magnitude":
                     sm.set_clim(mag_min, mag_max)
                 elif velocity_opts.color_by == "direction":
                     sm.set_clim(-np.pi, np.pi)
                 sm.set_array([])
-                _cbar_kw = {"label": _colorbar_label, **velocity_opts.colorbar_kwargs}
+                _cbar_kw = {"label": _colorbar_label, **velocity_opts.legend_kwargs}
                 fig.colorbar(sm, ax=ax, **_cbar_kw)
                 velocity_cbar_added[0] = True
 
@@ -2266,21 +2328,24 @@ def animate_velocity_field(
 # =============================================================================
 
 
+@deprecated_params(
+    facecolor="color_by", legend="colorbar", legend_label="colorbar_label", legend_kwargs="colorbar_kwargs"
+)
 def animate_workflow(
     workflow: "CartogramWorkflow",
     duration: float = 8.0,
     fps: int = 15,
     interpolation: str = "linear",
     hold_at_keyframes: float = 0.5,
-    color_by: str | np.ndarray | list | None = "errors_pct",
+    facecolor: str | np.ndarray | list | None = "errors_pct",
     cmap: str = "RdYlGn_r",
     vmin: float | None = None,
     vmax: float | None = None,
-    colorbar: bool = True,
-    colorbar_label: str | None = None,
+    legend: bool = True,
+    legend_label: str | None = None,
     show_run_info: bool = True,
     show_axes: bool = True,
-    colorbar_kwargs: dict | None = None,
+    legend_kwargs: dict | None = None,
     title: str | bool | None = None,
     precompute: bool = True,
     figsize: tuple[float, float] = (10, 8),
@@ -2303,8 +2368,8 @@ def animate_workflow(
         Interpolation between keyframes: "nearest" or "linear".
     hold_at_keyframes : float, default=0.5
         Seconds to pause at each cartogram's final state.
-    color_by : str, array, list, or None, default="errors_pct"
-        What to use for coloring geometries. Accepted values:
+    facecolor : str, array, list, or None, default="errors_pct"
+        Fill of the geometries. Accepted values:
 
         - ``"errors_pct"`` (default): per-geometry percentage error from each
           cartogram's ``get_errors().errors_pct``.
@@ -2313,27 +2378,31 @@ def animate_workflow(
         - ``"original"``: static values from the column used to build the
           cartogram (requires ``_value_column`` + ``_source_gdf``; set
           automatically by ``CartogramWorkflow``).
-        - Any other ``str``: column looked up in ``_source_gdf`` for every
-          cartogram (raises ``ValueError`` if not found).
+        - A column name: looked up in ``_source_gdf`` for every cartogram.
+        - A color (``"red"``, ``"#d4e6f1"``): constant fill.
         - ``np.ndarray``: single array broadcast to every keyframe.
         - ``list`` of arrays: one array per cartogram in the workflow.
         - ``None``: no coloring.
+
+        A string that is a column and also a built-in quantity or a color is read as the
+        column, then as the built-in quantity, and a warning is issued. A string that is
+        none of these raises ``ValueError``.
     cmap : str, default="RdYlGn_r"
         Colormap for coloring geometries.
     vmin : float, optional
         Minimum value for color scale. If None, computed from all values.
     vmax : float, optional
         Maximum value for color scale. If None, computed from all values.
-    colorbar : bool, default=True
+    legend : bool, default=True
         Whether to show a colorbar.
-    colorbar_label : str, optional
-        Label for the colorbar. Auto-set from ``color_by`` if not provided.
+    legend_label : str, optional
+        Label for the colorbar. Auto-set from ``facecolor`` if not provided.
     show_run_info : bool, default=True
         Show "Run X/N" in title during animation.
     show_axes : bool, default=True
         If False, hides the axes frame, ticks, and labels (``ax.axis("off")``).
         Useful for clean map-style animations.
-    colorbar_kwargs : dict, optional
+    legend_kwargs : dict, optional
         Additional keyword arguments passed to ``fig.colorbar()``.
         Example: ``dict(shrink=0.8, pad=0.02)``.
         The ``"label"`` key overrides the auto-set label.
@@ -2371,10 +2440,10 @@ def animate_workflow(
     >>> save_animation(anim, "workflow.gif")
 
     >>> # Color by density with custom colormap
-    >>> anim = animate_workflow(workflow, color_by="density", cmap="viridis")
+    >>> anim = animate_workflow(workflow, facecolor="density", cmap="viridis")
 
     >>> # No coloring, just geometry transitions
-    >>> anim = animate_workflow(workflow, color_by=None)
+    >>> anim = animate_workflow(workflow, facecolor=None)
     """
     import geopandas as gpd
 
@@ -2383,6 +2452,11 @@ def animate_workflow(
 
     if len(workflow) < 1:
         raise ValueError("Workflow must contain at least one cartogram")
+
+    color_by, colorbar, colorbar_label, colorbar_kwargs = facecolor, legend, legend_label, legend_kwargs
+    color_by, colorbar_label = _resolve_fill(
+        color_by, colorbar_label, [getattr(c, "_source_gdf", None) for c in workflow], _FILL_QUANTITIES, kwargs
+    )
 
     # Extract keyframes (final geometry from each cartogram)
     keyframes: list[GeoDataFrame] = []
@@ -2854,7 +2928,7 @@ def animate_workflow_fields(
 
     # Default: ratio normalization for workflow animations
     density_opts = density if density is not None else DensityPlotOptions(normalize="ratio")
-    velocity_opts = velocity or VelocityPlotOptions(colorbar=False)
+    velocity_opts = velocity or VelocityPlotOptions(legend=False)
 
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
@@ -3040,7 +3114,7 @@ def animate_workflow_fields(
                 override_vmax=density_vmax,
             )
             if not density_cbar_added[0]:
-                _cbar_kw = {"label": label, **density_opts.colorbar_kwargs}
+                _cbar_kw = {"label": label, **density_opts.legend_kwargs}
                 fig.colorbar(im, ax=ax, **_cbar_kw)
                 density_cbar_added[0] = True
 
@@ -3078,14 +3152,14 @@ def animate_workflow_fields(
 
             ax.quiver(X_sub, Y_sub, vx_sub, vy_sub, color=colors, **quiver_kw)
 
-            if velocity_opts.colorbar and not velocity_cbar_added[0] and velocity_opts.color_by is not None:
+            if velocity_opts.legend and not velocity_cbar_added[0] and velocity_opts.color_by is not None:
                 sm = plt.cm.ScalarMappable(cmap=_vcmap, norm=plt.Normalize(vmin=0, vmax=1))
                 if velocity_opts.color_by == "magnitude":
                     sm.set_clim(mag_min, mag_max)
                 elif velocity_opts.color_by == "direction":
                     sm.set_clim(-np.pi, np.pi)
                 sm.set_array([])
-                _cbar_kw = {"label": _colorbar_label, **velocity_opts.colorbar_kwargs}
+                _cbar_kw = {"label": _colorbar_label, **velocity_opts.legend_kwargs}
                 fig.colorbar(sm, ax=ax, **_cbar_kw)
                 velocity_cbar_added[0] = True
 

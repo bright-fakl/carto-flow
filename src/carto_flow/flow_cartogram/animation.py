@@ -208,9 +208,9 @@ def _create_patch_collection(
     norm: Any,
     cmap: str,
     coll_kwargs: dict,
-    colorbar: bool,
-    colorbar_label: str | None,
-    colorbar_kwargs: dict | None,
+    legend: bool,
+    legend_label: str | None,
+    legend_kwargs: dict | None,
     ax: Any,
     fig: Any,
     cbar_added: list,
@@ -232,10 +232,10 @@ def _create_patch_collection(
     if frame0_colors is not None:
         patch_coll.set_array(np.asarray(frame0_colors).ravel())
     ax.add_collection(patch_coll)
-    if colorbar:
+    if legend:
         sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
         sm.set_array([])
-        _cbar_kw = {"label": colorbar_label, **(colorbar_kwargs or {})}
+        _cbar_kw = {"label": legend_label, **(legend_kwargs or {})}
         fig.colorbar(sm, ax=ax, **_cbar_kw)
     cbar_added[0] = True
     return patch_coll
@@ -970,62 +970,61 @@ def animate_morph_history(
     n_snapshots = len(geometries)
     n_frames = int(duration * fps)
 
-    color_by, colorbar, colorbar_label, colorbar_kwargs = facecolor, legend, legend_label, legend_kwargs
-    color_by, colorbar_label = _resolve_fill(
-        color_by, colorbar_label, [getattr(cartogram, "_source_gdf", None)], _FILL_QUANTITIES, kwargs
+    facecolor, legend_label = _resolve_fill(
+        facecolor, legend_label, [getattr(cartogram, "_source_gdf", None)], _FILL_QUANTITIES, kwargs
     )
 
-    # Resolve color_by to a list of per-snapshot arrays and a default label
-    resolved_colorbar_label = colorbar_label
+    # Resolve facecolor to a list of per-snapshot arrays and a default label
+    resolved_legend_label = legend_label
     color_values: list[np.ndarray] | None = None
 
-    if isinstance(color_by, np.ndarray):
+    if isinstance(facecolor, np.ndarray):
         # Single static array — broadcast to all snapshots
-        color_values = [np.asarray(color_by)] * n_snapshots
+        color_values = [np.asarray(facecolor)] * n_snapshots
 
-    elif isinstance(color_by, list):
+    elif isinstance(facecolor, list):
         # Per-snapshot arrays
-        if len(color_by) != n_snapshots:
-            raise ValueError(f"color_by list length ({len(color_by)}) must match number of snapshots ({n_snapshots})")
-        color_values = [np.asarray(cv) for cv in color_by]
+        if len(facecolor) != n_snapshots:
+            raise ValueError(f"facecolor list length ({len(facecolor)}) must match number of snapshots ({n_snapshots})")
+        color_values = [np.asarray(cv) for cv in facecolor]
 
-    elif isinstance(color_by, str):
-        if color_by == "errors_pct":
+    elif isinstance(facecolor, str):
+        if facecolor == "errors_pct":
             if all(e is not None for e in snapshot_errors_pct):
                 color_values = snapshot_errors_pct  # type: ignore[assignment]
-            if resolved_colorbar_label is None:
-                resolved_colorbar_label = "Error %"
+            if resolved_legend_label is None:
+                resolved_legend_label = "Error %"
 
-        elif color_by == "density":
+        elif facecolor == "density":
             if all(d is not None for d in snapshot_densities):
                 color_values = snapshot_densities  # type: ignore[assignment]
-            if resolved_colorbar_label is None:
-                resolved_colorbar_label = "Density"
+            if resolved_legend_label is None:
+                resolved_legend_label = "Density"
 
-        elif color_by == "original":
+        elif facecolor == "original":
             col = getattr(cartogram, "_value_column", None)
             src = getattr(cartogram, "_source_gdf", None)
             if col is None or src is None or col not in src.columns:
                 raise ValueError(
-                    "color_by='original' requires cartogram._value_column and _source_gdf "
+                    "facecolor='original' requires cartogram._value_column and _source_gdf "
                     "(set automatically when using CartogramWorkflow)."
                 )
             vals = np.asarray(src[col].values)
             color_values = [vals] * n_snapshots
-            if resolved_colorbar_label is None:
-                resolved_colorbar_label = col
+            if resolved_legend_label is None:
+                resolved_legend_label = col
 
         else:
             # Any other column name — look up in source GDF (static)
             src = getattr(cartogram, "_source_gdf", None)
-            if src is not None and color_by in src.columns:
-                vals = np.asarray(src[color_by].values)
+            if src is not None and facecolor in src.columns:
+                vals = np.asarray(src[facecolor].values)
                 color_values = [vals] * n_snapshots
-                if resolved_colorbar_label is None:
-                    resolved_colorbar_label = color_by
+                if resolved_legend_label is None:
+                    resolved_legend_label = facecolor
             else:
                 available = list(src.columns) if src is not None else []
-                raise ValueError(f"Column '{color_by}' not found in source GeoDataFrame. Available: {available}")
+                raise ValueError(f"Column '{facecolor}' not found in source GeoDataFrame. Available: {available}")
 
     # Convert geometry arrays to GeoDataFrames for plotting
     import geopandas as gpd
@@ -1044,7 +1043,7 @@ def animate_morph_history(
     color_vmin = vmin if vmin is not None else computed_vmin
     color_vmax = vmax if vmax is not None else computed_vmax
 
-    colorbar_label = resolved_colorbar_label
+    legend_label = resolved_legend_label
 
     # Convert lists to arrays, removing variables that are all None
     variables_arrays: dict[str, np.ndarray] = {}
@@ -1186,9 +1185,9 @@ def animate_morph_history(
             _norm,
             cmap,
             _coll_kwargs,
-            colorbar,
-            colorbar_label,
-            colorbar_kwargs,
+            legend,
+            legend_label,
+            legend_kwargs,
             ax,
             fig,
             cbar_added,
@@ -1250,10 +1249,10 @@ def animate_morph_history(
                 mappable = None
 
             # Add colorbar on first frame if requested
-            if colorbar and not cbar_added[0] and mappable is not None and color_vmin is not None:
+            if legend and not cbar_added[0] and mappable is not None and color_vmin is not None:
                 sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
                 sm.set_array([])
-                _cbar_kw = {"label": colorbar_label, **(colorbar_kwargs or {})}
+                _cbar_kw = {"label": legend_label, **(legend_kwargs or {})}
                 fig.colorbar(sm, ax=ax, **_cbar_kw)
                 cbar_added[0] = True
 
@@ -1488,7 +1487,6 @@ def animate_geometry_keyframes(
     n_keyframes = len(gdfs)
     n_frames = int(duration * fps)
 
-    colorbar, colorbar_label, colorbar_kwargs = legend, legend_label, legend_kwargs
     column: str | None = None
     color_values: list[np.ndarray] | None = None
     if isinstance(facecolor, str):
@@ -1541,8 +1539,8 @@ def animate_geometry_keyframes(
     color_vmax = vmax if vmax is not None else computed_vmax
 
     # Determine colorbar label
-    if colorbar_label is None and column is not None:
-        colorbar_label = column
+    if legend_label is None and column is not None:
+        legend_label = column
 
     # Build variables dict for position mapper
     variables_arrays: dict[str, np.ndarray] = {
@@ -1726,9 +1724,9 @@ def animate_geometry_keyframes(
             _norm,
             cmap,
             _coll_kwargs,
-            colorbar,
-            colorbar_label,
-            colorbar_kwargs,
+            legend,
+            legend_label,
+            legend_kwargs,
             ax,
             fig,
             cbar_added,
@@ -1792,10 +1790,10 @@ def animate_geometry_keyframes(
                 mappable = None
 
             # Add colorbar on first frame if requested
-            if colorbar and not cbar_added[0] and mappable is not None and color_vmin is not None:
+            if legend and not cbar_added[0] and mappable is not None and color_vmin is not None:
                 sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
                 sm.set_array([])
-                _cbar_kw = {"label": colorbar_label, **(colorbar_kwargs or {})}
+                _cbar_kw = {"label": legend_label, **(legend_kwargs or {})}
                 fig.colorbar(sm, ax=ax, **_cbar_kw)
                 cbar_added[0] = True
 
@@ -2453,9 +2451,8 @@ def animate_workflow(
     if len(workflow) < 1:
         raise ValueError("Workflow must contain at least one cartogram")
 
-    color_by, colorbar, colorbar_label, colorbar_kwargs = facecolor, legend, legend_label, legend_kwargs
-    color_by, colorbar_label = _resolve_fill(
-        color_by, colorbar_label, [getattr(c, "_source_gdf", None) for c in workflow], _FILL_QUANTITIES, kwargs
+    facecolor, legend_label = _resolve_fill(
+        facecolor, legend_label, [getattr(c, "_source_gdf", None) for c in workflow], _FILL_QUANTITIES, kwargs
     )
 
     # Extract keyframes (final geometry from each cartogram)
@@ -2487,14 +2484,14 @@ def animate_workflow(
         kf_iterations.append(float(_best_iter) if _best_iter is not None else _nan)
         kf_iterations_run.append(float(cartogram.niterations) if hasattr(cartogram, "niterations") else _nan)
 
-        # Extract color values based on color_by
-        if isinstance(color_by, str):
-            if color_by == "errors_pct":
+        # Extract color values based on facecolor
+        if isinstance(facecolor, str):
+            if facecolor == "errors_pct":
                 _errs = cartogram.get_errors()
                 color_values.append(_errs.errors_pct if _errs else None)
-            elif color_by == "density":
+            elif facecolor == "density":
                 color_values.append(cartogram.get_density())
-            elif color_by == "original":
+            elif facecolor == "original":
                 _col = getattr(cartogram, "_value_column", None)
                 _src = getattr(cartogram, "_source_gdf", None)
                 if _col and _src is not None and _col in _src.columns:
@@ -2503,13 +2500,13 @@ def animate_workflow(
                     color_values.append(None)
             else:
                 _src = getattr(cartogram, "_source_gdf", None)
-                if _src is not None and color_by in _src.columns:
-                    color_values.append(np.asarray(_src[color_by].values))
+                if _src is not None and facecolor in _src.columns:
+                    color_values.append(np.asarray(_src[facecolor].values))
                 else:
                     color_values.append(None)
-        elif isinstance(color_by, np.ndarray):
-            color_values.append(np.asarray(color_by))
-        elif isinstance(color_by, list):
+        elif isinstance(facecolor, np.ndarray):
+            color_values.append(np.asarray(facecolor))
+        elif isinstance(facecolor, list):
             pass  # handled after loop
         else:
             color_values.append(None)
@@ -2517,18 +2514,18 @@ def animate_workflow(
     n_keyframes = len(keyframes)
     n_frames = int(duration * fps)
 
-    # Handle list color_by: validate and assign
-    if isinstance(color_by, list):
-        if len(color_by) != n_keyframes:
+    # Handle list facecolor: validate and assign
+    if isinstance(facecolor, list):
+        if len(facecolor) != n_keyframes:
             raise ValueError(
-                f"color_by list length ({len(color_by)}) must match number of workflow cartograms ({n_keyframes})"
+                f"facecolor list length ({len(facecolor)}) must match number of workflow cartograms ({n_keyframes})"
             )
-        color_values = [np.asarray(cv) for cv in color_by]
+        color_values = [np.asarray(cv) for cv in facecolor]
 
     # Raise for arbitrary column not found in any cartogram
     if (
-        isinstance(color_by, str)
-        and color_by not in ("errors_pct", "density", "original")
+        isinstance(facecolor, str)
+        and facecolor not in ("errors_pct", "density", "original")
         and not any(cv is not None for cv in color_values)
     ):
         _available: list = []
@@ -2537,10 +2534,10 @@ def animate_workflow(
             if _src2 is not None:
                 _available = list(_src2.columns)
                 break
-        raise ValueError(f"Column '{color_by}' not found in source GeoDataFrame. Available: {_available}")
+        raise ValueError(f"Column '{facecolor}' not found in source GeoDataFrame. Available: {_available}")
 
     # Compute global color limits
-    use_coloring = color_by is not None and any(cv is not None for cv in color_values)
+    use_coloring = facecolor is not None and any(cv is not None for cv in color_values)
     computed_vmin, computed_vmax = None, None
     if use_coloring:
         valid_colors = [cv for cv in color_values if cv is not None]
@@ -2552,20 +2549,20 @@ def animate_workflow(
     color_vmax = vmax if vmax is not None else computed_vmax
 
     # Determine colorbar label
-    resolved_colorbar_label = colorbar_label
-    if resolved_colorbar_label is None and color_by is not None:
-        if color_by == "errors_pct":
-            resolved_colorbar_label = "Error %"
-        elif color_by == "density":
-            resolved_colorbar_label = "Density"
-        elif color_by == "original":
+    resolved_legend_label = legend_label
+    if resolved_legend_label is None and facecolor is not None:
+        if facecolor == "errors_pct":
+            resolved_legend_label = "Error %"
+        elif facecolor == "density":
+            resolved_legend_label = "Density"
+        elif facecolor == "original":
             for _c in workflow:
                 _col2 = getattr(_c, "_value_column", None)
                 if _col2:
-                    resolved_colorbar_label = _col2
+                    resolved_legend_label = _col2
                     break
-        elif isinstance(color_by, str):
-            resolved_colorbar_label = color_by
+        elif isinstance(facecolor, str):
+            resolved_legend_label = facecolor
 
     # Compute timing with hold at keyframes
     # Total time = hold_time * n_keyframes + transition_time * (n_keyframes - 1)
@@ -2716,9 +2713,9 @@ def animate_workflow(
             _norm,
             cmap,
             _coll_kwargs,
-            colorbar,
-            resolved_colorbar_label,
-            colorbar_kwargs,
+            legend,
+            resolved_legend_label,
+            legend_kwargs,
             ax,
             fig,
             cbar_added,
@@ -2777,10 +2774,10 @@ def animate_workflow(
                 plot_gdf.plot(ax=ax, **kwargs)
 
             # Add colorbar on first frame if requested
-            if colorbar and not cbar_added[0] and use_coloring and color_vmin is not None:
+            if legend and not cbar_added[0] and use_coloring and color_vmin is not None:
                 sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=color_vmin, vmax=color_vmax))
                 sm.set_array([])
-                _cbar_kw = {"label": resolved_colorbar_label, **(colorbar_kwargs or {})}
+                _cbar_kw = {"label": resolved_legend_label, **(legend_kwargs or {})}
                 fig.colorbar(sm, ax=ax, **_cbar_kw)
                 cbar_added[0] = True
 

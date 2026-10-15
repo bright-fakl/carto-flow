@@ -18,9 +18,9 @@ partition = partition_geometries(us_states, columns=["Below Poverty Level %", "A
 
 plot = plot_partitions(
     partition,
-    color_by="category",
+    facecolor="category",
     edgecolor="white",
-    palette={"Below Poverty Level %": "darkgreen", "Above Poverty Level %": "#cceecc"},
+    cmap={"Below Poverty Level %": "darkgreen", "Above Poverty Level %": "#cceecc"},
 )
 
 _ = plot.ax.axis("off")

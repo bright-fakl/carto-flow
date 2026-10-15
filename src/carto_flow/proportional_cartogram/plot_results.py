@@ -6,11 +6,11 @@ further style or query the rendered elements after plotting.
 
 Examples
 --------
->>> pr = plot_partitions(result, color_by="category")
+>>> pr = plot_partitions(result, facecolor="category")
 >>> pr.partition_collections[0].set_alpha(0.5)
 >>> pr.legend.set_title("Custom legend title")
 
->>> pr = plot_partitions(result, color_by="area")
+>>> pr = plot_partitions(result, facecolor="area")
 >>> pr.colorbar.set_label("Area (km²)")
 >>> pr.complement_collections[0].set_edgecolor("red")
 

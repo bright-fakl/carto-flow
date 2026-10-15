@@ -23,7 +23,7 @@ result = pc.plot_dot_density(
     n_dots=1000,
     normalization="maximum",
     alpha=[0.1, 1.0],
-    palette={"Below Poverty Level": "#ff0000", "Above Poverty Level": "#000000"},
+    cmap={"Below Poverty Level": "#ff0000", "Above Poverty Level": "#000000"},
 )
 
 result.ax.axis("off")

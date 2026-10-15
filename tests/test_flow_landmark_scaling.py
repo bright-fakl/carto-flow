@@ -223,14 +223,26 @@ def test_prescale_components_moves_the_landmarks_with_their_component():
     assert np.linalg.norm(uniform - carried, axis=1).max() < 0.2
 
 
-def test_prescale_components_moves_the_displacement_coordinates_with_their_component():
+def test_prescale_coords_moves_the_displacement_coordinates_with_their_component():
     gdf, points, owner = _two_far_squares()
-    options = flow.MorphOptions(show_progress=False, grid=128, prescale_components=True, mean_tol=0.005, max_tol=0.01)
+    options = flow.MorphOptions(
+        show_progress=False, grid=128, prescale_components=True, prescale_coords=True, mean_tol=0.005, max_tol=0.01
+    )
     cartogram = flow.create_flow_cartogram(gdf, "v", displacement_coords=points, options=options)
     geoms = list(cartogram.get_geometry())
     carried = np.asarray(cartogram.get_coords())
     for r in (0, 1):
         assert shapely.contains(geoms[r], shapely.points(carried[owner == r])).mean() > 0.99
+    assert cartogram.best.coords_area_scaling is not None
+
+
+def test_displacement_coordinates_are_not_prescaled_by_default_and_have_no_area_scaling():
+    gdf, points, _ = _two_far_squares()
+    options = flow.MorphOptions(show_progress=False, grid=128, prescale_components=True, mean_tol=0.005, max_tol=0.01)
+    cartogram = flow.create_flow_cartogram(gdf, "v", displacement_coords=points, options=options)
+    assert cartogram.best.coords_area_scaling is None
+    with pytest.raises(ValueError, match="prescale_coords"):
+        cartogram.get_coords(uniform=True)
 
 
 def test_scale_points_scales_like_the_geometries():

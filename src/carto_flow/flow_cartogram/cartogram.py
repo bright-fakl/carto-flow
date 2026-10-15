@@ -85,6 +85,12 @@ class Cartogram:
         Indices of the regions whose returned geometry is not a valid polygon (a self-intersecting
         boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
         the vertices of the input, unless ``repair=True``.
+    landmark_area_scaling : np.ndarray or None
+        Property. With landmarks, the area scaling of the flow along the path of every landmark vertex (the
+        exponential of the integral of the divergence of the velocity field along the path) for the returned
+        state: a value above 1 means the neighborhood of the landmark was expanded, below 1 compressed. For point
+        landmarks there is one value per landmark. Every snapshot has its own (``CartogramSnapshot.landmark_area_scaling``);
+        ``get_landmarks(uniform=True)`` uses them.
 
     Examples
     --------
@@ -113,10 +119,22 @@ class Cartogram:
     _source_gdf: Any | None = field(default=None, repr=False)
     _source_landmarks_gdf: Any | None = field(default=None, repr=False)
     _value_column: str | None = field(default=None, repr=False)
+    # Cached for get_landmarks(uniform=True): the region of every landmark, and the distance distributions of the regions
+    _source_coords: Any | None = field(default=None, repr=False)
+    _probe_region: Any | None = field(default=None, repr=False)
+    _landmark_owner: Any | None = field(default=None, repr=False)
+    _coords_owner: Any | None = field(default=None, repr=False)
+    _distance_distributions: Any | None = field(default=None, repr=False)
 
     # ========================================================================
     # Convenience Access
     # ========================================================================
+
+    @property
+    def landmark_area_scaling(self) -> np.ndarray | None:
+        """Area scaling of the flow along the path of every landmark vertex, for the returned state (None without landmarks)."""
+        snapshot = self.best
+        return snapshot.landmark_area_scaling if snapshot is not None else None
 
     @property
     def best(self) -> Optional["CartogramSnapshot"]:
@@ -232,13 +250,22 @@ class Cartogram:
         snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
         return snapshot.density if snapshot else None
 
-    def get_landmarks(self, iteration: int | None = None) -> Any:
+    def get_landmarks(self, iteration: int | None = None, uniform: bool = False) -> Any:
         """Get landmark geometries for a specific iteration.
 
         Parameters
         ----------
         iteration : int, optional
-            Iteration number. If None, returns latest.
+            Iteration number. If None, returns the returned state.
+        uniform : bool, default=False
+            Correct the landmarks that were uniform in their region before the morph for the border effect of the
+            flow, so that they are uniform in the morphed region again (see
+            :mod:`carto_flow.flow_cartogram.landmarks`). Works for every saved iteration, with the area
+            scaling stored in its snapshot, and changes smoothly from one iteration to the next, so it can be
+            used for the frames of an animation. For a cartogram created with ``create_flow_cartogram`` or
+            ``CartogramWorkflow``. Point landmarks are corrected with probe points
+            (``MorphOptions.landmark_probes``) or, without them, with themselves; lines and polygons
+            (every vertex is moved) need probes. The moves are small, a few percent of the width of the region.
 
         Returns
         -------
@@ -246,15 +273,85 @@ class Cartogram:
             Landmark geometries, or None if not available.
         """
         snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
-        return snapshot.landmarks if snapshot else None
+        if not uniform or snapshot is None or snapshot.landmarks is None:
+            return snapshot.landmarks if snapshot else None
+        import shapely
 
-    def get_coords(self, iteration: int | None = None) -> Any:
+        final = np.asarray(snapshot.landmarks, dtype=object)
+        if self._source_landmarks_gdf is None:
+            raise ValueError(
+                "uniform=True needs the source data of a cartogram created with create_flow_cartogram or CartogramWorkflow"
+            )
+        original = np.asarray(self._source_landmarks_gdf.geometry.values, dtype=object)
+        points = bool(np.all(shapely.get_type_id(final) == 0))
+        xy = self._uniform_xy(
+            snapshot,
+            shapely.get_coordinates(final),
+            shapely.get_coordinates(original),
+            snapshot.landmark_area_scaling,
+            "_landmark_owner",
+            points,
+        )
+        return shapely.points(xy) if points else shapely.set_coordinates(final.copy(), xy)
+
+    def _uniform_xy(
+        self,
+        snapshot: Any,
+        xy_final: np.ndarray,
+        xy_original: np.ndarray,
+        scaling: Any,
+        owner_attr: str,
+        self_profile: bool,
+    ) -> np.ndarray:
+        """Positions of the points ``xy_final`` of a snapshot after the correction of the border effect of the flow."""
+        import shapely
+
+        from .landmarks import distance_distributions, region_of_points, uniform_landmarks
+
+        if scaling is None or self._source_gdf is None:
+            raise ValueError(
+                "uniform=True needs the area scaling of the points (not defined for displacement coordinates with "
+                "prescale_components unless prescale_coords is set) and the source data of a cartogram created with "
+                "create_flow_cartogram or CartogramWorkflow"
+            )
+        source_regions = np.asarray(self._source_gdf.geometry.values, dtype=object)
+        if getattr(self, owner_attr) is None:
+            setattr(self, owner_attr, region_of_points(source_regions, xy_original))
+        owner = getattr(self, owner_attr)
+        if self._distance_distributions is None:
+            self._distance_distributions = distance_distributions(self.best.geometry)  # type: ignore[union-attr]
+        if (
+            snapshot.probe_positions is not None
+            and snapshot.probe_area_scaling is not None
+            and self._probe_region is not None
+        ):
+            profile = (snapshot.probe_positions, np.asarray(snapshot.probe_area_scaling), self._probe_region)
+        elif self_profile:
+            profile = (xy_final, np.asarray(scaling), owner)
+        else:
+            raise ValueError(
+                "uniform=True needs probe points for this kind of points: set MorphOptions(landmark_probes=50)"
+            )
+        regions = np.asarray(snapshot.geometry, dtype=object)
+        return uniform_landmarks(
+            regions,
+            xy_final,
+            owner,
+            shapely.area(regions) / shapely.area(source_regions),
+            self._distance_distributions,
+            *profile,
+        )
+
+    def get_coords(self, iteration: int | None = None, uniform: bool = False) -> Any:
         """Get displaced coordinates for a specific iteration.
 
         Parameters
         ----------
         iteration : int, optional
             Iteration number. If None, returns latest.
+        uniform : bool, default=False
+            Correct the coordinates for the border effect of the flow (see :meth:`get_landmarks`). Needs probe
+            points (``MorphOptions(landmark_probes=50)``).
 
         Returns
         -------
@@ -262,7 +359,24 @@ class Cartogram:
             Displaced coordinates, or None if not available.
         """
         snapshot = self.best if iteration is None else self.snapshots.get_snapshot(iteration)
-        return snapshot.coords if snapshot else None
+        if not uniform or snapshot is None or snapshot.coords is None:
+            return snapshot.coords if snapshot else None
+        from .algorithm import _convert_coords_to_input_format, _detect_coordinate_format, _normalize_coordinates
+
+        if self._source_coords is None:
+            raise ValueError(
+                "uniform=True needs the source data of a cartogram created with create_flow_cartogram or CartogramWorkflow"
+            )
+        fmt, sz = _detect_coordinate_format(snapshot.coords)
+        xy = self._uniform_xy(
+            snapshot,
+            _normalize_coordinates(snapshot.coords, fmt),
+            _normalize_coordinates(self._source_coords, fmt),
+            snapshot.coords_area_scaling,
+            "_coords_owner",
+            False,
+        )
+        return _convert_coords_to_input_format(xy, fmt, sz)
 
     # ========================================================================
     # GeoDataFrame Export

@@ -11,6 +11,19 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`Cartogram.landmark_area_scaling` and `Cartogram.get_landmarks(iteration, uniform=True)`:**
+  the morph sums the divergence of the velocity field along the path of every landmark
+  vertex (one bilinear sample per vertex and iteration), which gives the area scaling of
+  the flow there; every snapshot stores it (`CartogramSnapshot.landmark_area_scaling`).
+  The flow scales the area less near the border of a region than inside, so landmarks that
+  are uniform in a region before the morph crowd the border of an expanding region;
+  `uniform=True` remaps the distance of point landmarks to the border of their region so
+  that they are uniform again at any saved iteration, with moves of a few percent of the
+  width of the region and a correction that changes smoothly between iterations, so it
+  can be used for the frames of an animation. `MorphOptions(landmark_probes=50)` carries
+  probe points, uniform in every region, to measure the crowding independently of the
+  landmarks, so that lines, polygons, other point sets and, with
+  `Cartogram.get_coords(uniform=True)`, displacement coordinates can be corrected too.
 - **`create_flow_cartogram(gdf, column, *, landmarks, options, displacement_coords, density_per)`
   is the entry point of the flow cartogram, and `MorphOptions.grid` selects the
   resolution.** An int or `(nx, ny)` is one grid; `GridSpec(size, margin, square)` is one

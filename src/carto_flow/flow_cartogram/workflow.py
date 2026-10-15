@@ -165,6 +165,16 @@ class CartogramWorkflow:
         self._original_gdf = gdf.copy()
         self._column = column
         self._original_landmarks_gdf = landmarks
+        self._coords0 = coords
+        # Probe points, uniform in every region, carried with the landmarks to measure the crowding near the borders
+        self._probe_xy0 = None
+        self._probe_region = None
+        if options is not None and options.landmark_probes > 0 and (landmarks is not None or coords is not None):
+            from .landmarks import probe_points
+
+            self._probe_xy0, self._probe_region = probe_points(
+                self._original_gdf.geometry.values, options.landmark_probes
+            )
         self._results: list[Cartogram] = [self._create_initial_cartogram(coords, options or MorphOptions())]
 
     def _create_initial_cartogram(
@@ -194,6 +204,8 @@ class CartogramWorkflow:
             density=density,
             landmarks=landmarks_geoms,
             coords=coords,
+            probe_positions=self._probe_xy0,
+            probe_area_scaling=np.ones(len(self._probe_xy0)) if self._probe_xy0 is not None else None,
         )
 
         return Cartogram(
@@ -206,6 +218,8 @@ class CartogramWorkflow:
             _source_gdf=self._original_gdf,
             _source_landmarks_gdf=self._original_landmarks_gdf,
             _value_column=self._column,
+            _source_coords=self._coords0,
+            _probe_region=self._probe_region,
         )
 
     # ========================================================================
@@ -286,12 +300,28 @@ class CartogramWorkflow:
             values=values,
             target_density=target_density,
             landmarks=latest.landmarks,  # type: ignore[union-attr]
+            probes=latest.probe_positions,  # type: ignore[union-attr]
             coords=latest.coords,  # type: ignore[union-attr]
             options=effective_options,
         )
 
+        # The area scaling of the landmarks, the probes and the coordinates accumulates over the passes
+        previous = self._results[-1]
+        for name in ("landmark_area_scaling", "probe_area_scaling", "coords_area_scaling"):
+            before = getattr(previous.best, name, None) if previous.best is not None else None
+            for snapshot in result.snapshots.snapshots:
+                current = getattr(snapshot, name)
+                if current is None:
+                    continue
+                if before is not None:
+                    setattr(snapshot, name, before * current)
+                elif previous.status != MorphStatus.ORIGINAL:
+                    setattr(snapshot, name, None)  # an earlier pass had none
+
         # Set source references for to_geodataframe()
         result._source_gdf = self._original_gdf
+        result._source_coords = self._coords0
+        result._probe_region = self._probe_region
         result._source_landmarks_gdf = self._original_landmarks_gdf
         result._value_column = self._column
 

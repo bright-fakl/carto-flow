@@ -223,6 +223,17 @@ class MorphOptions:
     """
 
     # Output options
+    landmark_probes: int = 0
+    """Number of probe points per region for ``get_landmarks(uniform=True)`` and ``get_coords(uniform=True)``.
+
+    Points that are uniform in a region before the morph crowd the border of an expanding region, because the flow
+    scales the area less near the border. The correction needs the crowding as a function of the distance to the border,
+    which probe points, uniform in every region before the morph and carried with the morph by ``create_flow_cartogram``
+    and ``CartogramWorkflow``, measure independently of the landmarks. With 0 (default) no probes are carried, and
+    ``get_landmarks(uniform=True)`` uses the point landmarks themselves, which works when they were uniform in their
+    region and numerous (dot density, about 30 per region). Lines, polygons, other point sets and displacement
+    coordinates need probes; 50 per region are enough. Each saved snapshot stores the position and area scaling of the probes.
+    """
     save_internals: bool = False
     show_progress: bool = True
     progress_message: str | None = None
@@ -491,6 +502,7 @@ class MorphOptions:
             "density_mod",
             "area_scale",
             "save_internals",
+            "landmark_probes",
             "show_progress",
             "progress_message",
             "benchmark",
@@ -581,6 +593,9 @@ class MorphOptions:
                 return "area_scale must be a positive number"
 
         # Output parameters
+        elif field_name == "landmark_probes":
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return "landmark_probes must be a non-negative integer"
         elif field_name == "save_internals":
             if not isinstance(value, bool):
                 return "save_internals must be a boolean"

@@ -11,6 +11,8 @@ import warnings
 from collections.abc import Collection, Mapping
 from typing import Any
 
+import numpy as np
+
 
 def deprecated_params(_both: str = "error", **renames: str | tuple[str, ...]):
     """Accept the old names ``renames`` (new name -> old name or names) of a function as deprecated aliases.
@@ -155,3 +157,27 @@ def classify_string(
             stacklevel=stacklevel,
         )
     return kinds[0]
+
+
+def resolve_fill(
+    facecolor: Any,
+    columns: Collection[str],
+    builtins: Mapping[str, Any] | Collection[str] = (),
+    n: int | None = None,
+    *,
+    stacklevel: int = 3,
+) -> tuple[str, Any]:
+    """Resolve the ``facecolor`` of a plot into ``(kind, value)``.
+
+    ``("none", None)`` for ``None``; ``("column" | "builtin" | "color", name)`` for a string, resolved by
+    :func:`classify_string`; ``("values", array)`` for a numeric array with one value per geometry (``n``);
+    ``("color", facecolor)`` for any other value (an array of colors).
+    """
+    if facecolor is None:
+        return "none", None
+    if isinstance(facecolor, str):
+        return classify_string(facecolor, columns, builtins, stacklevel=stacklevel + 1), facecolor
+    values = np.asarray(facecolor)
+    if n is not None and values.ndim == 1 and len(values) == n and values.dtype.kind in "iufb":
+        return "values", values
+    return "color", facecolor

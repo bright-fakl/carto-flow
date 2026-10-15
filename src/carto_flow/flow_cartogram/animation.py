@@ -239,39 +239,9 @@ def _create_patch_collection(
     ax.add_collection(patch_coll)
     if legend:
         with style.rc_context() if style is not None else contextlib.nullcontext():
-            _add_colorbar(style, fig, ax, cmap, norm, legend_label, legend_kwargs)
+            (style or PlotStyle()).add_colorbar(fig, ax, cmap, norm, legend_label, **(legend_kwargs or {}))
     cbar_added[0] = True
     return patch_coll
-
-
-def _add_colorbar(
-    style: PlotStyle | None, fig: Any, ax: Any, cmap: Any, norm: Any, label: str | None, kwargs: dict | None
-) -> None:
-    """Add the colorbar of an animation: drawn by the style if it sets the colorbar or the scale is not linear."""
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    guide = {"label": label, **(kwargs or {})}
-    if style is not None and (style.draws_guide or type(norm) is not Normalize):
-        style.colorbar(fig, ax, sm, label=guide.pop("label"), **guide)
-    else:
-        fig.colorbar(sm, ax=ax, **guide)
-
-
-def _animation_norm(
-    style: PlotStyle, role: str, norm: Any, center: float | None, vmin: float, vmax: float, limits_given: bool
-) -> Normalize:
-    """Normalization of the colors of an animation: the ``norm`` of the call, else the style, else linear."""
-    if isinstance(norm, Normalize):
-        return norm
-    extremes = np.array([vmin, vmax], dtype=float)
-    if isinstance(norm, str):
-        return style.norm(extremes, role, center=center, scale=norm)
-    if not limits_given:
-        if role == "diverging" and (style.palettes.diverging is not None or center is not None):
-            return style.norm(extremes, role, center=center)
-        if role == "sequential" and style.color_scale in ("log", "auto"):
-            return style.norm(extremes, role)
-    return Normalize(vmin=vmin, vmax=vmax)
 
 
 class _SafeFormatDict(dict):
@@ -1117,7 +1087,8 @@ def animate_morph_history(
     )
     cmap = cmap if cmap is not None else (st.colormap(_role) or "viridis")
     _norm_obj = (
-        _animation_norm(st, _role, norm, center, color_vmin, color_vmax, vmin is not None or vmax is not None)
+        st.resolve_norm(norm, _role, np.array([color_vmin, color_vmax]), center=center, limits=(vmin, vmax))
+        or Normalize(vmin=color_vmin, vmax=color_vmax)
         if color_vmin is not None and color_vmax is not None
         else None
     )
@@ -1310,8 +1281,8 @@ def animate_morph_history(
                 mappable = None
 
             # Add colorbar on first frame if requested
-            if legend and not cbar_added[0] and mappable is not None and color_vmin is not None:
-                _add_colorbar(st, fig, ax, cmap, _norm_obj, legend_label, legend_kwargs)
+            if legend and not cbar_added[0] and mappable is not None and _norm_obj is not None:
+                st.add_colorbar(fig, ax, cmap, _norm_obj, legend_label, **(legend_kwargs or {}))
                 cbar_added[0] = True
 
             ax.set_xlim(xmin, xmax)
@@ -1705,7 +1676,8 @@ def animate_geometry_keyframes(
     _role = "diverging" if center is not None else "sequential"
     cmap = cmap if cmap is not None else (st.colormap(_role) or "viridis")
     _norm_obj = (
-        _animation_norm(st, _role, norm, center, color_vmin, color_vmax, vmin is not None or vmax is not None)
+        st.resolve_norm(norm, _role, np.array([color_vmin, color_vmax]), center=center, limits=(vmin, vmax))
+        or Normalize(vmin=color_vmin, vmax=color_vmax)
         if color_vmin is not None and color_vmax is not None
         else None
     )
@@ -1932,8 +1904,8 @@ def animate_geometry_keyframes(
                 mappable = None
 
             # Add colorbar on first frame if requested
-            if legend and not cbar_added[0] and mappable is not None and color_vmin is not None:
-                _add_colorbar(st, fig, ax, cmap, _norm_obj, legend_label, legend_kwargs)
+            if legend and not cbar_added[0] and mappable is not None and _norm_obj is not None:
+                st.add_colorbar(fig, ax, cmap, _norm_obj, legend_label, **(legend_kwargs or {}))
                 cbar_added[0] = True
 
             ax.set_xlim(xmin, xmax)
@@ -2753,7 +2725,8 @@ def animate_workflow(
     )
     cmap = cmap if cmap is not None else (st.colormap(_role) or "RdYlGn_r")
     _norm_obj = (
-        _animation_norm(st, _role, norm, center, color_vmin, color_vmax, vmin is not None or vmax is not None)
+        st.resolve_norm(norm, _role, np.array([color_vmin, color_vmax]), center=center, limits=(vmin, vmax))
+        or Normalize(vmin=color_vmin, vmax=color_vmax)
         if color_vmin is not None and color_vmax is not None
         else None
     )
@@ -2944,8 +2917,8 @@ def animate_workflow(
                 plot_gdf.plot(ax=ax, **kwargs)
 
             # Add colorbar on first frame if requested
-            if legend and not cbar_added[0] and use_coloring and color_vmin is not None:
-                _add_colorbar(st, fig, ax, cmap, _norm_obj, resolved_legend_label, legend_kwargs)
+            if legend and not cbar_added[0] and use_coloring and _norm_obj is not None:
+                st.add_colorbar(fig, ax, cmap, _norm_obj, resolved_legend_label, **(legend_kwargs or {}))
                 cbar_added[0] = True
 
             ax.set_xlim(xmin, xmax)

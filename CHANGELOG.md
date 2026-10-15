@@ -17,7 +17,9 @@ Releases before 2.0.0 have no changelog entry; see the
   a matplotlib `rc` dict for the generic settings (`PlotStyle.from_mplstyle` reads a
   matplotlib style sheet). The built-in styles are `"default"`, `"dark"` and `"classic"`
   (the look before styles). `style=` selects a style for a call, `style_context(...)` for a
-  block, `set_style(...)` for the session, and `register_style(name, style)` adds one;
+  block, `set_style(...)` for the session, `register_style(name, style)` adds one and
+  `unregister_style(name)` removes one (registered styles live in the memory of the process; the
+  how-to shows how to register them at startup);
   an argument of the call wins over the style. `Cartogram.plot`, `plot_cartogram`,
   `plot_comparison`, the field and convergence plots and all the `animate_*` functions take
   `style=`. The role of the data is decided by the data: `"errors_pct"` and any data with

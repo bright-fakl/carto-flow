@@ -6,8 +6,8 @@ style decides how it looks by default, and an explicit argument of the call wins
 
 Functions
 ---------
-register_style, get_style
-    Register a style under a name; the style in effect or a registered style.
+register_style, unregister_style, get_style
+    Register a style under a name, remove it; the style in effect or a registered style.
 set_style, style_context
     Set the style of the session or of a block of code.
 
@@ -47,6 +47,7 @@ __all__ = [
     "set_style",
     "style_context",
     "styled",
+    "unregister_style",
 ]
 
 ROLES = ("sequential", "diverging", "categorical")
@@ -313,6 +314,43 @@ class PlotStyle:
             return LogNorm(vmin=vmin, vmax=vmax)
         return Normalize(vmin=vmin, vmax=vmax)
 
+    def resolve_norm(
+        self,
+        norm: Any,
+        role: str,
+        values: Any,
+        *,
+        center: float | None = None,
+        limits: tuple[float | None, float | None] = (None, None),
+    ) -> Normalize | None:
+        """The normalization that a call or this style asks for, or ``None`` if neither asks for one.
+
+        ``norm`` is a ``Normalize`` instance (used as given, ``ValueError`` together with ``limits``), a scale name
+        (``"linear"``, ``"log"``, ``"auto"``, computed from ``values`` or the ``limits``), or ``None``. With ``None``,
+        ``limits`` (``vmin``, ``vmax`` of the call) fix a linear normalization, a diverging role is symmetric around
+        ``center`` if the style has a diverging palette or a ``center`` is given, and a sequential role follows
+        ``color_scale``. A caller that needs a ``Normalize`` takes ``Normalize(vmin, vmax)`` when this returns ``None``.
+        """
+        vmin, vmax = limits
+        limits_given = vmin is not None or vmax is not None
+        if isinstance(norm, Normalize):
+            if limits_given:
+                raise ValueError("pass either norm or vmin and vmax, not both")
+            return norm
+        data = np.asarray(values, dtype=float)
+        finite = data[np.isfinite(data)]
+        if isinstance(norm, str):
+            lo = vmin if vmin is not None else finite.min()
+            hi = vmax if vmax is not None else finite.max()
+            return self.norm(np.array([lo, hi], dtype=float), role, center=center, scale=norm)
+        if limits_given:
+            return None
+        if role == "diverging" and (self.palettes.diverging is not None or center is not None):
+            return self.norm(data, role, center=center)
+        if role == "sequential" and self.color_scale in ("log", "auto"):
+            return self.norm(data, role)
+        return None
+
     # ------------------------------------------------------------------ drawing
 
     @property
@@ -346,6 +384,7 @@ class PlotStyle:
             if getattr(self, name) is not None:
                 kw[key] = getattr(self, name)
         kw.update(kwargs)
+        label = kw.pop("label", label)
         cbar = fig.colorbar(mappable, ax=ax, **kw)
         if label:
             cbar.set_label(label)
@@ -364,6 +403,16 @@ class PlotStyle:
             cbar.formatter = mpl.ticker.FuncFormatter(lambda x, _: _si(x))
             cbar.update_ticks()
         return cbar
+
+    def add_colorbar(self, fig: Any, ax: Any, cmap: Any, norm: Normalize, label: str | None = None, **kwargs: Any):
+        """Add a colorbar for ``cmap`` and ``norm``: drawn by :meth:`colorbar` if the style sets the colorbar or the
+        normalization is not linear, else by matplotlib alone (``label`` and ``kwargs`` go to ``Figure.colorbar``)."""
+        mappable = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+        mappable.set_array([])
+        if self.draws_guide or type(norm) is not Normalize:
+            return self.colorbar(fig, ax, mappable, label=label, **kwargs)
+        kwargs.setdefault("label", label)
+        return fig.colorbar(mappable, ax=ax, **kwargs)
 
     def apply_axes(self, ax: Any) -> None:
         """Apply the surface of the style to an axes that was not created while the style was in effect."""
@@ -508,6 +557,15 @@ def register_style(name: str, style: PlotStyle, *, overwrite: bool = False) -> N
     if name in _registry and not overwrite:
         raise ValueError(f"a style named {name!r} is registered; pass overwrite=True to replace it")
     _registry[name] = style
+
+
+def unregister_style(name: str) -> None:
+    """Remove the registered style ``name``; the built-in styles cannot be removed."""
+    if name in _BUILTIN:
+        raise ValueError(f"{name!r} is a built-in style and cannot be removed")
+    if name not in _registry:
+        raise ValueError(f"no registered style named {name!r}")
+    del _registry[name]
 
 
 def _lookup(style: PlotStyle | str | Sequence[PlotStyle | str]) -> PlotStyle:

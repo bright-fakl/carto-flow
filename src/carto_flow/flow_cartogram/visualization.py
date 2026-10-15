@@ -615,7 +615,6 @@ def _plot_fill(
     The colorbar is left to ``GeoDataFrame.plot`` unless the style or a ``norm`` of the call changes it.
     """
     import numpy as np
-    from matplotlib.cm import ScalarMappable
     from matplotlib.colors import ListedColormap, Normalize
 
     kw = dict(kwargs)
@@ -643,26 +642,11 @@ def _plot_fill(
     plot_cmap = cmap if cmap is not None else (style.colormap(role) or default_cmap)
     data = np.asarray(gdf[fill.column] if values is None else values, dtype=float)
     finite = data[np.isfinite(data)]
-    # Limits of the call fix a linear normalization (they are passed on to GeoDataFrame.plot) unless a scale is named
-    limits = kw.get("vmin") is not None or kw.get("vmax") is not None
-    lo = kw["vmin"] if kw.get("vmin") is not None else finite.min()
-    hi = kw["vmax"] if kw.get("vmax") is not None else finite.max()
-    if isinstance(norm, Normalize):
-        if limits:
-            raise ValueError("pass either norm or vmin and vmax, not both")
-        norm_obj = norm
-    elif isinstance(norm, str):
-        norm_obj = style.norm(np.array([lo, hi], dtype=float), role, center=center, scale=norm)
+    limits = (kw.get("vmin"), kw.get("vmax"))
+    norm_obj = style.resolve_norm(norm, role, data, center=center, limits=limits)
+    if norm_obj is not None:  # the normalization replaces the limits of the call
         kw.pop("vmin", None)
         kw.pop("vmax", None)
-    elif limits:
-        norm_obj = None
-    elif role == "diverging" and (style.palettes.diverging is not None or center is not None):
-        norm_obj = style.norm(data, role, center=center)
-    elif role == "sequential" and style.color_scale in ("log", "auto"):
-        norm_obj = style.norm(data, role)
-    else:
-        norm_obj = None
     extra = {}
     if plot_cmap is not None:
         extra["cmap"] = plot_cmap
@@ -671,12 +655,13 @@ def _plot_fill(
     own_guide = legend and (style.draws_guide or norm_obj is not None)
     if own_guide:
         gdf.plot(ax=ax, legend=False, **fill.kwargs, **extra, **kw)
-        norm_for_guide = norm_obj if norm_obj is not None else Normalize(vmin=lo, vmax=hi)
-        mappable = ScalarMappable(norm=norm_for_guide, cmap=plot_cmap)
-        mappable.set_array([])
+        lo = limits[0] if limits[0] is not None else finite.min()
+        hi = limits[1] if limits[1] is not None else finite.max()
         guide = dict(legend_kwargs or {})
         label = guide.pop("label", legend_label if legend_label is not None else fill.label)
-        style.colorbar(ax.figure, ax, mappable, label=label, **guide)
+        style.add_colorbar(
+            ax.figure, ax, plot_cmap, norm_obj if norm_obj is not None else Normalize(vmin=lo, vmax=hi), label, **guide
+        )
     else:
         gdf.plot(ax=ax, legend=legend, **fill.kwargs, **extra, **legend_kw, **kw)
 

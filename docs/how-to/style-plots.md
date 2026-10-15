@@ -71,7 +71,24 @@ cartogram.plot(facecolor="Population", style="mine")
 - A field left `None` leaves matplotlib or the library default alone, so `PlotStyle()` is the classic look.
 - `style.rc_params()` returns the rcParams, to use the look in your own matplotlib code with `plt.rc_context(style.rc_params())`. A figure that you created yourself gets the surface with `style.apply(fig)`.
 
-`"default"`, `"dark"` and `"classic"` cannot be replaced; `register_style(name, style, overwrite=True)` replaces another registered name.
+`"default"`, `"dark"` and `"classic"` cannot be replaced; `register_style(name, style, overwrite=True)` replaces another registered name, and `unregister_style(name)` removes one.
+
+### Keep your styles between sessions
+
+Registered styles live in the memory of the running Python process; nothing is saved to disk, so they are gone when the session ends. To have them in every session, register them in code that runs at startup:
+
+- Put the `register_style(...)` calls in a module of your own, for example `my_styles.py` next to your project or on your Python path, and import it (`import my_styles`) at the top of a script or notebook.
+- Or put the calls in a startup script that runs automatically: an IPython startup file (`~/.ipython/profile_default/startup/10-carto-flow-styles.py`) for interactive sessions and notebooks, or a file named by the `PYTHONSTARTUP` environment variable for the plain Python prompt.
+
+```python
+# my_styles.py
+from carto_flow import PlotStyle, register_style, set_style
+
+register_style("house", PlotStyle.default().copy_with(rc_update={"font.size": 12}))
+set_style("house")      # optional: make it the style of the session
+```
+
+A matplotlib style sheet (`PlotStyle.from_mplstyle("my.mplstyle")`) can hold the `rc` settings in a file, but not the palettes, channels, color scale or colorbar fields.
 
 ## Combine styles
 

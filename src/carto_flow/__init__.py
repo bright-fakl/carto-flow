@@ -118,7 +118,7 @@ from .proportional_cartogram import (
 # ============================================================================
 # Plot styles
 # ============================================================================
-from .style import Channel, Palettes, PlotStyle, get_style, register_style, set_style, style_context
+from .style import Channel, Palettes, PlotStyle, get_style, register_style, set_style, style_context, unregister_style
 
 # ============================================================================
 # Symbol Cartogram
@@ -182,6 +182,7 @@ __all__ = [
     "style_context",
     "unpack_geometries",
     "unpack_geometry",
+    "unregister_style",
     "velocity",
 ]
 

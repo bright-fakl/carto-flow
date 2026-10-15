@@ -23,6 +23,7 @@ from carto_flow.style import (
     set_style,
     style_context,
     styled,
+    unregister_style,
 )
 
 
@@ -230,8 +231,31 @@ class TestSelection:
         with pytest.raises(TypeError):
             register_style("x", "not a style")  # type: ignore[arg-type]
 
+    def test_unregister(self):
+        register_style("my-removable-style", PlotStyle(color_scale="log"))
+        assert resolve_style("my-removable-style").color_scale == "log"
+        unregister_style("my-removable-style")
+        with pytest.raises(ValueError, match="no style named"):
+            resolve_style("my-removable-style")
+        with pytest.raises(ValueError, match="no registered style"):
+            unregister_style("my-removable-style")
+        for builtin in ("default", "dark", "classic"):
+            with pytest.raises(ValueError, match="built-in"):
+                unregister_style(builtin)
+        register_style("my-removable-style", PlotStyle())  # the name is free again
+        unregister_style("my-removable-style")
+
     def test_package_exports(self):
-        for name in ("PlotStyle", "Palettes", "Channel", "register_style", "get_style", "set_style", "style_context"):
+        for name in (
+            "PlotStyle",
+            "Palettes",
+            "Channel",
+            "register_style",
+            "unregister_style",
+            "get_style",
+            "set_style",
+            "style_context",
+        ):
             assert hasattr(carto_flow, name)
 
 

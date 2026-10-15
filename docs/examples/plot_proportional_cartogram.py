@@ -34,9 +34,9 @@ partition = pc.partition_geometries(
 # Plot the cartogram.
 result = pc.plot_partitions(
     partition,
-    color_by="category",
+    facecolor="category",
     edgecolor="white",
-    palette={"Black or African American": "indigo", "Asian": "darkorchid", "Hispanic or Latino": "plum"},
+    cmap={"Black or African American": "indigo", "Asian": "darkorchid", "Hispanic or Latino": "plum"},
 )
 
 result.ax.axis("off")

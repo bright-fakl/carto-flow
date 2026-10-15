@@ -52,7 +52,7 @@ partitioned = partition_geometries(
     normalization="row"
 )
 
-plot_partitions(partitioned, color_by="category", legend=True)
+plot_partitions(partitioned, facecolor="category", legend=True)
 ```
 
 ### Shrink with Remainder

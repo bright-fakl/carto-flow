@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from .._plot_params import deprecated_palette, deprecated_params
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
     from matplotlib.collections import Collection, PathCollection
@@ -301,6 +303,14 @@ def generate_dot_density(
     return gpd.GeoDataFrame(all_records, crs=gdf.crs)
 
 
+@deprecated_palette()
+@deprecated_params(
+    markersize="size",
+    reference_facecolor="base_color",
+    reference_edgecolor="base_edgecolor",
+    reference_linewidth="base_linewidth",
+    reference_alpha="base_alpha",
+)
 def plot_dot_density(
     gdf: gpd.GeoDataFrame,
     dots_gdf: gpd.GeoDataFrame | None = None,
@@ -311,16 +321,15 @@ def plot_dot_density(
     invert: bool = False,
     seed: int | None = None,
     # Dot styling
-    palette: dict[str, str] | None = None,
-    cmap: str | None = None,
-    size: float = 4,
+    cmap: str | dict[str, str] | None = None,
+    markersize: float = 4,
     alpha: float | Sequence[float] = 0.7,
     marker: str | Sequence[str] = "o",
     # Base geometry styling
-    base_color: str = "#e0e0e0",
-    base_edgecolor: str = "white",
-    base_linewidth: float = 0.5,
-    base_alpha: float = 1.0,
+    reference_facecolor: str = "#e0e0e0",
+    reference_edgecolor: str = "white",
+    reference_linewidth: float = 0.5,
+    reference_alpha: float = 1.0,
     # General
     ax: Axes | None = None,
     legend: bool = True,
@@ -352,12 +361,11 @@ def plot_dot_density(
         Passed to :func:`generate_dot_density` when ``dots_gdf`` is None.
     seed : int, optional
         Passed to :func:`generate_dot_density` when ``dots_gdf`` is None.
-    palette : dict[str, str], optional
-        Mapping from category names to colors. If not provided, colors are
-        drawn from ``cmap``.
-    cmap : str, optional
-        Colormap name for categorical colors. Defaults to ``'tab10'``.
-    size : float, default=4
+    cmap : str or dict[str, str], optional
+        Colormap name for categorical colors, defaults to ``'tab10'``. A dict
+        maps category names to colors; categories that are not in the dict take
+        the colors of the colormap.
+    markersize : float, default=4
         Marker size in points.
     alpha : float or Sequence[float], default=0.7
         Marker transparency. A single float applies to all categories. A
@@ -369,13 +377,13 @@ def plot_dot_density(
         A sequence sets the marker per category (same ordering and length
         rules as ``alpha``). Any marker accepted by ``ax.scatter()`` works,
         e.g. ``'o'``, ``'s'``, ``'^'``, ``'*'``.
-    base_color : str, default='#e0e0e0'
-        Fill color for the background geometries.
-    base_edgecolor : str, default='white'
+    reference_facecolor : str, default='#e0e0e0'
+        Fill color for the background (reference) geometries.
+    reference_edgecolor : str, default='white'
         Edge color for background geometries.
-    base_linewidth : float, default=0.5
+    reference_linewidth : float, default=0.5
         Edge line width for background geometries.
-    base_alpha : float, default=1.0
+    reference_alpha : float, default=1.0
         Transparency for background geometries.
     ax : matplotlib.axes.Axes, optional
         Axes to plot on. If None, a new figure is created.
@@ -402,7 +410,7 @@ def plot_dot_density(
     ...     gdf,
     ...     columns=["agriculture", "industry", "services"],
     ...     normalization="row",
-    ...     palette={"agriculture": "#4daf4a", "industry": "#377eb8", "services": "#e41a1c"},
+    ...     cmap={"agriculture": "#4daf4a", "industry": "#377eb8", "services": "#e41a1c"},
     ...     n_dots=150,
     ... )
 
@@ -415,6 +423,10 @@ def plot_dot_density(
 
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(10, 8))
+
+    palette: dict[str, str] | None = None
+    if isinstance(cmap, dict):
+        palette, cmap = cmap, None
 
     # Generate dots if not provided
     if dots_gdf is None:
@@ -434,10 +446,10 @@ def plot_dot_density(
     before = len(ax.collections)
     gdf.plot(
         ax=ax,
-        color=base_color,
-        edgecolor=base_edgecolor,
-        linewidth=base_linewidth,
-        alpha=base_alpha,
+        color=reference_facecolor,
+        edgecolor=reference_edgecolor,
+        linewidth=reference_linewidth,
+        alpha=reference_alpha,
     )
     new_colls = list(ax.collections[before:])
     if new_colls:
@@ -497,7 +509,7 @@ def plot_dot_density(
             xs,
             ys,
             c=category_colors[cat],
-            s=size,
+            s=markersize,
             alpha=alpha_vals[i],
             marker=marker_vals[i],
             label=cat,

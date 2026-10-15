@@ -154,9 +154,8 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Deprecated
 
-- **Old parameter names of the flow, symbol and Voronoi plot, animate and preview functions.** Each
-  concept now has one name, shared by all plot functions (the proportional
-  functions follow in a later release). The old names still work and
+- **Old parameter names of the plot, animate and preview functions of the four cartogram types.** Each
+  concept now has one name, shared by all plot functions (the old names of every module are listed). The old names still work and
   warn, and will be removed in the next major release:
 
   | function | old name | new name |
@@ -190,6 +189,10 @@ Releases before 2.0.0 have no changelog entry; see the
   | `VoronoiCartogram.plot`, Voronoi `plot_cartogram`, `plot_comparison` | `column` | `facecolor` |
   | `plot_displacement` (Voronoi) | `geometry_style`, `adjacency_style`, `centroid_style`, `position_style`, `displacement_style` | `geometry_kwargs`, `adjacency_kwargs`, `centroid_kwargs`, `position_kwargs`, `displacement_kwargs` |
   | `animate_voronoi_history` | `cell_style`, `point_style` | `cell_kwargs`, `point_kwargs` |
+  | `plot_partitions` | `color_by` | `facecolor` (`"area"`, `"category"`, a column name, a list of columns or a color; `None` is `"area"`) |
+  | `plot_partitions` | `background_color`, `complement_color`, `complement_color_by` | `background_facecolor`, `complement_facecolor` (a column or a color) |
+  | `plot_partitions`, `plot_dot_density` | `palette` | `cmap` accepts the `{category: color}` dict (when `palette` and a colormap name were both given, the dict replaces the name and the other categories take the `tab10` colors) |
+  | `plot_dot_density` | `size`, `base_color`, `base_edgecolor`, `base_linewidth`, `base_alpha` | `markersize`, `reference_facecolor`, `reference_edgecolor`, `reference_linewidth`, `reference_alpha` |
 
 - **`morph_gdf` and `multiresolution_morph`** are deprecated and will be removed in the
   next major release; use `create_flow_cartogram`, with `MorphOptions(grid=LadderSpec(...))`

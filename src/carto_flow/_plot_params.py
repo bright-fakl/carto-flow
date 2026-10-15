@@ -71,6 +71,32 @@ def deprecated_to_dict(target: str, **old_to_key: str):
     return decorator
 
 
+def deprecated_palette(old: str = "palette", new: str = "cmap"):
+    """Accept a ``{category: color}`` dict given as ``old`` as the dict form of ``new``, with a warning.
+
+    When ``new`` is also given, the dict replaces it (the dict form of ``new`` assigns the unlisted categories from the
+    default categorical colormap).
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if old in kwargs:
+                warnings.warn(
+                    f"{func.__name__}(): '{old}' is deprecated; pass the dict as '{new}'",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                palette = kwargs.pop(old)
+                if palette is not None:
+                    kwargs[new] = palette
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def deprecated_init_params(**renames: str | tuple[str, ...]):
     """Class decorator for dataclasses: accept the old field names of ``renames`` (new name -> old name or names).
 

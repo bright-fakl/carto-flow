@@ -96,7 +96,7 @@ Combining with cartograms for multi-dimensional visualizations:
 ...     normalization="row",
 ...     strategy="treemap",
 ... )
->>> plot_partitions(partitioned, color_by="category", legend=True)
+>>> plot_partitions(partitioned, facecolor="category", legend=True)
 
 See Also
 --------

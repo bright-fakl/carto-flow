@@ -20,13 +20,15 @@ Example
 from __future__ import annotations
 
 import colorsys
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import geopandas as gpd
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from .._plot_params import classify_string, deprecated_palette, deprecated_params
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -102,13 +104,18 @@ def _get_colors_from_cmap(
     return colors
 
 
+@deprecated_palette()
+@deprecated_params(
+    facecolor="color_by",
+    background_facecolor="background_color",
+    complement_facecolor=("complement_color_by", "complement_color"),
+)
 def plot_partitions(
     gdf: gpd.GeoDataFrame,
     columns: list[str] | None = None,
     # Coloring
-    color_by: Literal["area", "category"] | list[str] = "area",
-    cmap: str | None = None,
-    palette: dict[str, str] | None = None,
+    facecolor: str | list[str] | None = None,
+    cmap: str | dict[str, str] | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
     # Standard styling (for highlighted partitions)
@@ -117,15 +124,14 @@ def plot_partitions(
     # Highlighting
     highlight: str | list[str] | None = None,
     background_alpha: float | None = None,
-    background_color: str | None = None,
+    background_facecolor: str | None = None,
     background_saturation: float | None = None,
     background_lightness: float | None = None,
     background_edgecolor: str | None = None,
     background_linewidth: float | None = None,
     # Complement styling
     include_complement: bool = True,
-    complement_color_by: str | None = None,
-    complement_color: str = "#e0e0e0",
+    complement_facecolor: str = "#e0e0e0",
     complement_alpha: float = 1.0,
     complement_edgecolor: str | None = None,
     complement_linewidth: float | None = None,
@@ -149,19 +155,23 @@ def plot_partitions(
         Original column names used in partition_geometries(). If None,
         auto-detects from geometry column names (geometry_* pattern).
 
-    color_by : {'area', 'category'} or list[str], default='area'
-        How to color the partitions:
+    facecolor : str, list[str], or None, default=None
+        Fill of the partitions:
 
-        - **'area'**: Color by partition area (continuous colormap)
+        - **None** or **'area'**: Color by partition area (continuous colormap)
         - **'category'**: Color by partition category/column name (categorical)
+        - a column name of ``gdf``: Color all partitions by that column
         - **list[str]**: Data column names for each partition. Length must
           match number of partitions. Single-element list colors all partitions
           by that column.
-    cmap : str, optional
-        Colormap name for continuous data. Defaults to 'viridis'.
-    palette : dict[str, str], optional
-        Color mapping for categorical data. Keys are category values,
-        values are colors. If not provided, uses ``cmap`` or 'tab10'.
+        - a color (for example ``'red'``): constant fill
+
+        A string that is a column of ``gdf`` and also a built-in value or a color
+        is read as the column, then as the built-in value, and a warning is issued.
+    cmap : str or dict[str, str], optional
+        Colormap name for continuous data. Defaults to 'viridis'. A dict maps
+        category values to colors for categorical data; categories that are not
+        in the dict take the colors of 'tab10'.
     vmin, vmax : float, optional
         Value range for continuous colormap normalization.
 
@@ -175,7 +185,7 @@ def plot_partitions(
         styled according to background_* parameters.
     background_alpha : float, optional
         Alpha (transparency) for non-highlighted partitions.
-    background_color : str, optional
+    background_facecolor : str, optional
         Fixed color for non-highlighted partitions. Overrides data coloring.
     background_saturation : float, optional
         Saturation multiplier (0-1) for non-highlighted partitions.
@@ -190,11 +200,9 @@ def plot_partitions(
 
     include_complement : bool, default=True
         Whether to include the complement geometry (remainder) in the plot.
-    complement_color_by : str, optional
-        Data column to use for complement coloring. If None, uses
-        ``complement_color``.
-    complement_color : str, default='#e0e0e0'
-        Fixed color for complement when ``complement_color_by`` is None.
+    complement_facecolor : str, default='#e0e0e0'
+        Fill of the complement: a column of ``gdf`` colors it by that column,
+        otherwise a color.
     complement_alpha : float, default=1.0
         Alpha for complement partitions.
     complement_edgecolor : str, optional
@@ -229,11 +237,11 @@ def plot_partitions(
 
     Plot partitions colored by category:
 
-    >>> plot_partitions(result, color_by='category')
+    >>> plot_partitions(result, facecolor='category')
 
     Color each partition by its corresponding data column:
 
-    >>> plot_partitions(result, color_by=['pop_a', 'pop_b'])
+    >>> plot_partitions(result, facecolor=['pop_a', 'pop_b'])
 
     Highlight specific partition with others faded:
 
@@ -245,10 +253,37 @@ def plot_partitions(
 
     Custom complement styling:
 
-    >>> plot_partitions(result, complement_color_by='remainder_value')
+    >>> plot_partitions(result, complement_facecolor='remainder_value')
     """
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(10, 8))
+
+    palette: dict[str, str] | None = None
+    if isinstance(cmap, dict):
+        palette, cmap = cmap, None
+
+    # Resolve the fill: a built-in value, data columns or a constant color
+    constant_color: str | None = None
+    color_by: str | list[str]
+    if facecolor is None:
+        color_by = "area"
+    elif isinstance(facecolor, str):
+        kind = classify_string(facecolor, gdf.columns, ("area", "category"), stacklevel=3)
+        if kind == "builtin":
+            color_by = facecolor
+        elif kind == "column":
+            color_by = [facecolor]
+        else:
+            color_by, constant_color = "constant", facecolor
+    else:
+        color_by = list(facecolor)
+
+    # The complement is colored by a column or a constant color
+    complement_color_by: str | None = None
+    complement_color = complement_facecolor
+    if classify_string(complement_facecolor, gdf.columns, stacklevel=3) == "column":
+        complement_color_by, complement_color = complement_facecolor, "#e0e0e0"
+    background_color = background_facecolor
 
     # Auto-detect partition columns if not specified
     if columns is None:
@@ -410,6 +445,8 @@ def plot_partitions(
                     base_color = _get_colors_from_cmap(np.array([cv]), cmap, vmin, vmax)[0]
             else:
                 base_color = complement_color
+        elif constant_color is not None:
+            base_color = constant_color
         elif is_categorical:
             base_color = palette[cv] if palette and cv in palette else cat_colors_map.get(cv, "#888888")
         else:
@@ -478,7 +515,7 @@ def plot_partitions(
     # Add legend/colorbar
     legend_art: Legend | None = None
     colorbar_art: Colorbar | None = None
-    if legend:
+    if legend and constant_color is None:
         if is_categorical:
             # Categorical legend — reuse cat_values and cat_colors_map computed above
             handles = []

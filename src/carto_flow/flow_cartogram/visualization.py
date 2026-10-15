@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from .._plot_params import deprecated_init_params, deprecated_params, resolve_fill
+from ..style import resolve_style, styled
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -535,6 +536,7 @@ def _prepare_velocity_colors(
 
 # Built-in quantities of a cartogram, by their name in the vocabulary and the column that holds them
 _BUILTIN_COLUMNS = {"errors_pct": "_morph_error_pct", "density": "_morph_density"}
+_BUILTIN_LABELS = {"_morph_error_pct": "Error %", "_morph_density": "Density"}
 
 
 def _fill_arguments(gdf: Any, facecolor: Any) -> tuple[Any, dict[str, Any]]:
@@ -544,7 +546,7 @@ def _fill_arguments(gdf: Any, facecolor: Any) -> tuple[Any, dict[str, Any]]:
     ``{"facecolor": value}`` for a literal or an array of colors. A string is resolved by
     :func:`carto_flow._plot_params.resolve_fill`.
     """
-    kind, value = resolve_fill(facecolor, set(gdf.columns), _BUILTIN_COLUMNS, n=len(gdf), stacklevel=4)
+    kind, value = resolve_fill(facecolor, set(gdf.columns), _BUILTIN_COLUMNS, n=len(gdf), stacklevel=5)
     if kind == "none":
         return gdf, {}
     if kind == "column":
@@ -559,12 +561,109 @@ def _fill_arguments(gdf: Any, facecolor: Any) -> tuple[Any, dict[str, Any]]:
         gdf["_facecolor"] = value
         return gdf, {"column": "_facecolor"}
     return gdf, {"facecolor": value}
-    values = np.asarray(facecolor)
-    if values.ndim == 1 and len(values) == len(gdf) and values.dtype.kind in "iufb":
-        gdf = gdf.copy()
-        gdf["_facecolor"] = values
-        return gdf, {"column": "_facecolor"}
-    return gdf, {"facecolor": facecolor}
+
+
+@dataclass
+class _Fill:
+    """The resolved fill of a plot: the arguments for ``GeoDataFrame.plot``, and the data role if it is data."""
+
+    kwargs: dict[str, Any]
+    role: str | None = None
+    column: str | None = None
+    label: str | None = None
+
+
+def _fill_plan(gdf: Any, facecolor: Any, categorical: bool | None, center: float | None) -> tuple[Any, _Fill]:
+    """The fill of a plot and its data role: categorical, diverging (the errors, or a ``center``) or sequential."""
+    import pandas as pd
+
+    gdf, args = _fill_arguments(gdf, facecolor)
+    column = args.get("column")
+    if column is None:
+        return gdf, _Fill(args)
+    values = gdf[column]
+    numeric = pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values)
+    if categorical is True or (categorical is None and not numeric):
+        role = "categorical"
+    elif column == "_morph_error_pct" or center is not None:
+        role = "diverging"
+    else:
+        role = "sequential"
+    label = _BUILTIN_LABELS.get(column, None if column == "_facecolor" else column)
+    return gdf, _Fill(args, role, column, label)
+
+
+def _plot_fill(
+    ax: "Axes",
+    gdf: Any,
+    fill: _Fill,
+    style: Any,
+    *,
+    cmap: Any,
+    default_cmap: str | None,
+    norm: Any,
+    center: float | None,
+    legend: bool,
+    legend_kwargs: dict | None,
+    legend_label: str | None,
+    categorical: bool | None,
+    values: Any = None,
+    kwargs: dict[str, Any],
+) -> None:
+    """Draw ``gdf`` with its fill: the palette of the data role comes from the call, then the style, then the default.
+
+    The colorbar is left to ``GeoDataFrame.plot`` unless the style or a ``norm`` of the call changes it.
+    """
+    import numpy as np
+    from matplotlib.colors import ListedColormap, Normalize
+
+    kw = dict(kwargs)
+    for channel, key in (("edge", "edgecolor"), ("linewidth", "linewidth")):
+        value = style.channel_value(channel)
+        if value is not None:
+            kw.setdefault(key, value)
+    if fill.role is None:
+        gdf.plot(ax=ax, **fill.kwargs, **kw)
+        return
+
+    legend_kw = {"legend_kwds": legend_kwargs} if legend_kwargs else {}
+    if fill.role == "categorical":
+        colors = None
+        if cmap is None:
+            colors = style.categorical_colors(list(np.unique(gdf[fill.column].dropna())))
+        plot_cmap = ListedColormap(colors) if colors is not None else (cmap if cmap is not None else default_cmap)
+        extra: dict[str, Any] = {"categorical": True} if categorical else {}
+        if plot_cmap is not None:
+            extra["cmap"] = plot_cmap
+        gdf.plot(ax=ax, legend=legend, **fill.kwargs, **extra, **legend_kw, **kw)
+        return
+
+    role = fill.role
+    plot_cmap = cmap if cmap is not None else (style.colormap(role) or default_cmap)
+    data = np.asarray(gdf[fill.column] if values is None else values, dtype=float)
+    finite = data[np.isfinite(data)]
+    limits = (kw.get("vmin"), kw.get("vmax"))
+    norm_obj = style.resolve_norm(norm, role, data, center=center, limits=limits)
+    if norm_obj is not None:  # the normalization replaces the limits of the call
+        kw.pop("vmin", None)
+        kw.pop("vmax", None)
+    extra = {}
+    if plot_cmap is not None:
+        extra["cmap"] = plot_cmap
+    if norm_obj is not None:
+        extra["norm"] = norm_obj
+    own_guide = legend and (style.draws_guide or norm_obj is not None)
+    if own_guide:
+        gdf.plot(ax=ax, legend=False, **fill.kwargs, **extra, **kw)
+        lo = limits[0] if limits[0] is not None else finite.min()
+        hi = limits[1] if limits[1] is not None else finite.max()
+        guide = dict(legend_kwargs or {})
+        label = guide.pop("label", legend_label if legend_label is not None else fill.label)
+        style.add_colorbar(
+            ax.figure, ax, plot_cmap, norm_obj if norm_obj is not None else Normalize(vmin=lo, vmax=hi), label, **guide
+        )
+    else:
+        gdf.plot(ax=ax, legend=legend, **fill.kwargs, **extra, **legend_kw, **kw)
 
 
 @deprecated_params(facecolor="column", legend_kwargs="legend_kwds")
@@ -573,9 +672,14 @@ def plot_cartogram(
     ax: Optional["Axes"] = None,
     facecolor: Any = None,
     iteration: int | None = None,
-    cmap: str = "RdYlGn_r",
+    cmap: Any = None,
     legend: bool = True,
     legend_kwargs: dict | None = None,
+    legend_label: str | None = None,
+    norm: Any = None,
+    center: float | None = None,
+    categorical: bool | None = None,
+    style: Any = None,
     **kwargs: Any,
 ) -> "CartogramPlotResult":
     """Plot morphed geometries from a Cartogram.
@@ -595,12 +699,25 @@ def plot_cartogram(
         column, then as the built-in quantity, and a warning is issued.
     iteration : int, optional
         Which iteration snapshot to plot (default: latest).
-    cmap : str, default='RdYlGn_r'
-        Matplotlib colormap name, used when the fill is data.
+    cmap : str or Colormap, optional
+        Colormap of continuous data (the categorical colormap for categories). Defaults to the palette of the
+        style for the data role, else ``'RdYlGn_r'``.
     legend : bool, default=True
         Show colorbar legend when plotting by data.
     legend_kwargs : dict, optional
-        Keyword arguments of the legend of the fill (passed to ``GeoDataFrame.plot`` as ``legend_kwds``).
+        Keyword arguments of the legend of the fill (passed to ``GeoDataFrame.plot`` as ``legend_kwds``). A
+        ``"label"`` key sets the label of a colorbar.
+    legend_label : str, optional
+        Label of the colorbar. Defaults to the name of the data.
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
+        ``vmax`` fixes a linear normalization unless a scale is named; with an instance it raises ``ValueError``.
+    center : float, optional
+        Treat the data as diverging around this value.
+    categorical : bool, optional
+        Force (True) or prevent (False) the categorical treatment of the data; by default the data type decides.
+    style : PlotStyle or str, optional
+        Style of the plot (default: the style of the block or session, else ``"default"``).
     **kwargs
         Additional arguments passed to GeoDataFrame.plot()
 
@@ -615,29 +732,43 @@ def plot_cartogram(
     >>> from carto_flow.flow_cartogram.visualization import plot_cartogram
     >>> cartogram = create_flow_cartogram(gdf, 'population')
     >>> plot_cartogram(cartogram)
-    >>> plot_cartogram(cartogram, column='population', cmap='Blues')
+    >>> plot_cartogram(cartogram, facecolor='population', cmap='Blues')
     """
-    if ax is None:
-        _, ax = plt.subplots(1, 1, figsize=(10, 7))
+    st = resolve_style(style)
+    with st.rc_context():
+        if ax is None:
+            _, ax = plt.subplots(1, 1, figsize=(10, 7))
+        else:
+            st.apply_axes(ax)
 
-    gdf = cartogram.to_geodataframe(iteration=iteration, include_errors=True, include_density=True)
+        gdf = cartogram.to_geodataframe(iteration=iteration, include_errors=True, include_density=True)
 
-    # Default to the error column if no fill is given and errors are available
-    if facecolor is None and "_morph_error_pct" in gdf.columns:
-        facecolor = "errors_pct"
+        # Default to the error column if no fill is given and errors are available
+        if facecolor is None and "_morph_error_pct" in gdf.columns:
+            facecolor = "errors_pct"
 
-    gdf, fill = _fill_arguments(gdf, facecolor)
+        gdf, fill = _fill_plan(gdf, facecolor, categorical, center)
 
-    before = len(ax.collections)
-    if "column" in fill:
-        legend_kw = {"legend_kwds": legend_kwargs} if legend_kwargs else {}
-        gdf.plot(ax=ax, cmap=cmap, legend=legend, **fill, **legend_kw, **kwargs)
-    else:
-        gdf.plot(ax=ax, **fill, **kwargs)
-    collections = list(ax.collections[before:])
+        before = len(ax.collections)
+        _plot_fill(
+            ax,
+            gdf,
+            fill,
+            st,
+            cmap=cmap,
+            default_cmap="RdYlGn_r",
+            norm=norm,
+            center=center,
+            legend=legend,
+            legend_kwargs=legend_kwargs,
+            legend_label=legend_label,
+            categorical=categorical,
+            kwargs=kwargs,
+        )
+        collections = list(ax.collections[before:])
 
-    ax.set_aspect("equal")
-    ax.set_title("Cartogram Result")
+        ax.set_aspect("equal")
+        ax.set_title("Cartogram Result")
     from .plot_results import CartogramPlotResult
 
     return CartogramPlotResult(ax=ax, collections=collections)
@@ -651,6 +782,11 @@ def plot_comparison(
     iteration: int | None = None,
     left_iteration: int | None = None,
     figsize: tuple[float, float] = (14, 6),
+    cmap: Any = None,
+    norm: Any = None,
+    center: float | None = None,
+    categorical: bool | None = None,
+    style: Any = None,
     **kwargs: Any,
 ) -> "CartogramComparisonResult":
     """Side-by-side comparison of two geometries.
@@ -675,6 +811,18 @@ def plot_comparison(
         (default: latest). Ignored if `left` is a GeoDataFrame.
     figsize : tuple, default=(14, 6)
         Figure size (width, height).
+    cmap : str or Colormap, optional
+        Colormap of continuous data. Defaults to the palette of the style for the data role.
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of continuous data: an instance, or the scale of the style's normalization. With a style
+        that sets a scale, both panels share the normalization of the values of both. A ``vmin`` or ``vmax`` fixes a
+        linear normalization unless a scale is named.
+    center : float, optional
+        Treat the data as diverging around this value.
+    categorical : bool, optional
+        Force (True) or prevent (False) the categorical treatment of the data; by default the data type decides.
+    style : PlotStyle or str, optional
+        Style of the plot (default: the style of the block or session, else ``"default"``).
     **kwargs
         Additional arguments passed to GeoDataFrame.plot()
 
@@ -696,57 +844,77 @@ def plot_comparison(
     >>> cartogram_quality = create_flow_cartogram(gdf, 'population', options=MorphOptions.preset_quality())
     >>> plot_comparison(cartogram_fast, cartogram_quality)
     """
+    import numpy as np
+
     from .cartogram import Cartogram
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
+    st = resolve_style(style)
+    with st.rc_context():
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
 
-    # Determine if left is a Cartogram or GeoDataFrame
-    left_is_cartogram = isinstance(left, Cartogram)
+        # Determine if left is a Cartogram or GeoDataFrame
+        left_is_cartogram = isinstance(left, Cartogram)
 
-    # Plot left panel
-    if left_is_cartogram:
-        left_gdf = left.to_geodataframe(iteration=left_iteration)
-        left_title = "Cartogram (left)"
-        if left.status is not None:
-            status_str = left.status.value if hasattr(left.status, "value") else str(left.status)
-            left_title = f"Cartogram (status: {status_str})"
-    else:
-        left_gdf = left
-        left_title = "Original"
-
-    right_gdf = right.to_geodataframe(iteration=iteration, include_errors=True, include_density=True)
-    right_gdf, right_fill = _fill_arguments(right_gdf, facecolor)
-    left_fill: dict[str, Any] = {}
-    if (
-        hasattr(left_gdf, "plot")
-        and facecolor is not None
-        and ("column" not in right_fill or right_fill["column"] in left_gdf.columns)
-    ):
-        left_gdf, left_fill = _fill_arguments(left_gdf, facecolor)
-
-    before_left = len(ax1.collections)
-    if hasattr(left_gdf, "plot"):
-        if "column" in left_fill:
-            left_gdf.plot(ax=ax1, legend=True, **left_fill, **kwargs)
+        # Plot left panel
+        if left_is_cartogram:
+            left_gdf = left.to_geodataframe(iteration=left_iteration)
+            left_title = "Cartogram (left)"
+            if left.status is not None:
+                status_str = left.status.value if hasattr(left.status, "value") else str(left.status)
+                left_title = f"Cartogram (status: {status_str})"
         else:
-            left_gdf.plot(ax=ax1, **left_fill, **kwargs)
-    left_collections = list(ax1.collections[before_left:])
-    ax1.set_aspect("equal")
-    ax1.set_title(left_title)
+            left_gdf = left
+            left_title = "Original"
 
-    # Plot right panel (always a Cartogram)
-    before_right = len(ax2.collections)
-    if hasattr(right_gdf, "plot"):
-        if "column" in right_fill:
-            right_gdf.plot(ax=ax2, legend=True, **right_fill, **kwargs)
-        else:
-            right_gdf.plot(ax=ax2, **right_fill, **kwargs)
-    right_collections = list(ax2.collections[before_right:])
-    ax2.set_aspect("equal")
-    status_str = right.status.value if hasattr(right.status, "value") else str(right.status)
-    ax2.set_title(f"Cartogram (status: {status_str})")
+        right_gdf = right.to_geodataframe(iteration=iteration, include_errors=True, include_density=True)
+        right_gdf, right_fill = _fill_plan(right_gdf, facecolor, categorical, center)
+        left_fill = _Fill({})
+        if (
+            hasattr(left_gdf, "plot")
+            and facecolor is not None
+            and (
+                right_fill.column is None or right_fill.column in left_gdf.columns or right_fill.column == "_facecolor"
+            )
+        ):
+            left_gdf, left_fill = _fill_plan(left_gdf, facecolor, categorical, center)
 
-    plt.tight_layout()
+        # Both panels share the normalization of the values of both
+        shared = None
+        if right_fill.column is not None and left_fill.column is not None and right_fill.role != "categorical":
+            shared = np.concatenate([
+                np.asarray(left_gdf[left_fill.column], dtype=float),
+                np.asarray(right_gdf[right_fill.column], dtype=float),
+            ])
+        common = {
+            "cmap": cmap,
+            "default_cmap": None,
+            "norm": norm,
+            "center": center,
+            "legend": True,
+            "legend_kwargs": None,
+            "legend_label": None,
+            "categorical": categorical,
+            "values": shared,
+            "kwargs": kwargs,
+        }
+
+        before_left = len(ax1.collections)
+        if hasattr(left_gdf, "plot"):
+            _plot_fill(ax1, left_gdf, left_fill, st, **common)
+        left_collections = list(ax1.collections[before_left:])
+        ax1.set_aspect("equal")
+        ax1.set_title(left_title)
+
+        # Plot right panel (always a Cartogram)
+        before_right = len(ax2.collections)
+        if hasattr(right_gdf, "plot"):
+            _plot_fill(ax2, right_gdf, right_fill, st, **common)
+        right_collections = list(ax2.collections[before_right:])
+        ax2.set_aspect("equal")
+        status_str = right.status.value if hasattr(right.status, "value") else str(right.status)
+        ax2.set_title(f"Cartogram (status: {status_str})")
+
+        plt.tight_layout()
     from .plot_results import CartogramComparisonResult
 
     return CartogramComparisonResult(
@@ -758,6 +926,7 @@ def plot_comparison(
     )
 
 
+@styled
 def plot_convergence(
     cartogram: "Cartogram",
     ax: Optional["Axes"] = None,
@@ -968,6 +1137,7 @@ def plot_convergence(
     )
 
 
+@styled
 def plot_density_field(
     cartogram: "Cartogram",
     *,
@@ -1110,6 +1280,7 @@ def plot_density_field(
     return DensityFieldResult(ax=ax, image=im, colorbar=cbar)
 
 
+@styled
 def plot_velocity_field(
     cartogram: "Cartogram",
     *,
@@ -1271,6 +1442,7 @@ def plot_velocity_field(
     return VelocityFieldResult(ax=ax, arrows=quiver_art, colorbar=colorbar_art)
 
 
+@styled
 def plot_workflow_convergence(
     workflow: "CartogramWorkflow",
     ax: Optional["Axes"] = None,

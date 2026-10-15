@@ -116,6 +116,11 @@ from .proportional_cartogram import (
 )
 
 # ============================================================================
+# Plot styles
+# ============================================================================
+from .style import Channel, Palettes, PlotStyle, get_style, register_style, set_style, style_context, unregister_style
+
+# ============================================================================
 # Symbol Cartogram
 # ============================================================================
 from .symbol_cartogram import (
@@ -138,12 +143,15 @@ __all__ = [
     # Cartogram classes
     "Cartogram",
     "CartogramWorkflow",
+    "Channel",
     # Geometry optimization
     "GeometryCoordinateInfo",
     "GridSpec",
     "LadderSpec",
     "MorphOptions",
     "MorphStatus",
+    "Palettes",
+    "PlotStyle",
     "SymbolCartogram",
     "SymbolCartogramStatus",
     "SymbolShape",
@@ -155,6 +163,7 @@ __all__ = [
     "create_symbol_cartogram",
     "density",
     "displacement",
+    "get_style",
     "grid",
     "history",
     # Cartogram functions
@@ -165,11 +174,15 @@ __all__ = [
     "partition_geometries",
     "reconstruct_geometries",
     "reconstruct_geometry",
+    "register_style",
+    "set_style",
     "shrink",
     "simplify_coverage",
     "split",
+    "style_context",
     "unpack_geometries",
     "unpack_geometry",
+    "unregister_style",
     "velocity",
 ]
 

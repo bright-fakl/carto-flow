@@ -26,7 +26,7 @@ cf.set_style(None)        # back to the default
 
 The style of a call is the `style=` argument, else the block, else the session, else `"default"`.
 
-Plots that take `style=`: `Cartogram.plot`, `plot_cartogram`, `plot_comparison`, the field and convergence plots and the `animate_*` functions of the flow cartogram; `VoronoiCartogram.plot`, `plot_displacement`, `plot_comparison`, `plot_compactness`, the topology plots, the convergence plot and `animate_voronoi_history`; `plot_partitions` and `plot_dot_density` of the proportional cartogram; `SymbolCartogram.plot`, `plot_symbols`, `plot_comparison`, `plot_adjacency`, `plot_adjacency_heatmap`, `plot_tiling` and `plot_displacement` of the symbol cartogram.
+Plots that take `style=`: `Cartogram.plot`, `plot_cartogram`, `plot_comparison`, the field and convergence plots and the `animate_*` functions of the flow cartogram; `VoronoiCartogram.plot`, `plot_displacement`, `plot_comparison`, `plot_compactness`, the topology plots, the convergence plot and `animate_voronoi_history`; `plot_partitions` and `plot_dot_density` of the proportional cartogram; `SymbolCartogram.plot`, `plot_symbols`, `plot_comparison`, `plot_adjacency`, `plot_adjacency_heatmap`, `plot_tiling` and `plot_displacement` of the symbol cartogram; the density and velocity `preview_modulator` and the tiling plots (`TilingResult.plot`, `plot_tile`, `plot_prototile`).
 
 ## What the style sets for each type of data
 

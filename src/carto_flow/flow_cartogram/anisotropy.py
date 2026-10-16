@@ -63,6 +63,7 @@ import numpy as np
 from scipy.ndimage import distance_transform_edt, gaussian_filter
 
 from .._plot_params import deprecated_params
+from ..style import resolve_style, styled
 from .grid import Grid
 
 # Module-level exports - Public API
@@ -932,6 +933,7 @@ def build_axis_aligned_tensor(nx, ny, Dx=1.0, Dy=1.0, theta_field=None):
     diff_legend_kwargs="diff_colorbar_kwargs",
     heatmap_legend_kwargs="heatmap_colorbar_kwargs",
 )
+@styled
 def preview_modulator(
     modulator: VelocityModulator | None = None,
     gdf=None,
@@ -941,7 +943,7 @@ def preview_modulator(
     margin: float = 0.1,
     show_geometry: bool = True,
     ax=None,
-    cmap="viridis",
+    cmap=None,
     legend: bool = True,
     arrows_kwargs: dict | None = None,
     legend_kwargs: dict | None = None,
@@ -951,7 +953,7 @@ def preview_modulator(
     Dy: float = 1.0,
     show_vectors: bool | str | tuple = "output",
     input_arrows_kwargs: dict | None = None,
-    diff_cmap: str = "Reds",
+    diff_cmap=None,
     diff_arrows_kwargs: dict | None = None,
     diff_legend_kwargs: dict | None = None,
     heatmap: str | None = None,
@@ -1027,8 +1029,8 @@ def preview_modulator(
         - tuple, e.g. ``('output', 'diff')`` — any combination.
     input_arrows_kwargs : dict, optional
         Extra keyword arguments for the input quiver ``ax.quiver`` call.
-    diff_cmap : str or Colormap, default 'Reds'
-        Colormap for the difference quiver.
+    diff_cmap : str or Colormap, optional
+        Colormap for the difference quiver. Default: the sequential colormap of the style, else ``'Reds'``.
     diff_arrows_kwargs : dict, optional
         Extra keyword arguments for the difference quiver ``ax.quiver`` call.
     arrow_scale : float, default 1.0
@@ -1036,8 +1038,9 @@ def preview_modulator(
         diagonal (``sqrt((dx*skip)² + (dy*skip)²)``).  All quivers share this
         scale so arrows are directly comparable.  Values < 1 add a gap between
         adjacent arrows; values > 1 allow overlap.
-    cmap : str or Colormap, default 'viridis'
-        Colormap for the quiver arrows, encoding amplification factor.
+    cmap : str or Colormap, optional
+        Colormap for the quiver arrows, encoding amplification factor. Default: the sequential colormap of the
+        style, else ``'viridis'``.
     arrows_kwargs : dict, optional
         Extra keyword arguments merged into the ``ax.quiver`` call for the
         modulated-velocity arrows.  Override any of the defaults (``cmap``,
@@ -1105,6 +1108,18 @@ def preview_modulator(
     from .grid import Grid
     from .plot_results import ModulatorPreviewResult
 
+    st = resolve_style()
+    if cmap is None:
+        cmap = st.colormap("sequential") or "viridis"
+    if diff_cmap is None:
+        diff_cmap = st.colormap("sequential") or "Reds"
+
+    def _add_colorbar(mappable, kwargs):
+        options = dict(kwargs)
+        if hasattr(mappable, "autoscale_None"):
+            mappable.autoscale_None()
+        return st.add_colorbar(ax.figure, ax, mappable.cmap, mappable.norm, options.pop("label", None), **options)
+
     bounds = gdf.total_bounds  # (xmin, ymin, xmax, ymax)
     grid = Grid.from_bounds(bounds, size=grid_size, margin=margin)
 
@@ -1169,7 +1184,7 @@ def preview_modulator(
     geom_collections = []
     if show_geometry:
         before = len(ax.collections)
-        gdf.plot(ax=ax, facecolor="none", edgecolor="0.6", linewidth=0.6, zorder=1)
+        gdf.plot(ax=ax, facecolor="none", edgecolor=st.rc.get("axes.edgecolor", "0.6"), linewidth=0.6, zorder=1)
         geom_collections = list(ax.collections[before:])
 
     # Normalize show_vectors into a set of layer names
@@ -1202,7 +1217,7 @@ def preview_modulator(
                 _hkw = {
                     "origin": "lower",
                     "extent": [gxmin, gxmax, gymin, gymax],
-                    "cmap": heatmap_cmap or "Blues",
+                    "cmap": heatmap_cmap or st.colormap("sequential") or "Blues",
                     "alpha": 0.35,
                     "vmin": 0.0,
                     "vmax": 1.0,
@@ -1211,8 +1226,7 @@ def preview_modulator(
                 }
                 heatmap_image = ax.imshow(W, **_hkw)
                 if legend:
-                    _hcb_kw = {"label": "Weight", **(heatmap_legend_kwargs or {})}
-                    heatmap_cb = plt.colorbar(heatmap_image, ax=ax, **_hcb_kw)
+                    heatmap_cb = _add_colorbar(heatmap_image, {"label": "Weight", **(heatmap_legend_kwargs or {})})
         elif heatmap in ("input", "output", "diff"):
             if heatmap == "input":
                 _hx, _hy = vx_in, vy_in
@@ -1227,13 +1241,13 @@ def preview_modulator(
                 _hclim = {"vmin": 0.0, "vmax": 1.0} if heatmap != "diff" else {"vmin": 0.0}
             elif heatmap_type == "angle":
                 _hdata = np.arctan2(_hy, _hx)
-                _hcmap = heatmap_cmap or "twilight"
+                _hcmap = heatmap_cmap or st.colormap("cyclic") or "twilight"
                 _hclim = {"vmin": -np.pi, "vmax": np.pi}
             elif heatmap_type == "magnitude_diff":
                 if heatmap != "diff":
                     raise ValueError("heatmap_type='magnitude_diff' is only valid with heatmap='diff'")
                 _hdata = np.sqrt(vx_out**2 + vy_out**2) - np.sqrt(vx_in**2 + vy_in**2)
-                _hcmap = heatmap_cmap or "PiYG"
+                _hcmap = heatmap_cmap or st.colormap("diverging") or "PiYG"
                 _abs_max = float(np.nanmax(np.abs(_hdata))) or 1.0
                 _hclim = {"vmin": -_abs_max, "vmax": _abs_max}
             elif heatmap_type == "angle_diff":
@@ -1241,7 +1255,7 @@ def preview_modulator(
                     raise ValueError("heatmap_type='angle_diff' is only valid with heatmap='diff'")
                 _raw = np.arctan2(vy_out, vx_out) - np.arctan2(vy_in, vx_in)
                 _hdata = np.arctan2(np.sin(_raw), np.cos(_raw))  # wrap to [-π, π]
-                _hcmap = heatmap_cmap or "twilight_shifted"
+                _hcmap = heatmap_cmap or st.colormap("cyclic") or "twilight_shifted"
                 _hclim = {"vmin": -np.pi, "vmax": np.pi}
             else:
                 raise ValueError(
@@ -1269,13 +1283,12 @@ def preview_modulator(
                     "magnitude_diff": "speed change (\u2016out\u2016 \u2212 \u2016in\u2016)",
                     "angle_diff": "rotation (angle out \u2212 angle in)",
                 }.get(heatmap_type, heatmap_type)
-                _hcb_kw = {"label": _hlabel, **(heatmap_legend_kwargs or {})}
-                heatmap_cb = plt.colorbar(heatmap_image, ax=ax, **_hcb_kw)
+                heatmap_cb = _add_colorbar(heatmap_image, {"label": _hlabel, **(heatmap_legend_kwargs or {})})
                 if heatmap_type == "angle":
-                    heatmap_cb.set_ticks(np.array([-1.0, -0.5, 0.0, 0.5, 1.0]) * np.pi)  # type: ignore[arg-type]
+                    heatmap_cb.set_ticks(np.array([-1.0, -0.5, 0.0, 0.5, 1.0]) * np.pi)
                     heatmap_cb.set_ticklabels(["W", "S", "E", "N", "W"])
                 if heatmap_type == "angle_diff":
-                    heatmap_cb.set_ticks(np.array([-1.0, -0.5, 0.0, 0.5, 1.0]) * np.pi)  # type: ignore[arg-type]
+                    heatmap_cb.set_ticks(np.array([-1.0, -0.5, 0.0, 0.5, 1.0]) * np.pi)
                     heatmap_cb.set_ticklabels(["-π", "-π/2", "0", "+π/2", "+π"])
         else:
             raise ValueError(f"heatmap must be 'weight', 'input', 'output', or 'diff', got {heatmap!r}")
@@ -1308,7 +1321,7 @@ def preview_modulator(
                 ),
                 **(legend_kwargs or {}),
             }
-            cb = plt.colorbar(q, ax=ax, **_colorbar_kw)
+            cb = _add_colorbar(q, _colorbar_kw)
 
     # Difference quiver
     q_diff = None
@@ -1328,8 +1341,7 @@ def preview_modulator(
         )
         cb_diff = None
         if legend:
-            _diff_cb_kw = {"label": "Difference magnitude", **(diff_legend_kwargs or {})}
-            cb_diff = plt.colorbar(q_diff, ax=ax, **_diff_cb_kw)
+            cb_diff = _add_colorbar(q_diff, {"label": "Difference magnitude", **(diff_legend_kwargs or {})})
 
     # Input quiver
     q_in = None

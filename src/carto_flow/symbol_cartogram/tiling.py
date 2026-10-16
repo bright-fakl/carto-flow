@@ -34,6 +34,7 @@ from shapely.geometry import Point, Polygon, box
 from typing_extensions import Self
 
 from .._plot_params import deprecated_params
+from ..style import resolve_style, styled
 
 if TYPE_CHECKING:
     from .symbols import Symbol
@@ -201,14 +202,15 @@ class TilingResult:
         )
 
     @deprecated_params(facecolor="face_color", edgecolor="edge_color", cmap="colormap")
+    @styled
     def plot(
         self,
         ax=None,
         *,
         color_by: str = "uniform",
-        facecolor: str = "#4e9af1",
-        edgecolor: str = "#333333",
-        cmap: str = "tab10",
+        facecolor: str | None = None,
+        edgecolor: str | None = None,
+        cmap: str | None = None,
         alpha: float = 0.85,
         linewidth: float = 0.5,
     ):
@@ -227,12 +229,14 @@ class TilingResult:
             * ``"x"`` — color by tile centroid x coordinate (normalized).
             * ``"y"`` — color by tile centroid y coordinate (normalized).
             * ``"random"`` — random color per tile drawn from *cmap*.
-        facecolor : str
-            Hex fill color used in ``"uniform"`` mode.
-        edgecolor : str
-            Stroke color for tile outlines.
-        cmap : str
-            Matplotlib cmap name used in ``"aspect"`` and ``"index"`` modes.
+        facecolor : str, optional
+            Fill color used in ``"uniform"`` mode. Default: the fill value of the style, else ``"#4e9af1"``.
+        edgecolor : str, optional
+            Stroke color for tile outlines (the outline is the subject of the plot). Default: the stroke color of the
+            style, else ``"#333333"``.
+        cmap : str, optional
+            Matplotlib cmap name used in the other modes. Default: the cyclic colormap of the style for ``"aspect"``
+            and the sequential colormap for the rest, else ``"tab10"``.
         alpha : float
             Tile fill transparency.
         linewidth : float
@@ -268,8 +272,17 @@ class TilingResult:
                 f"Unknown color_by={color_by!r}. Choose from 'uniform', 'aspect', 'index', 'x', 'y', 'random'."
             )
 
+        st = resolve_style()
+        if facecolor is None:
+            facecolor = st.channel_value("fill", "#4e9af1")
+        if edgecolor is None:
+            edgecolor = st.channel_value("stroke", "#333333")
         n = len(self.polygons)
-        colormap = plt.get_cmap(cmap)
+        colormap = (
+            plt.get_cmap(cmap)
+            if cmap is not None
+            else st.colormap("cyclic" if color_by == "aspect" else "sequential") or plt.get_cmap("tab10")
+        )
 
         coords = [list(zip(*p.exterior.xy, strict=False)) for p in self.polygons]
         if color_by == "uniform":
@@ -304,12 +317,13 @@ class TilingResult:
         return TilingGridPlotResult(ax=ax, fig=fig, tiles=col)
 
     @deprecated_params(facecolor="face_color", edgecolor="edge_color")
+    @styled
     def plot_tile(
         self,
         ax=None,
         *,
         facecolor: str | None = None,
-        edgecolor: str = "#1971c2",
+        edgecolor: str | None = None,
         alpha: float = 0.7,
         show_vertices: bool = True,
         show_vertex_labels: bool = False,
@@ -325,8 +339,8 @@ class TilingResult:
             Fill color.  When ``None`` the color is chosen automatically by
             vertex count to match the panel UI palette
             (3 → pink, 4 → blue, 5 → yellow, 6 → green).
-        edgecolor : str
-            Outline color.
+        edgecolor : str, optional
+            Outline color. Default: the stroke color of the style, else ``"#1971c2"``.
         alpha : float
             Fill transparency.
         show_vertices : bool
@@ -437,12 +451,13 @@ class Tiling(ABC):
         return bounds, n_tiles, tile_size
 
     @deprecated_params(facecolor="face_color", edgecolor="edge_color")
+    @styled
     def plot_tile(
         self,
         ax=None,
         *,
         facecolor: str | None = None,
-        edgecolor: str = "#1971c2",
+        edgecolor: str | None = None,
         alpha: float = 0.7,
         show_vertices: bool = True,
         show_vertex_labels: bool = False,
@@ -461,8 +476,8 @@ class Tiling(ABC):
             Fill color.  When ``None`` the color is chosen automatically by
             vertex count to match the panel UI palette
             (3 → pink, 4 → blue, 5 → yellow, 6 → green).
-        edgecolor : str
-            Outline color.
+        edgecolor : str, optional
+            Outline color. Default: the stroke color of the style, else ``"#1971c2"``.
         alpha : float
             Fill transparency.
         show_vertices : bool
@@ -575,7 +590,7 @@ def _plot_polygon_tile(
     polygon: Polygon,
     ax,
     face_color: str | None,
-    edge_color: str,
+    edge_color: str | None,
     alpha: float,
     show_vertices: bool,
     show_vertex_labels: bool,
@@ -591,6 +606,9 @@ def _plot_polygon_tile(
     from matplotlib.patches import Polygon as MplPolygon
 
     from .plot_results import PrototilePlotResult
+
+    if edge_color is None:
+        edge_color = resolve_style().channel_value("stroke", "#1971c2")
 
     _VERTEX_COLORS = {3: "#f5b7b1", 4: "#aed6f1", 5: "#f9e79f", 6: "#abebc6"}
 
@@ -2421,6 +2439,7 @@ class IsohedralTiling(Tiling):
 
         return "\n".join(lines)
 
+    @styled
     def plot_prototile(self, ax=None, show_labels: bool = True):
         """Plot the prototile with labeled, color-coded edges.
 
@@ -2445,8 +2464,18 @@ class IsohedralTiling(Tiling):
         if ax is None:
             _, ax = plt.subplots(1, 1, figsize=(6, 6))
 
-        # Qualitative palette for shape_ids
-        palette = ["#e41a1c", "#377eb8", "#4daf4a", "#984ea3", "#ff7f00", "#a65628", "#f781bf", "#999999"]
+        # Qualitative palette for shape_ids: the categorical palette of the style, else a fixed one
+        st = resolve_style()
+        palette = st.categorical_colors(list(range(8))) or [
+            "#e41a1c",
+            "#377eb8",
+            "#4daf4a",
+            "#984ea3",
+            "#ff7f00",
+            "#a65628",
+            "#f781bf",
+            "#999999",
+        ]
 
         # Collect per-edge info and polylines
         edge_data: list[dict] = []
@@ -2478,7 +2507,9 @@ class IsohedralTiling(Tiling):
         all_pts = []
         for ed in edge_data:
             all_pts.extend(ed["pts"][:-1])
-        poly_patch = plt.Polygon(all_pts, closed=True, facecolor="#f0f0f0", edgecolor="none")
+        poly_patch = plt.Polygon(
+            all_pts, closed=True, facecolor=st.pick("reference_facecolor", "#f0f0f0"), edgecolor="none"
+        )
         ax.add_patch(poly_patch)
 
         # Draw each edge and build legend handles (one per unique shape_id)

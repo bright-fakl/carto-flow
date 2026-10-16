@@ -15,7 +15,7 @@ from matplotlib.colors import LogNorm, Normalize, PowerNorm
 import carto_flow.data as data
 import carto_flow.flow_cartogram as flow
 import carto_flow.voronoi_cartogram as vor
-from carto_flow import Palettes, PlotStyle, set_style
+from carto_flow import Channel, Palettes, PlotStyle, set_style
 from carto_flow.flow_cartogram.animation import animate_fields
 from carto_flow.flow_cartogram.visualization import (
     DensityPlotOptions,
@@ -231,3 +231,70 @@ class TestCyclicAndColorbars:
         anim._func(1)
         bars = [a for a in anim._fig.axes if a.get_label() == "<colorbar>"]
         assert len(bars) == 2
+
+
+class TestPreviewsAndTilings:
+    @pytest.fixture(scope="class")
+    def gdf(self):
+        return data.load_us_census(population=True).reset_index(drop=True)
+
+    def test_density_preview_palette_and_colorbar(self, gdf):
+        from carto_flow.flow_cartogram import DensityBorderExtension
+        from carto_flow.flow_cartogram.density import preview_modulator
+
+        mod = DensityBorderExtension(extension_width=50_000, transition_width=30_000)
+        style = PlotStyle(
+            palettes=Palettes(diverging="PuOr"), colorbar_outline_color="#123456", colorbar_outline_width=2.0
+        )
+        plot = preview_modulator(mod, gdf, column="Population", grid_size=24, style=style)
+        assert plot.image.get_cmap().name == "PuOr"
+        assert matplotlib.colors.to_hex(plot.colorbar.outline.get_edgecolor()) == "#123456"
+        classic = preview_modulator(mod, gdf, column="Population", grid_size=24, style="classic")
+        assert classic.image.get_cmap().name == "RdBu_r"
+
+    def test_density_preview_cmap_of_the_call_wins(self, gdf):
+        from carto_flow.flow_cartogram import DensityBorderExtension
+        from carto_flow.flow_cartogram.density import preview_modulator
+
+        mod = DensityBorderExtension(extension_width=50_000, transition_width=30_000)
+        style = PlotStyle(palettes=Palettes(diverging="PuOr"))
+        plot = preview_modulator(mod, gdf, grid_size=24, cmap="coolwarm", style=style)
+        assert plot.image.get_cmap().name == "coolwarm"
+
+    @pytest.mark.parametrize(
+        ("heatmap_type", "role"),
+        [("magnitude", "sequential"), ("angle", "cyclic"), ("magnitude_diff", "diverging"), ("angle_diff", "cyclic")],
+    )
+    def test_anisotropy_preview_palettes(self, gdf, heatmap_type, role):
+        from carto_flow.flow_cartogram import DirectionalTensor
+        from carto_flow.flow_cartogram.anisotropy import preview_modulator
+
+        style = PlotStyle(palettes=Palettes(sequential="Reds", diverging="PuOr", cyclic="hsv"))
+        mod = DirectionalTensor.radial(center=(0, 0), Dpar=3.0)
+        heatmap = "output" if heatmap_type in ("magnitude", "angle") else "diff"
+        plot = preview_modulator(mod, gdf, grid_size=20, heatmap=heatmap, heatmap_type=heatmap_type, style=style)
+        expected = {"sequential": "Reds", "diverging": "PuOr", "cyclic": "hsv"}[role]
+        assert plot.heatmap_image.get_cmap().name == expected
+
+    def test_tiling_plot_modes(self):
+        from carto_flow.symbol_cartogram import SquareTiling
+
+        tiling = SquareTiling().generate(n_tiles=16)
+        style = PlotStyle(
+            palettes=Palettes(sequential="Reds", cyclic="hsv"), channels={"stroke": Channel(value="#123456")}
+        )
+        plot = tiling.plot(color_by="x", style=style)
+        assert matplotlib.colors.to_hex(plot.tiles.get_edgecolor()[0]) == "#123456"
+        reds = tiling.plot(color_by="x", cmap="Reds", style="classic")
+        assert np.allclose(plot.tiles.get_facecolor(), reds.tiles.get_facecolor())
+        aspect = tiling.plot(color_by="aspect", style=style)
+        hsv = tiling.plot(color_by="aspect", cmap="hsv", style="classic")
+        assert np.allclose(aspect.tiles.get_facecolor(), hsv.tiles.get_facecolor())
+
+    def test_tile_outline_and_prototile(self):
+        from carto_flow.symbol_cartogram import SquareTiling
+
+        style = PlotStyle(channels={"stroke": Channel(value="#123456")})
+        plot = SquareTiling().plot_tile(style=style)
+        assert matplotlib.colors.to_hex(plot.tile.get_edgecolor()) == "#123456"
+        assert matplotlib.colors.to_hex(SquareTiling().plot_tile(style="classic").tile.get_edgecolor()) == "#1971c2"

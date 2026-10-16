@@ -28,6 +28,7 @@ from scipy.ndimage import distance_transform_edt, gaussian_filter
 
 # Import grid utilities
 from .._plot_params import deprecated_params
+from ..style import resolve_style, styled
 from .grid import Grid
 
 # Module-level exports - Public API
@@ -626,6 +627,7 @@ class Smooth(DensityModulator):
 
 
 @deprecated_params(legend="show_colorbar", legend_kwargs="colorbar_kwargs")
+@styled
 def preview_modulator(
     modulator: DensityModulator,
     gdf,
@@ -636,7 +638,7 @@ def preview_modulator(
     show_geometry: bool = True,
     show: str = "output",
     ax=None,
-    cmap: str = "RdBu_r",
+    cmap=None,
     legend: bool = True,
     legend_kwargs: dict | None = None,
     image_kwargs: dict | None = None,
@@ -678,8 +680,8 @@ def preview_modulator(
           occupy equal visual space); tick labels show actual ratio values.
     ax : matplotlib.axes.Axes, optional
         Axes to draw on.  A new figure is created if ``None``.
-    cmap : str or Colormap, default 'RdBu_r'
-        Colormap used for all ``show`` modes.  A diverging colormap is
+    cmap : str or Colormap, optional
+        Default: the diverging colormap of the style, else ``'RdBu_r'``. Colormap used for all ``show`` modes.  A diverging colormap is
         recommended: for ``'input'`` and ``'output'`` the center is anchored
         at *target_density* (white = equilibrium, blue = below, red = above);
         for ``'ratio'`` the center is anchored at 1 (no change).
@@ -721,6 +723,9 @@ def preview_modulator(
 
     if show not in ("input", "output", "ratio"):
         raise ValueError(f"show must be 'input', 'output', or 'ratio', got {show!r}")
+    st = resolve_style()
+    if cmap is None:
+        cmap = st.colormap("diverging") or "RdBu_r"
 
     bounds = gdf.total_bounds  # (xmin, ymin, xmax, ymax)
     grid = Grid.from_bounds(bounds, size=grid_size, margin=margin)
@@ -782,7 +787,7 @@ def preview_modulator(
     geom_collections = []
     if show_geometry:
         before = len(ax.collections)
-        gdf.plot(ax=ax, facecolor="none", edgecolor="0.6", linewidth=0.6, zorder=1)
+        gdf.plot(ax=ax, facecolor="none", edgecolor=st.rc.get("axes.edgecolor", "0.6"), linewidth=0.6, zorder=1)
         geom_collections = list(ax.collections[before:])
 
     _img_kw = {
@@ -797,8 +802,8 @@ def preview_modulator(
 
     cb = None
     if legend:
-        _cb_kw = {"label": cb_label, **(legend_kwargs or {})}
-        cb = plt.colorbar(img, ax=ax, **_cb_kw)
+        _cb_kw = dict(legend_kwargs or {})
+        cb = st.add_colorbar(ax.figure, ax, img.cmap, img.norm, _cb_kw.pop("label", cb_label), **_cb_kw)
 
     if cb is not None:
         if show == "ratio" and norm is not None:
@@ -806,16 +811,16 @@ def preview_modulator(
             _log_cands = np.log10([0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0])
             ticks_pos = _log_cands[(_log_cands > 0) & (_log_cands <= norm.vmax + 1e-9)]  # type: ignore[operator]
             ticks_log = np.concatenate([-ticks_pos[::-1], [0.0], ticks_pos])
-            cb.set_ticks(ticks_log)  # type: ignore[arg-type]
+            cb.set_ticks(ticks_log)
             cb.set_ticklabels([f"{10**t:.3g}" for t in ticks_log])
-            cb.ax.axhline(0.0, color="0.15", linewidth=1.5)  # log10(1) = 0
+            cb.ax.axhline(0.0, color=st.rc.get("text.color", "0.15"), linewidth=1.5)  # log10(1) = 0
         elif show in ("input", "output") and norm is not None and target_density > 0:
             _log_cands = np.log10([0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0])
             ticks_pos = _log_cands[(_log_cands > 0) & (_log_cands <= norm.vmax + 1e-9)]  # type: ignore[operator]
             ticks_log = np.concatenate([-ticks_pos[::-1], [0.0], ticks_pos])
-            cb.set_ticks(ticks_log)  # type: ignore[arg-type]
+            cb.set_ticks(ticks_log)
             cb.set_ticklabels([f"{target_density:.3g}" if t == 0.0 else f"{10**t:.3g}x" for t in ticks_log])
-            cb.ax.axhline(0.0, color="0.15", linewidth=1.5)  # log10(1) = 0 = target density
+            cb.ax.axhline(0.0, color=st.rc.get("text.color", "0.15"), linewidth=1.5)  # log10(1) = 0 = target density
 
     ax.set_aspect("equal")
     ax.set_title(repr(modulator))

@@ -284,7 +284,8 @@ class SymbolCartogram:
             Defaults to the range of the alpha channel of the style, else ``(0.2, 1.0)``.
         edgecolor : color, column name, or array-like, optional
             Symbol edge color.  Same forms as *facecolor*.
-            Defaults to the edge color of the style, else ``"none"`` (no visible border).
+            Defaults to the edge color of the style, else ``"none"`` (no visible border); when *linewidth* is
+            data-driven, the text color.
         edge_cmap : str or dict, optional
             Colormap for edge color column mapping.  Accepts the same forms
             as *cmap* (string name for numeric, dict for categorical).

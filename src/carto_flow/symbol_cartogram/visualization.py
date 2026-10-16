@@ -1425,7 +1425,8 @@ def plot_symbols(
         Defaults to the range of the alpha channel of the style, else ``(0.2, 1.0)``.
     edgecolor : color, column name, or array-like, optional
         Symbol edge color.  Accepts the same forms as *facecolor*.
-        Defaults to the edge color of the style, else ``"none"`` (no visible border).
+        Defaults to the edge color of the style, else ``"none"`` (no visible border); when *linewidth* is data-driven,
+        the text color.
     edge_cmap : str or dict, optional
         Colormap for edge color mapping.  Accepts the same forms as *cmap*
         (string name for numeric, dict for categorical).
@@ -1603,7 +1604,11 @@ def plot_symbols(
     if alpha_range is None:
         alpha_range = st.channel_range("alpha", (0.2, 1.0))
     if edgecolor is None:
-        edgecolor = st.channel_value("edge", "none")
+        if linewidth is not None and not isinstance(linewidth, (int, float)):
+            # an edge that encodes data has to be seen: the text color, not the faint boundary color of the style
+            edgecolor = mpl.rcParams["text.color"]
+        else:
+            edgecolor = st.channel_value("edge", "none")
     if linewidth is None:
         linewidth = st.channel_value("linewidth", 0.5)
     if linewidth_range is None:

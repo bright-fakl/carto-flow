@@ -284,6 +284,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **A data-driven `linewidth` of the symbol plots is visible without an `edgecolor`.** The edge color defaulted to the boundary color of the style, a faint color made for separating symbols, or to `"none"` in `"classic"`, so the widths could not be seen. The default is now the text color of the style (black in `"classic"`). The `"default"` and `"dark"` styles also draw data-driven widths from 1 to 4.5 points (`Channel(range=...)` of `"linewidth"`).
 - **`legend_kwargs={"label": ...}` of the symbol plots sets the label of the colorbar** (it was ignored in favor of the column name).
 - **`plot_partitions` drew the complement black when the partitions were colored by a continuous value**
   (`facecolor="area"` or a numeric column): the missing color value of the complement became NaN and

@@ -115,3 +115,24 @@ class TestFlowAndLegend:
         plot = symbols.plot(linewidth="population", style="dark")
         handles = plot.linewidth_legend.legend_handles
         assert to_hex(handles[0].get_color()) == "#6b747c"
+
+
+class TestDataDrivenWidth:
+    def test_edge_defaults_to_the_text_color(self, symbols):
+        for style, expected in (("classic", "#000000"), ("default", "#222222"), ("dark", "#e6e9ec")):
+            plot = symbols.plot(linewidth="population", style=style)
+            assert to_hex(plot.collections[0].get_edgecolor()[0]) == expected
+
+    def test_scalar_width_keeps_the_style_edge(self, symbols):
+        plot = symbols.plot(linewidth=1.0, style="default")
+        assert to_hex(plot.collections[0].get_edgecolor()[0]) == "#dde4ea"
+
+    def test_explicit_edge_wins(self, symbols):
+        plot = symbols.plot(linewidth="population", edgecolor="#123456", style="dark")
+        assert to_hex(plot.collections[0].get_edgecolor()[0]) == "#123456"
+
+    def test_style_width_range(self, symbols):
+        plot = symbols.plot(linewidth="population", style="default")
+        widths = plot.collections[0].get_linewidth()
+        assert min(widths) == pytest.approx(1.0)
+        assert max(widths) == pytest.approx(4.5)

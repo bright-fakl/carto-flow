@@ -530,7 +530,7 @@ def _light() -> PlotStyle:
             "legend.edgecolor": spine,
         },
         palettes=Palettes(sequential="YlGnBu", sequential_range=(0.22, 1.0), diverging="RdYlBu_r", categorical=tab10),
-        channels={"edge": Channel(value=edge), "linewidth": Channel(value=0.8)},
+        channels={"edge": Channel(value=edge), "linewidth": Channel(value=0.8, range=(1.0, 4.5))},
         color_scale="auto",
         tick_format="si",
         colorbar_shrink=0.8,
@@ -565,7 +565,7 @@ def _dark() -> PlotStyle:
         palettes=Palettes(
             sequential="viridis", sequential_range=(0.25, 1.0), diverging="RdYlBu_r", categorical="tab10"
         ),
-        channels={"edge": Channel(value=edge), "linewidth": Channel(value=0.8)},
+        channels={"edge": Channel(value=edge), "linewidth": Channel(value=0.8, range=(1.0, 4.5))},
         color_scale="auto",
         tick_format="si",
         colorbar_shrink=0.8,

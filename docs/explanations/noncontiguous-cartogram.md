@@ -18,9 +18,14 @@ The only choice that changes the map is $\rho$. The factor of a region is 1 when
 
 - **`reference="densest"`** (default) sets $\rho$ to the highest density of any region. That region keeps its size, every other region is smaller, and no region grows. Every area is proportional to its value. The price is that regions that are much less dense than the densest one are small: with US states and population, DC is the densest region and 43 of 49 states fall below 5 % of their area.
 - **`reference="largest"`** sets $\rho$ to the density of the region with the largest value, as the Olson cartogram of the R package `cartogram` does by default. The largest region keeps its size, but every region that is denser would have to grow: with population, California is the reference and 11 of 49 states are denser, New Jersey would grow to 4.6 times its area and DC to 41.6 times.
+- **`reference_region`** names a region (by its index label) that keeps its size: $\rho$ is the density of that region. This is the way to leave out an outlier. DC is 9 times as dense as New Jersey, the next densest state, so under `"densest"` the median state has a scale of 0.10 and 43 of 49 states fall below 5 % of their area. With `reference_region` set to New Jersey the median scale is 0.30 and 16 states fall below 5 %; only DC is denser than the reference, so it is kept at its size (smaller than proportional) or, with `max_scale=None`, grows to 3.0 times its linear size (9 times its area) and overlaps its neighbors. It cannot be combined with `reference="largest"` or a number.
 - **A number** sets $\rho$ directly, in value per unit of area of the coordinate system. A smaller $\rho$ makes all regions larger.
 
 `max_scale` limits the linear factor. With the default of 1 nothing grows, and a region that would have to grow is kept at its size; it is then smaller than proportional, a `UserWarning` counts these regions, `NoncontiguousCartogram.capped` marks them and `area_error_pct` gives the error. A larger `max_scale` lets regions grow (and overlap their neighbors), and `None` sets no limit.
+
+## Drawing order
+
+A region that grows overlaps its neighbors. `NoncontiguousCartogram.plot` draws the regions in order of decreasing area, so a region that grew lies under the smaller ones and does not hide them. The original outlines are drawn first of all.
 
 ## Multipolygons
 

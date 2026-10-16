@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from .._fill import Fill, plot_fill
 from .._plot_params import resolve_fill
 from ..style import resolve_style, styled
@@ -16,21 +18,25 @@ __all__ = ["plot_cartogram"]
 
 
 def _fill_plan(
-    gdf: Any, facecolor: Any, categorical: bool | None, center: float | None, default: str
+    gdf: Any, facecolor: Any, categorical: bool | None, center: float | None, default: str, order: Any
 ) -> tuple[Any, Fill]:
-    """The regions (a copy when a column was added) and their ``Fill``: a color, or data with its role."""
+    """The regions in drawing order (``order`` is a permutation of the rows) and their ``Fill``: a color, or data with
+    its role."""
     import pandas as pd
 
     kind, value = resolve_fill(facecolor, set(gdf.columns), (), n=len(gdf), stacklevel=5)
     if kind == "none":
-        return gdf, Fill({"facecolor": default})
+        return gdf.iloc[order], Fill({"facecolor": default})
     if kind == "color":
-        return gdf, Fill({"facecolor": value})
+        if not isinstance(value, str) and np.ndim(value) > 0 and len(value) == len(gdf):  # one color per region
+            value = [value[i] for i in order]
+        return gdf.iloc[order], Fill({"facecolor": value})
     column, label = (value, value)
     if kind == "values":
         gdf = gdf.copy()
         gdf["_facecolor"] = value
         column, label = "_facecolor", None
+    gdf = gdf.iloc[order]
     numeric = pd.api.types.is_numeric_dtype(gdf[column]) and not pd.api.types.is_bool_dtype(gdf[column])
     if categorical is True or (categorical is None and not numeric):
         role = "categorical"
@@ -89,6 +95,11 @@ def plot_cartogram(
         Passed to ``GeoDataFrame.plot()`` for the scaled regions (for example ``edgecolor`` and ``linewidth``, which
         default to the edge and line width of the style, else dark gray and 0.5).
 
+    Notes
+    -----
+    The regions are drawn in order of decreasing area, so that a region that grew over its neighbors (with a
+    ``max_scale`` above 1) lies under the smaller ones and does not hide them.
+
     Returns
     -------
     NoncontiguousPlotResult
@@ -114,12 +125,10 @@ def plot_cartogram(
         original_collections = list(ax.collections[before:])
 
     before = len(ax.collections)
+    # the largest regions are drawn first, so that a region that grew over its neighbors does not hide them
+    order = np.argsort(-np.asarray(cartogram.geometries.geometry.area, dtype=float), kind="stable")
     gdf, fill = _fill_plan(
-        cartogram.geometries,
-        facecolor,
-        categorical,
-        center,
-        st.channel_value("fill", "steelblue"),
+        cartogram.geometries, facecolor, categorical, center, st.channel_value("fill", "steelblue"), order
     )
     plot_fill(
         ax,

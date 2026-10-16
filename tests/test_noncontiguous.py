@@ -292,3 +292,100 @@ class TestPlot:
 
         _, ax = plt.subplots()
         assert create_noncontiguous_cartogram(squares, "value").plot(ax=ax).ax is ax
+
+
+class TestReferenceRegion:
+    @pytest.fixture
+    def three(self):
+        # densities 9, 3 and 1: the first region is an outlier
+        return gpd.GeoDataFrame(
+            {"value": [9.0, 12.0, 4.0]},
+            geometry=[box(0, 0, 1, 1), box(3, 0, 5, 2), box(7, 0, 9, 2)],
+            crs="EPSG:3857",
+            index=["a", "b", "c"],
+        )
+
+    def test_region_keeps_its_size(self, three):
+        with pytest.warns(UserWarning, match="max_scale"):
+            cartogram = create_noncontiguous_cartogram(three, "value", reference_region="b")
+        assert cartogram.reference_density == pytest.approx(3.0)
+        assert cartogram.scale[1] == pytest.approx(1.0)
+        assert cartogram.scale[2] == pytest.approx(np.sqrt(1.0 / 3.0))
+        assert list(cartogram.capped) == [True, False, False]
+        assert cartogram.scale[0] == pytest.approx(1.0)
+
+    def test_outlier_grows_without_a_cap(self, three):
+        cartogram = create_noncontiguous_cartogram(three, "value", reference_region="b", max_scale=None)
+        assert cartogram.scale[0] == pytest.approx(np.sqrt(3.0))
+        assert not cartogram.capped.any()
+        assert cartogram.area_error_pct == pytest.approx([0.0, 0.0, 0.0])
+
+    def test_equals_the_density_as_a_number(self, three):
+        by_region = create_noncontiguous_cartogram(three, "value", reference_region="b", max_scale=None)
+        by_number = create_noncontiguous_cartogram(three, "value", reference=3.0, max_scale=None)
+        assert by_region.scale == pytest.approx(by_number.scale)
+
+    def test_densest_region_as_reference_is_the_default(self, three):
+        by_region = create_noncontiguous_cartogram(three, "value", reference_region="a")
+        default = create_noncontiguous_cartogram(three, "value")
+        assert by_region.scale == pytest.approx(default.scale)
+
+    def test_errors(self, three):
+        with pytest.raises(ValueError, match="not both"):
+            create_noncontiguous_cartogram(three, "value", reference="largest", reference_region="a")
+        with pytest.raises(ValueError, match="not in the index"):
+            create_noncontiguous_cartogram(three, "value", reference_region="z")
+        zero = three.copy()
+        zero.loc["b", "value"] = 0.0
+        with pytest.raises(ValueError, match="no positive value"):
+            create_noncontiguous_cartogram(zero, "value", reference_region="b")
+        duplicated = three.copy()
+        duplicated.index = ["a", "b", "b"]
+        with pytest.raises(ValueError, match="unique"):
+            create_noncontiguous_cartogram(duplicated, "value", reference_region="b")
+
+    def test_integer_labels(self, squares):
+        cartogram = create_noncontiguous_cartogram(squares, "value", reference_region=0)
+        assert cartogram.reference_density == pytest.approx(1.0)
+
+
+class TestDrawingOrder:
+    def test_larger_regions_are_drawn_first(self, squares):
+        import matplotlib.pyplot as plt
+
+        cartogram = create_noncontiguous_cartogram(squares, "value")
+        plot = cartogram.plot(facecolor="value", show_original=False, legend=False, style="classic")
+        order_drawn = list(plot.collections[0].get_paths())
+        areas = [Polygon(path.vertices).area for path in order_drawn]
+        assert areas == sorted(areas, reverse=True)
+        plt.close("all")
+
+    def test_colors_follow_their_regions(self, squares):
+        import matplotlib.pyplot as plt
+
+        cartogram = create_noncontiguous_cartogram(squares, "value")
+        colors = np.array(["#ff0000", "#00ff00", "#0000ff"])
+        plot = cartogram.plot(facecolor=colors, show_original=False, style="classic")
+        collection = plot.collections[0]
+        drawn = [Polygon(path.vertices) for path in collection.get_paths()]
+        for polygon, face in zip(drawn, collection.get_facecolor(), strict=True):
+            index = next(
+                i for i, g in enumerate(cartogram.geometries.geometry) if polygon.centroid.distance(g.centroid) < 1e-6
+            )
+            assert matplotlib.colors.to_hex(face) == colors[index]
+        plt.close("all")
+
+    def test_data_values_follow_their_regions(self, squares):
+        import matplotlib.pyplot as plt
+
+        cartogram = create_noncontiguous_cartogram(squares, "value")
+        plot = cartogram.plot(facecolor="value", show_original=False, legend=False, style="classic")
+        collection = plot.collections[0]
+        values = np.asarray(collection.get_array())
+        drawn = [Polygon(path.vertices) for path in collection.get_paths()]
+        for polygon, value in zip(drawn, values, strict=True):
+            index = next(
+                i for i, g in enumerate(cartogram.geometries.geometry) if polygon.centroid.distance(g.centroid) < 1e-6
+            )
+            assert value == squares["value"].iloc[index]
+        plt.close("all")

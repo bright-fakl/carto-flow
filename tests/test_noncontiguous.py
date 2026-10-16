@@ -389,3 +389,12 @@ class TestDrawingOrder:
             )
             assert value == squares["value"].iloc[index]
         plt.close("all")
+
+
+def test_ambiguous_facecolor_warning_points_at_the_caller(squares):
+    squares = squares.copy()
+    squares["red"] = [1.0, 2.0, 3.0]
+    cartogram = create_noncontiguous_cartogram(squares, "value")
+    with pytest.warns(UserWarning, match="red") as record:
+        cartogram.plot(facecolor="red", legend=False)
+    assert record[0].filename == __file__

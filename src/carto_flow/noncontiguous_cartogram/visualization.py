@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from .._fill import Fill, plot_fill
-from .._plot_params import resolve_fill
+from .._fill import Fill, fill_plan, plot_fill
 from ..style import resolve_style, styled
 from .result import NoncontiguousPlotResult
 
@@ -17,32 +16,12 @@ if TYPE_CHECKING:
 __all__ = ["plot_cartogram"]
 
 
-def _fill_plan(
-    gdf: Any, facecolor: Any, categorical: bool | None, center: float | None, default: str, order: Any
-) -> tuple[Any, Fill]:
-    """The regions in drawing order (``order`` is a permutation of the rows) and their ``Fill``: a color, or data with
-    its role."""
-    import pandas as pd
-
-    kind, value = resolve_fill(facecolor, set(gdf.columns), (), n=len(gdf), stacklevel=5)
-    if kind == "none":
-        return gdf.iloc[order], Fill({"facecolor": default})
-    if kind == "color":
-        if not isinstance(value, str) and np.ndim(value) > 0 and len(value) == len(gdf):  # one color per region
-            value = [value[i] for i in order]
-        return gdf.iloc[order], Fill({"facecolor": value})
-    column, label = (value, value)
-    if kind == "values":
-        gdf = gdf.copy()
-        gdf["_facecolor"] = value
-        column, label = "_facecolor", None
-    gdf = gdf.iloc[order]
-    numeric = pd.api.types.is_numeric_dtype(gdf[column]) and not pd.api.types.is_bool_dtype(gdf[column])
-    if categorical is True or (categorical is None and not numeric):
-        role = "categorical"
-    else:
-        role = "diverging" if center is not None else "sequential"
-    return gdf, Fill({"column": column}, role, column, label)
+def _in_drawing_order(gdf: Any, fill: Fill, order: Any) -> tuple[Any, Fill]:
+    """The regions in the order ``order`` (a permutation of the rows); an array of colors follows its regions."""
+    colors = fill.kwargs.get("facecolor")
+    if colors is not None and not isinstance(colors, str) and np.ndim(colors) > 0 and len(colors) == len(gdf):
+        fill = Fill({**fill.kwargs, "facecolor": [colors[i] for i in order]}, fill.role, fill.column, fill.label)
+    return gdf.iloc[order], fill
 
 
 @styled
@@ -127,9 +106,15 @@ def plot_cartogram(
     before = len(ax.collections)
     # the largest regions are drawn first, so that a region that grew over its neighbors does not hide them
     order = np.argsort(-np.asarray(cartogram.geometries.geometry.area, dtype=float), kind="stable")
-    gdf, fill = _fill_plan(
-        cartogram.geometries, facecolor, categorical, center, st.channel_value("fill", "steelblue"), order
+    gdf, fill = fill_plan(
+        cartogram.geometries,
+        facecolor,
+        categorical,
+        center,
+        none_kwargs={"facecolor": st.channel_value("fill", "steelblue")},
+        stacklevel=6,  # the user -> NoncontiguousCartogram.plot -> the styled wrapper -> this function
     )
+    gdf, fill = _in_drawing_order(gdf, fill, order)
     plot_fill(
         ax,
         gdf,

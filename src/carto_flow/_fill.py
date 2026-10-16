@@ -6,15 +6,18 @@ Shared by the plot functions of the cartogram types that draw ``GeoDataFrame.plo
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from ._plot_params import resolve_fill
+
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
 
-__all__ = ["Fill", "plot_fill"]
+__all__ = ["Fill", "fill_plan", "plot_fill"]
 
 
 @dataclass
@@ -25,6 +28,70 @@ class Fill:
     role: str | None = None
     column: str | None = None
     label: str | None = None
+
+
+def fill_plan(
+    gdf: Any,
+    facecolor: Any,
+    categorical: bool | None,
+    center: float | None,
+    *,
+    builtins: Mapping[str, str] | None = None,
+    labels: Mapping[str, str] | None = None,
+    diverging: Collection[str] = (),
+    none_kwargs: Mapping[str, Any] | None = None,
+    stacklevel: int = 5,
+) -> tuple[Any, Fill]:
+    """Resolve ``facecolor`` against a GeoDataFrame into the regions and their :class:`Fill`.
+
+    A string is a column of ``gdf``, a built-in quantity (a key of ``builtins``, which is the column that holds it) or
+    a color, in this order (see :func:`carto_flow._plot_params.resolve_fill`). A numeric array with one value per row
+    is added as a column. The data role of a column is categorical for text, categorical and boolean data (or
+    ``categorical=True``), diverging for a column in ``diverging`` or with a ``center``, sequential otherwise.
+
+    Parameters
+    ----------
+    builtins : mapping, optional
+        Built-in quantity name -> column of ``gdf`` that holds it.
+    labels : mapping, optional
+        Column -> label of the colorbar (default: the name of the column).
+    diverging : collection of str
+        Columns whose data is diverging (for example signed errors).
+    none_kwargs : mapping, optional
+        ``GeoDataFrame.plot`` arguments for ``facecolor=None`` (default: none, so the plot function decides).
+
+    Returns
+    -------
+    tuple
+        The GeoDataFrame (a copy when a column was added) and the ``Fill``.
+    """
+    import pandas as pd
+
+    builtins = builtins or {}
+    kind, value = resolve_fill(facecolor, set(gdf.columns), builtins, n=len(gdf), stacklevel=stacklevel)
+    if kind == "none":
+        return gdf, Fill(dict(none_kwargs or {}))
+    if kind == "color":
+        return gdf, Fill({"facecolor": value})
+    if kind == "column":
+        column = value
+    elif kind == "builtin":
+        column = builtins[value]
+        if column not in gdf.columns:
+            raise ValueError(f"'{value}' is not available for this cartogram (no column '{column}')")
+    else:  # "values"
+        gdf = gdf.copy()
+        gdf["_facecolor"] = value
+        column = "_facecolor"
+    numeric = pd.api.types.is_numeric_dtype(gdf[column]) and not pd.api.types.is_bool_dtype(gdf[column])
+    if categorical is True or (categorical is None and not numeric):
+        role = "categorical"
+    elif column in diverging or center is not None:
+        role = "diverging"
+    else:
+        role = "sequential"
+    label = (labels or {}).get(column, None if column == "_facecolor" else column)
+    return gdf, Fill({"column": column}, role, column, label)
 
 
 def plot_fill(

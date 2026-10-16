@@ -198,10 +198,12 @@ class SymbolCartogram:
         source_gdf: Any | None = None,
         alpha: Any = None,
         alpha_range: tuple[float, float] | None = None,
+        alpha_norm: Any = None,
         edgecolor: Any = None,
         edge_cmap: str | dict[str, Any] | None = None,
         linewidth: Any = None,
         linewidth_range: tuple[float, float] | None = None,
+        linewidth_norm: Any = None,
         hatch: Any = None,
         hatch_map: dict[str, str] | None = None,
         # Legend
@@ -221,6 +223,7 @@ class SymbolCartogram:
         label_legend_kwargs: dict[str, Any] | None = None,
         label_fontsize: Any = None,
         label_fontsize_range: tuple[float, float] | None = None,
+        label_fontsize_norm: Any = None,
         label_kwargs: dict[str, Any] | None = None,
         title: str | None = None,
         zorder: int = 1,
@@ -277,14 +280,19 @@ class SymbolCartogram:
             Defaults to ``"steelblue"`` when ``None``.
         alpha : float, column name, or array-like, optional
             Symbol opacity (0 = transparent, 1 = opaque).  A column name is
-            linearly interpolated into *alpha_range*.  Defaults to the alpha of the
+            spread over *alpha_range* (see *alpha_norm*).  Defaults to the alpha of the
             style, else ``0.9``.
         alpha_range : (float, float)
             ``(min, max)`` alpha range for column-driven transparency.
             Defaults to the range of the alpha channel of the style, else ``(0.2, 1.0)``.
+        alpha_norm : str or Normalize, optional
+            How a column of *alpha* is spread over *alpha_range*: ``"linear"``, ``"sqrt"``, ``"log"`` (positive data),
+            ``"auto"`` (log when the data spans more than a decade), ``"rank"`` (equal steps for equal numbers of
+            symbols) or a ``Normalize`` instance. Defaults to the scale of the alpha channel of the style, else linear.
         edgecolor : color, column name, or array-like, optional
             Symbol edge color.  Same forms as *facecolor*.
-            Defaults to the edge color of the style, else ``"none"`` (no visible border).
+            Defaults to the edge color of the style, else ``"none"`` (no visible border); when *linewidth* is
+            data-driven or *hatch* is set, the stroke color of the style, else ``"black"``.
         edge_cmap : str or dict, optional
             Colormap for edge color column mapping.  Accepts the same forms
             as *cmap* (string name for numeric, dict for categorical).
@@ -297,6 +305,10 @@ class SymbolCartogram:
             ``(min, max)`` linewidth range for column-driven widths.
             Defaults to the range of the linewidth channel of the style, else
             ``(0.5, 3.0)``.
+        linewidth_norm : str or Normalize, optional
+            How a column of *linewidth* is spread over *linewidth_range*: ``"linear"``, ``"sqrt"``, ``"log"`` (positive data),
+            ``"auto"`` (log when the data spans more than a decade), ``"rank"`` (equal steps for equal numbers of
+            symbols) or a ``Normalize`` instance. Defaults to the scale of the linewidth channel of the style, else linear.
         hatch : str, column name, or sequence, optional
             Fill hatching.  A matplotlib hatch pattern string (``"///"``) is
             applied globally; a column name maps each category to a pattern
@@ -353,6 +365,10 @@ class SymbolCartogram:
             ``(min, max)`` font-size range for column-driven sizing.
             Defaults to the range of the label channel of the style, else
             ``(6.0, 14.0)``.
+        label_fontsize_norm : str or Normalize, optional
+            How a column of *label_fontsize* is spread over *label_fontsize_range*: ``"linear"``, ``"sqrt"``, ``"log"`` (positive data),
+            ``"auto"`` (log when the data spans more than a decade), ``"rank"`` (equal steps for equal numbers of
+            symbols) or a ``Normalize`` instance. Defaults to the scale of the label channel of the style, else linear.
         label_kwargs : dict, optional
             Extra keyword arguments forwarded to ``Axes.text()`` for every
             label (e.g. ``{"fontweight": "bold"}``).
@@ -430,10 +446,12 @@ class SymbolCartogram:
             vmax=vmax,
             alpha=alpha,
             alpha_range=alpha_range,
+            alpha_norm=alpha_norm,
             edgecolor=edgecolor,
             edge_cmap=edge_cmap,
             linewidth=linewidth,
             linewidth_range=linewidth_range,
+            linewidth_norm=linewidth_norm,
             hatch=hatch,
             hatch_map=hatch_map,
             legend=legend,
@@ -453,6 +471,7 @@ class SymbolCartogram:
             label_legend_kwargs=label_legend_kwargs,
             label_fontsize=label_fontsize,
             label_fontsize_range=label_fontsize_range,
+            label_fontsize_norm=label_fontsize_norm,
             label_kwargs=label_kwargs,
             zorder=zorder,
             title=title,

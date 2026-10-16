@@ -2049,10 +2049,11 @@ def animate_fields(
         _prepare_velocity_colors,
         _render_density_on_ax,
         _resolve_bounds,
+        _with_arrow_color,
     )
 
     density_opts = density or DensityPlotOptions()
-    velocity_opts = velocity or VelocityPlotOptions(legend=False)
+    velocity_opts = _with_arrow_color(velocity or VelocityPlotOptions(legend=False), style, "white")
 
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
@@ -2218,7 +2219,7 @@ def animate_fields(
 
     from matplotlib.colors import to_rgba
 
-    to_rgba(velocity_opts.color, alpha=velocity_opts.alpha)
+    to_rgba(velocity_opts.color or "white", alpha=velocity_opts.alpha)
     density_cbar_added = [False]
     velocity_cbar_added = [False]
 
@@ -2306,7 +2307,7 @@ def animate_fields(
                 alpha_by_magnitude=velocity_opts.alpha_by_magnitude,
                 alpha_range=velocity_opts.alpha_range,
                 cmap=velocity_opts.cmap,
-                base_color=velocity_opts.color,
+                base_color=velocity_opts.color or "white",
                 base_alpha=velocity_opts.alpha,
                 mag_range=(mag_min, mag_max),
             )
@@ -3064,11 +3065,12 @@ def animate_workflow_fields(
         _prepare_velocity_colors,
         _render_density_on_ax,
         _resolve_bounds,
+        _with_arrow_color,
     )
 
     # Default: ratio normalization for workflow animations
     density_opts = density if density is not None else DensityPlotOptions(normalize="ratio")
-    velocity_opts = velocity or VelocityPlotOptions(legend=False)
+    velocity_opts = _with_arrow_color(velocity or VelocityPlotOptions(legend=False), style, "white")
 
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
@@ -3195,7 +3197,7 @@ def animate_workflow_fields(
 
     from matplotlib.colors import to_rgba
 
-    to_rgba(velocity_opts.color, alpha=velocity_opts.alpha)
+    to_rgba(velocity_opts.color or "white", alpha=velocity_opts.alpha)
     density_cbar_added = [False]
     velocity_cbar_added = [False]
 
@@ -3275,7 +3277,7 @@ def animate_workflow_fields(
                 alpha_by_magnitude=velocity_opts.alpha_by_magnitude,
                 alpha_range=velocity_opts.alpha_range,
                 cmap=velocity_opts.cmap,
-                base_color=velocity_opts.color,
+                base_color=velocity_opts.color or "white",
                 base_alpha=velocity_opts.alpha,
                 mag_range=(mag_min, mag_max),
             )

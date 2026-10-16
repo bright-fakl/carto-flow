@@ -60,6 +60,18 @@ Releases before 2.0.0 have no changelog entry; see the
   `plot_tiling`. `plot_symbols` takes `center=`
   and `categorical=`; the original panel of `plot_comparison` takes the palettes of the style and `cmap`, `center`,
   `categorical` and `norm` of the call. The colorbars of the adjacency plots follow the colorbar of the style.
+- **A `PlotStyle` sets the colors of the diagnostic overlays.** The new fields `series_color` (the
+  convergence curve, the cells and centroids of the Voronoi animation), `accent_color` (displacement
+  targets, violated adjacency, the final value of the convergence plot, the displacement arrows of the
+  symbol plot, the extra-ring tiles of `plot_tiling`), `positive_color` (the convergence mark, reassigned
+  cells) and `highlight_color` (satellite cells, the core tiles of `plot_tiling`) are set by the
+  `"default"` and `"dark"` styles and unset in `"classic"`, which keeps the former colors. The base
+  layers of the Voronoi displacement, topology and repair plots use the reference fill and the axes edge
+  color of the style, and the nodes of `plot_adjacency` the stroke color. `PlotStyle.pick(name, default)`
+  returns a field or the default. `VelocityPlotOptions.color` is `None` by default and takes the
+  accent color of the style (in `"classic"` black on the bare axes of `plot_velocity_field`, white over the density of the animations), the gray reference lines of the workflow convergence
+  plot and the key of the line-width legend of the symbol plot take the axes edge color.
+- **`alpha_norm`, `linewidth_norm` and `label_fontsize_norm` set how a column is spread over the range of a scalar channel of the symbol plots.** They take `"linear"`, `"sqrt"`, `"log"` (positive data), `"auto"` (logarithmic when the data spans more than `log_span` decades), `"rank"` (equal steps for equal numbers of symbols) or a `Normalize`. `Channel(scale=...)` sets the default of a style (the `"default"` and `"dark"` styles take `"auto"` for the line width, in 1 to 4.5 points). The line-width legend and the alpha colorbar follow the scale.
 - **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
   through the morph, holds and returns**, for `animate_geometry_keyframes` with
   `position_mapper=linear_over("time")`.
@@ -273,6 +285,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **Data-driven edges of the symbol plots are visible without an `edgecolor`, and the scalar channels take a scale.** The edge color defaulted to the boundary color of the style, a faint color made for separating symbols, or to `"none"` in `"classic"`, so a data-driven `linewidth` or a `hatch` could not be seen. A style has a new `"stroke"` channel (the color of an edge that carries data; `"#3b4650"` in `"default"`, `"#c9d1d9"` in `"dark"`, black in `"classic"`) which `plot_symbols` uses when `linewidth` is a column or `hatch` is set and no `edgecolor` is given; the hatch warning is raised only for an explicit `edgecolor="none"`.
 - **`legend_kwargs={"label": ...}` of the symbol plots sets the label of the colorbar** (it was ignored in favor of the column name).
 - **`plot_partitions` drew the complement black when the partitions were colored by a continuous value**
   (`facecolor="area"` or a numeric column): the missing color value of the complement became NaN and

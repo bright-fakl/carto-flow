@@ -51,8 +51,9 @@ __all__ = [
 ]
 
 ROLES = ("sequential", "diverging", "categorical")
-CHANNELS = ("fill", "edge", "hatch", "alpha", "linewidth", "label")
+CHANNELS = ("fill", "edge", "stroke", "hatch", "alpha", "linewidth", "label")
 _SCALES = ("linear", "log", "auto")
+SCALAR_SCALES = ("linear", "sqrt", "log", "auto", "rank")
 _TICK_FORMATS = ("plain", "si")
 _ORIENTATIONS = ("vertical", "horizontal")
 
@@ -89,7 +90,10 @@ class Palettes:
 
 @dataclass(frozen=True)
 class Channel:
-    """Appearance of a visual channel (``fill``, ``edge``, ``hatch``, ``alpha``, ``linewidth`` or ``label``).
+    """Appearance of a visual channel (``fill``, ``edge``, ``stroke``, ``hatch``, ``alpha``, ``linewidth`` or ``label``).
+
+    ``edge`` is the boundary of a symbol, a faint line that separates symbols. ``stroke`` is the color of an edge that
+    carries data (a data-driven line width or a hatch), which has to be seen against the fill.
 
     Attributes
     ----------
@@ -98,12 +102,78 @@ class Channel:
     palettes : Palettes, optional
         Palettes of this channel when it is data-driven; a field left ``None`` falls back to the palettes of the style.
     range : tuple of float, optional
-        Output range of a scalar channel (``alpha``, ``linewidth``) when it is data-driven.
+        Output range of a scalar channel (``alpha``, ``linewidth``, ``label``) when it is data-driven.
+    scale : {"linear", "sqrt", "log", "auto", "rank"}, optional
+        How the data of a scalar channel is spread over its range: linearly, by square root, logarithmically
+        (positive data), ``"auto"`` (logarithmic when the data is positive and spans more than ``log_span`` decades of
+        the style) or by rank (equal steps for equal numbers of symbols). Default linear.
     """
 
     value: Any = None
     palettes: Palettes | None = None
     range: tuple[float, float] | None = None
+    scale: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.scale is not None and self.scale not in SCALAR_SCALES:
+            raise ValueError(f"scale must be one of {SCALAR_SCALES} or None, got {self.scale!r}")
+
+
+@dataclass(frozen=True)
+class UnitScale:
+    """A map of data values to ``[0, 1]`` (``scale(values)``) and back (``scale.inverse(t)``)."""
+
+    name: str
+    low: float
+    high: float
+    ranked: Any = None  # the sorted finite values, for the rank scale
+    norm: Any = None  # a Normalize instance given by the caller
+
+    @classmethod
+    def of(cls, values: Any, scale: Any, log_span: float = 1.0) -> UnitScale:
+        data = np.asarray(values, dtype=float)
+        data = data[np.isfinite(data)]
+        if data.size == 0:
+            raise ValueError("no finite values to scale")
+        low, high = float(data.min()), float(data.max())
+        if isinstance(scale, Normalize):
+            return cls("norm", low, high, norm=scale)
+        if scale not in SCALAR_SCALES:
+            raise ValueError(f"scale must be one of {SCALAR_SCALES} or a Normalize, got {scale!r}")
+        if scale == "auto":
+            scale = "log" if low > 0 and high / low > 10**log_span else "linear"
+        if scale == "log" and not low > 0:
+            raise ValueError("a logarithmic scale needs positive values")
+        return cls(scale, low, high, ranked=np.sort(data) if scale == "rank" else None)
+
+    def __call__(self, values: Any) -> np.ndarray:
+        v = np.asarray(values, dtype=float)
+        if self.name == "norm":
+            return np.clip(np.asarray(self.norm(v), dtype=float), 0.0, 1.0)
+        if self.high == self.low:
+            return np.full(v.shape, 0.5)
+        if self.name == "log":
+            return np.log(v / self.low) / np.log(self.high / self.low)
+        if self.name == "rank":
+            below = np.searchsorted(self.ranked, v, side="left")
+            upto = np.searchsorted(self.ranked, v, side="right")
+            return (below + upto - 1) / 2 / (len(self.ranked) - 1)
+        t = (v - self.low) / (self.high - self.low)
+        return np.sqrt(np.clip(t, 0.0, None)) if self.name == "sqrt" else t
+
+    def inverse(self, t: Any) -> np.ndarray:
+        u = np.asarray(t, dtype=float)
+        if self.name == "norm":
+            return np.asarray(self.norm.inverse(u), dtype=float)
+        if self.high == self.low:
+            return np.full(u.shape, self.low)
+        if self.name == "log":
+            return self.low * (self.high / self.low) ** u
+        if self.name == "rank":
+            return np.quantile(self.ranked, u)
+        if self.name == "sqrt":
+            u = u**2
+        return self.low + u * (self.high - self.low)
 
 
 @dataclass(frozen=True)
@@ -136,6 +206,10 @@ class PlotStyle:
     reference_facecolor, reference_edgecolor, reference_linewidth, reference_alpha : optional
         The reference layer: the geometries drawn under or beside a cartogram for context (the base of a dot density
         map).
+    series_color, accent_color, positive_color, highlight_color : optional
+        Colors of the diagnostic overlays: the line of a series (the convergence curve, the cells and centroids of an
+        animation), the mark of a deviation (displacement arrows, targets, violated adjacency), of a good outcome (the
+        convergence mark, reassigned cells) and of a case to look at (satellite cells).
     annotation_size : float, optional
         Font size of the labels placed on a map.
     hatch_cycle : tuple of str, optional
@@ -158,6 +232,10 @@ class PlotStyle:
     reference_edgecolor: str | None = None
     reference_linewidth: float | None = None
     reference_alpha: float | None = None
+    series_color: str | None = None
+    accent_color: str | None = None
+    positive_color: str | None = None
+    highlight_color: str | None = None
     annotation_size: float | None = None
     hatch_cycle: tuple[str, ...] | None = None
 
@@ -253,10 +331,26 @@ class PlotStyle:
         """Context manager that applies the rcParams of the style."""
         return mpl.rc_context(rc=dict(self.rc))
 
+    def pick(self, name: str, default: Any) -> Any:
+        """The value of the field ``name``, or ``default`` if the style leaves it unset."""
+        value = getattr(self, name)
+        return default if value is None else value
+
     def channel_value(self, channel: str, default: Any = None) -> Any:
         """The value of a channel when it is not data-driven, or ``default``."""
         found = self.channels.get(channel)
         return default if found is None or found.value is None else found.value
+
+    def unit_scale(self, values: Any, norm: Any = None, channel: str | None = None) -> UnitScale:
+        """The scale that spreads ``values`` over ``[0, 1]`` for a scalar channel.
+
+        ``norm`` is a scale name of :class:`Channel`, a ``Normalize`` instance, or ``None`` for the scale of the channel
+        in this style (default linear).
+        """
+        if norm is None:
+            found = self.channels.get(channel) if channel is not None else None
+            norm = found.scale if found is not None and found.scale is not None else "linear"
+        return UnitScale.of(np.asarray(values, dtype=float), norm, self.log_span or 1.0)
 
     def channel_range(self, channel: str, default: tuple[float, float]) -> tuple[float, float]:
         """The output range of a scalar channel when it is data-driven, or ``default``."""
@@ -467,6 +561,7 @@ def _merge_channel(base: Channel | None, other: Channel) -> Channel:
         value=other.value if other.value is not None else base.value,
         palettes=palettes,
         range=other.range if other.range is not None else base.range,
+        scale=other.scale if other.scale is not None else base.scale,
     )
 
 
@@ -517,7 +612,11 @@ def _light() -> PlotStyle:
             "legend.edgecolor": spine,
         },
         palettes=Palettes(sequential="YlGnBu", sequential_range=(0.22, 1.0), diverging="RdYlBu_r", categorical=tab10),
-        channels={"edge": Channel(value=edge), "linewidth": Channel(value=0.8)},
+        channels={
+            "edge": Channel(value=edge),
+            "stroke": Channel(value="#3b4650"),
+            "linewidth": Channel(value=0.8, range=(1.0, 4.5), scale="auto"),
+        },
         color_scale="auto",
         tick_format="si",
         colorbar_shrink=0.8,
@@ -526,6 +625,10 @@ def _light() -> PlotStyle:
         reference_facecolor="#dde4ea",
         reference_edgecolor=surface,
         reference_linewidth=0.5,
+        series_color="#2c6e9e",
+        accent_color="#c0392b",
+        positive_color="#2e8b57",
+        highlight_color="#d98200",
     )
 
 
@@ -548,7 +651,11 @@ def _dark() -> PlotStyle:
         palettes=Palettes(
             sequential="viridis", sequential_range=(0.25, 1.0), diverging="RdYlBu_r", categorical="tab10"
         ),
-        channels={"edge": Channel(value=edge), "linewidth": Channel(value=0.8)},
+        channels={
+            "edge": Channel(value=edge),
+            "stroke": Channel(value="#c9d1d9"),
+            "linewidth": Channel(value=0.8, range=(1.0, 4.5), scale="auto"),
+        },
         color_scale="auto",
         tick_format="si",
         colorbar_shrink=0.8,
@@ -557,6 +664,10 @@ def _dark() -> PlotStyle:
         reference_facecolor="#2a3037",
         reference_edgecolor=surface,
         reference_linewidth=0.5,
+        series_color="#6cb4ee",
+        accent_color="#ffd23f",
+        positive_color="#4cc38a",
+        highlight_color="#c792ea",
     )
 
 

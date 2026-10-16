@@ -434,9 +434,10 @@ def plot_convergence(
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
 
+    st = resolve_style()
     history = result.convergence_history
     iters = list(range(1, len(history) + 1))
-    ax.plot(iters, history, color="#2c7bb6", linewidth=1.5)
+    ax.plot(iters, history, color=st.pick("series_color", "#2c7bb6"), linewidth=1.5)
     ax.set_xlabel("Iteration", fontsize=9)
     ax.set_ylabel("CV(area)", fontsize=9)
     ax.set_title(title, fontsize=10)
@@ -446,7 +447,7 @@ def plot_convergence(
 
     # Annotate final value
     if history:
-        ax.axhline(history[-1], color="#e74c3c", linewidth=0.8, linestyle="--", alpha=0.7)
+        ax.axhline(history[-1], color=st.pick("accent_color", "#e74c3c"), linewidth=0.8, linestyle="--", alpha=0.7)
         ax.text(
             iters[-1],
             history[-1],
@@ -454,13 +455,13 @@ def plot_convergence(
             va="bottom",
             ha="left",
             fontsize=8,
-            color="#e74c3c",
+            color=st.pick("accent_color", "#e74c3c"),
         )
 
     # Mark convergence point if converged before n_iter
     metrics = result.metrics
     if metrics.get("converged") and len(history) < metrics.get("n_iterations", len(history)) + 1:
-        ax.axvline(len(history), color="#27ae60", linewidth=0.8, linestyle=":", alpha=0.7)
+        ax.axvline(len(history), color=st.pick("positive_color", "#27ae60"), linewidth=0.8, linestyle=":", alpha=0.7)
 
     return VoronoiPlotResult(ax=ax, collections=list(ax.collections))
 
@@ -524,7 +525,7 @@ def plot_displacement(
         Show the displacement-magnitude colorbar (and any other legends).
         Default ``True``.
     geometry_kwargs : dict or None
-        Styling for geometry polygons, merged over defaults
+        Styling for geometry polygons, merged over defaults (the colors of ``style="classic"``)
         ``{"facecolor": "#e8eef4", "edgecolor": "#9aafc4", "linewidth": 0.4, "alpha": 0.6}``.
         All keys forwarded to ``GeoDataFrame.plot()``.
 
@@ -536,11 +537,11 @@ def plot_displacement(
         - 1-D numeric array → per-geometry values mapped via ``"cmap"``.
         - list/array of color strings → per-geometry colors.
     adjacency_kwargs : dict or None
-        Styling for adjacency graph edges, merged over defaults
+        Styling for adjacency graph edges, merged over defaults (the colors of ``style="classic"``)
         ``{"color": "#6b8fa8", "linewidth": 0.6, "alpha": 0.5, "zorder": 2}``.
         All keys forwarded to ``ax.plot()``.
     centroid_kwargs : dict or None
-        Styling for centroid scatter markers, merged over defaults
+        Styling for centroid scatter markers, merged over defaults (the colors of ``style="classic"``)
         ``{"s": 18, "c": "#1a5276", "zorder": 3, "linewidths": 0}``.
         All keys forwarded to ``ax.scatter()``.
 
@@ -549,7 +550,7 @@ def plot_displacement(
         ``"viridis"``) for column/numeric cases.
     position_kwargs : dict or None
         Styling for the ``result.positions`` generator-point overlay (only
-        used when ``show_positions=True``), merged over defaults
+        used when ``show_positions=True``), merged over defaults (the colors of ``style="classic"``)
         ``{"s": 14, "marker": "x", "c": "#e74c3c", "zorder": 5, "linewidths": 0.8}``.
         All keys forwarded to ``ax.scatter()``.
     displacement_kwargs : dict or None
@@ -599,15 +600,16 @@ def plot_displacement(
             d.setdefault("c", d.pop("color"))
         return d
 
+    st = resolve_style()
     geo_kw: dict = {
-        "facecolor": "#e8eef4",
-        "edgecolor": "#9aafc4",
+        "facecolor": st.pick("reference_facecolor", "#e8eef4"),
+        "edgecolor": st.rc.get("axes.edgecolor", "#9aafc4"),
         "linewidth": 0.4,
         "alpha": 0.6,
         **(geometry_kwargs or {}),
     }
     adj_kw: dict = {
-        "color": "#6b8fa8",
+        "color": st.rc.get("axes.edgecolor", "#6b8fa8"),
         "linewidth": 0.6,
         "alpha": 0.5,
         "zorder": 2,
@@ -615,7 +617,7 @@ def plot_displacement(
     }
     cen_kw: dict = {
         "s": 18,
-        "c": "#1a5276",
+        "c": st.pick("series_color", "#1a5276"),
         "zorder": 3,
         "linewidths": 0,
         **_norm_scatter(centroid_kwargs),
@@ -623,7 +625,7 @@ def plot_displacement(
     pos_kw: dict = {
         "s": 14,
         "marker": "x",
-        "c": "#e74c3c",
+        "c": st.pick("accent_color", "#e74c3c"),
         "zorder": 5,
         "linewidths": 0.8,
         **_norm_scatter(position_kwargs),
@@ -783,6 +785,9 @@ def _plot_topology_issues(
     import matplotlib.patches as mpatches
     import matplotlib.pyplot as plt
 
+    st = resolve_style()
+    accent = st.pick("accent_color", "#e74c3c")
+    highlight = st.pick("highlight_color", "#e67e00")
     cells = list(cartogram.cells)
     n = len(cells)
     labels = list(cartogram._source_gdf.index) if cartogram._source_gdf is not None else list(range(n))
@@ -791,7 +796,13 @@ def _plot_topology_issues(
     # --- 1. Base cells (optional — skip when overlaying on an existing plot) ---
     if show_base:
         gdf_base = gpd.GeoDataFrame(geometry=cells, crs=getattr(cartogram._source_gdf, "crs", None))
-        gdf_base.plot(ax=ax, facecolor="#f0f0f0", edgecolor="#888888", linewidth=0.4, zorder=1)
+        gdf_base.plot(
+            ax=ax,
+            facecolor=st.pick("reference_facecolor", "#f0f0f0"),
+            edgecolor=st.rc.get("axes.edgecolor", "#888888"),
+            linewidth=0.4,
+            zorder=1,
+        )
 
     legend_handles: list[Any] = []
 
@@ -810,17 +821,17 @@ def _plot_topology_issues(
             gdf_sat.plot(
                 ax=ax,
                 facecolor="none",
-                edgecolor="#e67e00",
+                edgecolor=highlight,
                 linewidth=1.5,
                 zorder=2,
             )
             cx = [cells[i].centroid.x for i in sat_idx]
             cy = [cells[i].centroid.y for i in sat_idx]
-            ax.scatter(cx, cy, s=12, c="#e67e00", marker="s", zorder=6, linewidths=0)
+            ax.scatter(cx, cy, s=12, c=highlight, marker="s", zorder=6, linewidths=0)
             legend_handles.append(
                 mpatches.Patch(
                     facecolor="none",
-                    edgecolor="#e67e00",
+                    edgecolor=highlight,
                     linewidth=1.5,
                     label=f"Satellite cells ({len(sat_idx)})",
                 )
@@ -845,7 +856,7 @@ def _plot_topology_issues(
         if segments:
             lc = LineCollection(
                 segments,
-                colors="#e74c3c",
+                colors=accent,
                 linewidths=1.0,
                 linestyles="--",
                 alpha=0.8,
@@ -853,12 +864,12 @@ def _plot_topology_issues(
             )
             ax.add_collection(lc)
             pts = np.array([p for seg in segments for p in seg])
-            ax.scatter(pts[:, 0], pts[:, 1], s=8, c="#e74c3c", zorder=3, linewidths=0)
+            ax.scatter(pts[:, 0], pts[:, 1], s=8, c=accent, zorder=3, linewidths=0)
         legend_handles.append(
             Line2D(
                 [0],
                 [0],
-                color="#e74c3c",
+                color=accent,
                 linewidth=1.2,
                 linestyle="--",
                 label=f"Violated adjacency ({len(analysis.violated_adjacency)}/{analysis.n_adjacency_pairs})",
@@ -1078,6 +1089,9 @@ def plot_topology_repair(
     if show_base is None:
         show_base = axes is None
 
+    st = resolve_style()
+    positive = st.pick("positive_color", "#27ae60")
+
     # ---- helper: draw base cells ----
     def _draw_base(cartogram: VoronoiCartogram, ax: Any) -> None:
         cells = list(cartogram.cells)
@@ -1085,8 +1099,8 @@ def plot_topology_repair(
         gdf_base = gpd.GeoDataFrame(geometry=cells, crs=crs)
         gdf_base.plot(
             ax=ax,
-            facecolor="#f0f0f0",
-            edgecolor="#888888",
+            facecolor=st.pick("reference_facecolor", "#f0f0f0"),
+            edgecolor=st.rc.get("axes.edgecolor", "#888888"),
             linewidth=0.4,
             zorder=1,
         )
@@ -1143,7 +1157,7 @@ def plot_topology_repair(
             gdf_reassigned.plot(
                 ax=ax_after,
                 facecolor="none",
-                edgecolor="#27ae60",
+                edgecolor=positive,
                 linewidth=2.0,
                 zorder=5,
             )
@@ -1152,7 +1166,7 @@ def plot_topology_repair(
             handle = Line2D(
                 [0],
                 [0],
-                color="#27ae60",
+                color=positive,
                 linewidth=2.0,
                 label=f"Reassigned ({len(reassigned_idx)})",
             )

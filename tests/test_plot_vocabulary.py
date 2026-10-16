@@ -202,6 +202,9 @@ ALLOWED = {
         "categorical",
         "center",
         "style",
+        "alpha_norm",
+        "linewidth_norm",
+        "label_fontsize_norm",
         # objects and data
         "ax",
         "cartogram",

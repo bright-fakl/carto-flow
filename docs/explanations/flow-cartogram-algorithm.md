@@ -6,6 +6,12 @@ The flow cartogram algorithm deforms polygon geometries so that each region's ar
 
 The algorithm is implemented in `morph_geometries()` ([algorithm.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/algorithm.py)). The high-level API is `CartogramWorkflow` ([workflow.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/workflow.py)).
 
+### Intuition
+
+Think of the value of a region as people who spread out evenly over the area they live on. A region with many people on a small area is dense: its people push outward, and the region grows. A sparse region gives way and shrinks. The flow carries the borders until the density is the same everywhere, which is the same as every area being proportional to its value.
+
+![Two regions before and after the flow: the dense region grows and the sparse region shrinks until both have the same density](../generated/diagrams/flow-diffusion-idea.svg)
+
 ## Mathematical Foundation
 
 ### Equilibrium Condition
@@ -114,6 +120,10 @@ $$
 
 The velocity field is then normalized by the maximum velocity from the first iteration so that time steps remain consistent across iterations.
 
+The solve has an electrostatic reading. Take $\tilde{\rho}$ as a charge density: positive where a region is too dense, negative where it is too sparse. The potential of this charge is $V = -\phi$, the velocity $v = \nabla\phi$ is the electric field $E = -\nabla V$, and $\nabla \cdot v = \tilde{\rho}$ is Gauss's law. The field lines point away from the dense (positive) regions, so the points near them move outward and the region expands, and they point toward the sparse (negative) regions, so those shrink. A vertex rides the field like a test particle that moves along $E$ in every step.
+
+![The potential of a positive and a negative charge and the electric field as arrows](../generated/diagrams/flow-electrostatic-analogy.png)
+
 A `VelocityModulator` can modify the field after computation (see [Modulators](#density-and-velocity-modulators)).
 
 Three implementations are available: `compute_velocity_anisotropic()` (NumPy FFT, reference), `compute_velocity_anisotropic_rfft()` (real FFT with cached wavenumbers), and `VelocityComputerFFTW` (pre-allocated arrays, FFTW plans, SIMD-aligned memory).
@@ -156,6 +166,14 @@ After displacement, polygon areas are recomputed from the deformed vertices and 
 Scalar error metrics are recorded in `ConvergenceHistory` at every iteration. Full `CartogramSnapshot` objects (including geometries) are saved at every `snapshot_every` iterations, and always at the final iteration regardless of the termination reason.
 
 ---
+
+## A One-dimensional Example
+
+The loop of the algorithm can be followed in one dimension with three regions on a line, as in the figure below. The density of each region (value divided by length) is rasterized onto a fixed grid, padded with the target density outside the map. The same FFT Poisson solve gives the velocity, which points out of a region that is too dense: negative at its left boundary and positive at its right boundary. The boundaries are interpolated from the velocity and move by a fraction of a grid cell, and the loop repeats until every region has the target density.
+
+![Three regions on a line at the start, on the way and at convergence: the regions, their density against the target density, and the velocity](../generated/diagrams/flow-1d-mechanics.png)
+
+The densities start at 2, 6 and 1 and end at the target density $\bar{\rho}$. The velocity is largest at the beginning, when the densities differ most, and decays as the densities approach the target, so the boundaries slow down as the map converges. The figures of this page are drawn when the documentation is built by [make_flow_algorithm_figures.py](https://github.com/bright-fakl/carto-flow/blob/main/docs/diagrams/make_flow_algorithm_figures.py), which uses only NumPy and matplotlib.
 
 ## Grid
 

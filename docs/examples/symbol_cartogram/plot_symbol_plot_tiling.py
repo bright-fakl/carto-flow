@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.symbol_cartogram as smb
+from carto_flow import get_style
 
 us_states = examples.load_us_census(population=True)
 
@@ -29,6 +30,7 @@ symbol_carto = smb.create_symbol_cartogram(
 # Plot the symbol cartogram
 
 fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+get_style().apply(fig)
 
 result = smb.plot_tiling(
     symbol_carto,
@@ -36,11 +38,4 @@ result = smb.plot_tiling(
     show_symbols=True,
     show_assigned=True,
     show_unassigned=True,
-    assigned_facecolor="#e5e5e5",
-    unassigned_facecolor="0.95",
-    tile_edgecolor="white",
-    tile_linewidth=1,
-    tile_alpha=1,
-    facecolor="lightblue",
-    alpha=1,
 )

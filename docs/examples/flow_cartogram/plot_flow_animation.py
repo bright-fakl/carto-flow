@@ -30,7 +30,6 @@ anim = animate_morph_history(
     duration=2.0,  # total animation length in seconds
     fps=15,
     facecolor="errors_pct",
-    cmap="PiYG",
     figsize=(8, 5),
     show_axes=False,
     legend=True,

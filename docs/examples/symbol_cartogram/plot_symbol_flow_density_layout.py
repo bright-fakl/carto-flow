@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.symbol_cartogram as smb
+from carto_flow import get_style
 
 us_districts = examples.load_us_census(population=True, level="congressional_district")
 
@@ -40,14 +41,13 @@ symbol_carto = smb.create_symbol_cartogram(
 # population. Districts from the same state cluster together.
 
 fig, ax = plt.subplots(1, 1, figsize=(10, 7))
+get_style().apply(fig)
 
 _ = symbol_carto.plot(
     ax=ax,
     facecolor="Population (Millions)",
-    cmap="YlOrRd",
     labels="State Abbreviation",
     label_fontsize=7,
-    legend_kwargs={"shrink": 0.5, "label": "Population (Millions)"},
 )
 
 plt.tight_layout()

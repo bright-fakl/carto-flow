@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.voronoi_cartogram as vor
+from carto_flow import get_style
 
 us_states = examples.load_us_census(population=True)
 
@@ -31,9 +32,9 @@ result = vor.create_voronoi_cartogram(
 # %%
 # Plot the flow cartogram and the Voronoi cells side by side.
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-style = {"column": "Population (Millions)", "cmap": "RdYlGn_r", "vmin": 0, "vmax": 40, "edgecolor": "white"}
-result.premorph.to_geodataframe().plot(ax=axes[0], linewidth=0.3, **style)
-result.to_geodataframe().plot(ax=axes[1], linewidth=0.3, **style)
+get_style().apply(fig)
+result.premorph.plot("Population (Millions)", ax=axes[0], legend=False)
+result.plot("Population (Millions)", ax=axes[1], legend=False)
 for ax, title in zip(axes, ["Flow cartogram", "Voronoi cartogram, premorph=True"], strict=True):
     ax.set(title=title)
     ax.axis("off")

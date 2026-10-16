@@ -26,6 +26,7 @@ from matplotlib.colors import ListedColormap, Normalize
 
 import carto_flow.data as examples
 import carto_flow.flow_cartogram as flow
+from carto_flow import get_style
 from carto_flow.noncontiguous_cartogram import create_noncontiguous_cartogram
 
 states = examples.load_us_census(population=True, simplify=1000)
@@ -67,6 +68,7 @@ def area_weighted(gdf, column="dem_share"):
 
 norm = Normalize(0.3, 0.7)
 fig, axes = plt.subplots(1, 3, figsize=(14, 4.2))
+get_style().apply(fig)
 for ax, (title, gdf) in zip(axes, maps.items(), strict=True):
     gdf.plot(column="dem_share", cmap="RdBu", norm=norm, edgecolor="white", linewidth=0.4, ax=ax)
     ax.set_title(f"{title}\narea-weighted Democratic share {area_weighted(gdf):.1%}", fontsize=10)
@@ -89,6 +91,7 @@ for title, gdf in maps.items():
 
 colors = {"Biden": "#3b7fb8", "Trump": "#c4423a"}
 fig, axes = plt.subplots(1, 3, figsize=(14, 4.2))
+get_style().apply(fig)
 for ax, (title, gdf) in zip(axes, maps.items(), strict=True):
     if gdf is states:
         gdf.plot(column="winner", cmap=ListedColormap(list(colors.values())), edgecolor="white", linewidth=0.4, ax=ax)

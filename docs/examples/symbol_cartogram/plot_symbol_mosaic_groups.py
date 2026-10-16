@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.symbol_cartogram as smb
+from carto_flow import get_style
 
 districts = examples.load_us_census(population=True, level="congressional_district")
 
@@ -63,6 +64,7 @@ symbol_carto = smb.create_symbol_cartogram(
 # neighbors on the lattice: the gap between them is only the ``spacing``
 # the symbols are drawn with.
 fig, ax = plt.subplots(1, 1, figsize=(11, 7))
+get_style().apply(fig)
 
 _ = symbol_carto.plot(
     ax=ax,

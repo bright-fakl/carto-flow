@@ -25,6 +25,7 @@ from matplotlib.animation import FuncAnimation
 import carto_flow.data as examples
 import carto_flow.flow_cartogram as flow
 import carto_flow.proportional_cartogram as prop
+from carto_flow import get_style
 
 us_states = examples.load_us_census(population=True, poverty=True, simplify=1000)
 column = "Below Poverty Level"
@@ -81,6 +82,7 @@ timeline = (
 )
 
 fig, ax = plt.subplots(figsize=(8, 5))
+get_style().apply(fig)
 fig.subplots_adjust(left=0.02, right=0.98, top=0.88, bottom=0.04)
 
 

@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.voronoi_cartogram as vor
+from carto_flow import get_style
 
 us_states = examples.load_us_census(population=True)
 
@@ -28,15 +29,8 @@ result = vor.create_voronoi_cartogram(
 # %%
 # Plot the cartogram.
 fig, ax = plt.subplots(figsize=(8, 7))
-result.plot(
-    "Population (Millions)",
-    ax=ax,
-    cmap="RdYlGn_r",
-    vmin=0,
-    vmax=40,
-    legend=True,
-    legend_kwargs={"shrink": 0.6, "label": "Population (Millions)"},
-)
+get_style().apply(fig)
+result.plot("Population (Millions)", ax=ax)
 ax.set(title="Cartogram of US States by Population — circular boundary")
 ax.axis("off")
 plt.tight_layout()

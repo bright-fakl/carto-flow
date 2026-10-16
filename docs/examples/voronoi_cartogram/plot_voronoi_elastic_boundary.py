@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.voronoi_cartogram as vor
+from carto_flow import get_style
 
 us_states = examples.load_us_census(population=True)
 
@@ -38,21 +39,14 @@ result_elastic = vor.create_voronoi_cartogram(
 # %%
 # Plot the two results side by side.
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+get_style().apply(fig)
 for ax, res, title in zip(
     axes,
     [result_fixed, result_elastic],
     ["Fixed boundary", "ElasticBoundary(strength=0.05)"],
     strict=False,
 ):
-    res.plot(
-        "Population (Millions)",
-        ax=ax,
-        cmap="RdYlGn_r",
-        vmin=0,
-        vmax=40,
-        legend=True,
-        legend_kwargs={"shrink": 0.6, "label": "Population (Millions)"},
-    )
+    res.plot("Population (Millions)", ax=ax)
     ax.set(title=title)
     ax.axis("off")
 plt.tight_layout()

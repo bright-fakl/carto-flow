@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.flow_cartogram as flow
+from carto_flow import get_style
 
 gdf = examples.load_us_census(population=True)
 
@@ -25,5 +26,6 @@ cartogram = flow.create_flow_cartogram(
 # Plot convergence of mean and max errors.
 
 fig, ax = plt.subplots(1, 1, figsize=(8, 5))
+get_style().apply(fig)
 
 plot = flow.visualization.plot_convergence(cartogram, ax=ax, show_recompute=True)

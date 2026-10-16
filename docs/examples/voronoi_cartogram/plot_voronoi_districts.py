@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.voronoi_cartogram as vor
+from carto_flow import get_style
 from carto_flow.geo_utils.simplification import simplify_coverage
 
 us_districts = examples.load_us_census(population=True, level="congressional_district")
@@ -33,14 +34,10 @@ result = result.repair_topology("State Name").cartogram
 
 # %%
 # Plot the cartogram.
-_, ax = plt.subplots(1, 1, figsize=(10, 6))
+fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+get_style().apply(fig)
 
-p = result.plot(
-    "State Name",
-    ax=ax,
-    cmap="tab20",
-    show_edges=True,
-)
+p = result.plot("State Name", ax=ax)
 
 p.ax.set(title="Cartogram of US Congressional Districts by State")
 p.ax.axis("off")

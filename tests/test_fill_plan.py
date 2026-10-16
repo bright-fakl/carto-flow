@@ -78,3 +78,52 @@ def test_column_that_is_also_a_color_warns_and_wins(gdf):
 def test_unknown_string_is_an_error(gdf):
     with pytest.raises(ValueError):
         fill_plan(gdf, "not-a-column-or-color", None, None)
+
+
+class TestCategoricalColorDict:
+    @pytest.fixture
+    def regions(self):
+        return gpd.GeoDataFrame(
+            {"group": ["a", "b", "a", "c"]}, geometry=[box(i, 0, i + 1, 1) for i in range(4)], crs="EPSG:3857"
+        )
+
+    def test_dict_colors_the_categories(self, regions):
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import to_hex
+
+        from carto_flow import PlotStyle
+        from carto_flow._fill import Fill, plot_fill
+
+        _, ax = plt.subplots()
+        plot_fill(
+            ax,
+            regions,
+            Fill({"column": "group"}, "categorical", "group", "group"),
+            PlotStyle(),
+            cmap={"a": "#ff0000", "b": "#0000ff", "c": "#00ff00"},
+            default_cmap=None,
+            norm=None,
+            center=None,
+            legend=False,
+            legend_kwargs=None,
+            legend_label=None,
+            categorical=None,
+            kwargs={},
+        )
+        colors = [to_hex(c) for c in ax.collections[0].get_facecolor()]
+        assert colors == ["#ff0000", "#0000ff", "#ff0000", "#00ff00"]
+        plt.close("all")
+
+    def test_dict_in_the_plots(self, regions):
+        import matplotlib.pyplot as plt
+        from matplotlib.colors import to_hex
+
+        from carto_flow.noncontiguous_cartogram import create_noncontiguous_cartogram
+
+        regions = regions.assign(value=[1.0, 2.0, 3.0, 4.0])
+        plot = create_noncontiguous_cartogram(regions, "value").plot(
+            facecolor="group", cmap={"a": "#ff0000", "b": "#0000ff"}, legend=False, show_original=False
+        )
+        colors = {to_hex(c) for c in plot.collections[0].get_facecolor()}
+        assert {"#ff0000", "#0000ff"} <= colors
+        plt.close("all")

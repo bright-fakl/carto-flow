@@ -92,6 +92,7 @@ Releases before 2.0.0 have no changelog entry; see the
   probe points, uniform in every region, to measure the crowding independently of the
   landmarks, so that lines, polygons, other point sets and, with
   `Cartogram.get_coords(uniform=True)`, displacement coordinates can be corrected too.
+- **`carto_flow.data.load_us_president_2020()` loads the 2020 US presidential election results by state** (51 areas: the votes for Biden and Trump, the official results compiled by the Federal Election Commission, bundled; `scripts/download_fec_2020.py` rebuilds the file and checks the national totals). A gallery example, "Area Bias in an Election Map", draws the results on a choropleth, a non-contiguous cartogram and a flow cartogram and reads the area-weighted Democratic share and the blue share of the area off each map.
 - **`create_flow_cartogram(gdf, column, *, landmarks, options, displacement_coords, density_per)`
   is the entry point of the flow cartogram, and `MorphOptions.grid` selects the
   resolution.** An int or `(nx, ny)` is one grid; `GridSpec(size, margin, square)` is one
@@ -289,6 +290,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **`cmap={category: color}` works in the flow, Voronoi and non-contiguous plots.** The dictionary was passed to matplotlib as a colormap and raised `TypeError: unhashable type: 'dict'`; the categories that are not in it take the `tab10` colors.
 - **Data-driven edges of the symbol plots are visible without an `edgecolor`, and the scalar channels take a scale.** The edge color defaulted to the boundary color of the style, a faint color made for separating symbols, or to `"none"` in `"classic"`, so a data-driven `linewidth` or a `hatch` could not be seen. A style has a new `"stroke"` channel (the color of an edge that carries data; `"#3b4650"` in `"default"`, `"#c9d1d9"` in `"dark"`, black in `"classic"`) which `plot_symbols` uses when `linewidth` is a column or `hatch` is set and no `edgecolor` is given; the hatch warning is raised only for an explicit `edgecolor="none"`.
 - **`legend_kwargs={"label": ...}` of the symbol plots sets the label of the colorbar** (it was ignored in favor of the column name).
 - **`plot_partitions` drew the complement black when the partitions were colored by a continuous value**

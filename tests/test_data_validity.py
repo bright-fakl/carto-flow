@@ -109,6 +109,25 @@ def test_us_covid_weekly_total_matches_reported_us_total():
     assert 100e6 < total < 110e6
 
 
+def test_us_president_2020_matches_the_official_totals_and_joins_the_census():
+    import carto_flow.data as data
+
+    df = data.load_us_president_2020()
+    assert list(df.columns) == ["state_name", "state_abbr", "votes_dem", "votes_gop"]
+    assert len(df) == 51
+    assert not df.isna().any().any()
+    assert not df["state_abbr"].duplicated().any()
+    assert df["votes_dem"].gt(0).all()
+    assert df["votes_gop"].gt(0).all()
+
+    # The official national totals of the two candidates (FEC, Federal Elections 2020).
+    assert (int(df["votes_dem"].sum()), int(df["votes_gop"].sum())) == (81_283_501, 74_223_975)
+
+    # The 50 states and DC join the census snapshot on the abbreviation.
+    census = data.load_us_census(contiguous_only=False)
+    assert set(census["State Abbreviation"]) - {"PR"} == set(df["state_abbr"])
+
+
 def test_world_union_after_equal_area_reprojection():
     """A study union over the reprojected world must not hit a GEOS topology error."""
     gdf = _load("world")

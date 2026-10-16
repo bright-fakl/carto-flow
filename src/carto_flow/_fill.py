@@ -136,8 +136,13 @@ def plot_fill(
     legend_kw = {"legend_kwds": legend_kwargs} if legend_kwargs else {}
     if fill.role == "categorical":
         colors = None
+        categories = list(np.unique(gdf[fill.column].dropna()))
         if cmap is None:
-            colors = style.categorical_colors(list(np.unique(gdf[fill.column].dropna())))
+            colors = style.categorical_colors(categories)
+        elif isinstance(cmap, Mapping):  # {category: color}; the categories that are not in it take the tab10 colors
+            from .style import Palettes, PlotStyle
+
+            colors = PlotStyle(palettes=Palettes(categorical=dict(cmap))).categorical_colors(categories)
         plot_cmap = ListedColormap(colors) if colors is not None else (cmap if cmap is not None else default_cmap)
         extra: dict[str, Any] = {"categorical": True} if categorical else {}
         if plot_cmap is not None:

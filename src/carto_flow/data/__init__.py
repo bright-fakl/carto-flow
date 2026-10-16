@@ -619,6 +619,43 @@ def load_us_covid_weekly() -> "pandas.DataFrame":
     return pd.read_parquet(path)
 
 
+def load_us_president_2020() -> "pandas.DataFrame":
+    """Load the 2020 US presidential election results by state.
+
+    The votes for the two candidates of the major parties, Joe Biden (Democratic) and Donald Trump (Republican), in
+    the 50 states and DC. The results are the official, certified results as compiled by the Federal Election
+    Commission (FEC), "Federal Elections 2020"; Biden's total is 81,283,501 and Trump's 74,223,975. Fusion-party lines
+    (for example New York D + WF for Biden) are summed, as the FEC does in its combined totals. Votes for other
+    candidates are not included.
+
+    The data is a publication of the FEC, a United States federal agency, and is not subject to copyright; attribution
+    to the Federal Election Commission is given wherever the data is shown. The restriction that the FEC states on the
+    use of its data concerns information about individual contributors, which this table does not contain.
+
+    ``state_abbr`` matches the ``State Abbreviation`` column of ``load_us_census``.
+
+    To update the data, run ``scripts/download_fec_2020.py``.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Columns: ``state_name``, ``state_abbr``, ``votes_dem``, ``votes_gop``.
+
+    Examples
+    --------
+    >>> from carto_flow.data import load_us_president_2020
+    >>> df = load_us_president_2020()
+    >>> print(df.shape)
+    (51, 4)
+    >>> print(int(df["votes_dem"].sum()), int(df["votes_gop"].sum()))
+    81283501 74223975
+    """
+    import pandas as pd
+
+    path = files("carto_flow.data").joinpath("us_president_2020.csv")
+    return pd.read_csv(path)
+
+
 __all__ = [
     "DIVISION_NAMES",
     "REGION_DIVISIONS",
@@ -628,6 +665,7 @@ __all__ = [
     "load_sample_cities",
     "load_us_census",
     "load_us_covid_weekly",
+    "load_us_president_2020",
     "load_us_state_population",
     "load_us_states",
     "load_world",

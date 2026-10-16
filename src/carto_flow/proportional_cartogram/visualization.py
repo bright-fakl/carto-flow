@@ -155,6 +155,9 @@ def plot_partitions(
     Takes the output of partition_geometries() and plots all partition
     geometries together, with coloring based on area, category, or data values.
 
+    The ``style`` keyword (a ``PlotStyle`` or a registered name; default: the style of the block or session, else
+    ``"default"``) sets the look of the plot.
+
     Parameters
     ----------
     gdf : gpd.GeoDataFrame
@@ -230,8 +233,6 @@ def plot_partitions(
     norm : Normalize, {"linear", "log", "auto"}, optional
         Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
         ``vmax`` fixes a linear normalization unless a scale is named.
-    style : PlotStyle or str, optional
-        Style of the plot (default: the style of the block or session, else ``"default"``).
     **kwargs
         Additional arguments passed to GeoDataFrame.plot().
 

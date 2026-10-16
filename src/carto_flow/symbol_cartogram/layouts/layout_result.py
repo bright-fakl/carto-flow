@@ -441,8 +441,8 @@ class TiledLayoutResult(LayoutResult):
         show_pool: bool = False,
         assigned_facecolor: str | None = None,
         unassigned_facecolor: str | None = None,
-        core_edgecolor: str = "#e6972a",
-        ring_edgecolor: str = "#d9534f",
+        core_edgecolor: str | None = None,
+        ring_edgecolor: str | None = None,
         tile_edgecolor: str | None = None,
         tile_linewidth: float | None = None,
         pool_linewidth: float = 1.5,
@@ -469,11 +469,11 @@ class TiledLayoutResult(LayoutResult):
             and extra-ring tiles get *ring_edgecolor* regardless of whether
             they are assigned; tiles outside the pool keep *tile_edgecolor*.
             Default False.
-        core_edgecolor : str
-            Edge color for core tiles when *show_pool* = True. Default amber.
-        ring_edgecolor : str
-            Edge color for extra-ring tiles when *show_pool* = True.
-            Default salmon.
+        core_edgecolor : str, optional
+            Edge color for core tiles when *show_pool* = True. Default: the highlight color of the style, else amber.
+        ring_edgecolor : str, optional
+            Edge color for extra-ring tiles when *show_pool* = True. Default: the accent color of the style, else
+            salmon.
         pool_linewidth : float
             Line width for pool-tile borders. Default 1.5.
         **kwargs
@@ -490,6 +490,10 @@ class TiledLayoutResult(LayoutResult):
             assigned_facecolor = st.channel_value("fill") or _assigned_color(st)
         if unassigned_facecolor is None:
             unassigned_facecolor = st.reference_facecolor or "#f5f5f5"
+        if core_edgecolor is None:
+            core_edgecolor = st.pick("highlight_color", "#e6972a")
+        if ring_edgecolor is None:
+            ring_edgecolor = st.pick("accent_color", "#d9534f")
         if tile_edgecolor is None:
             tile_edgecolor = st.reference_edgecolor or "#999999"
         if tile_linewidth is None:

@@ -60,6 +60,15 @@ Releases before 2.0.0 have no changelog entry; see the
   `plot_tiling`. `plot_symbols` takes `center=`
   and `categorical=`; the original panel of `plot_comparison` takes the palettes of the style and `cmap`, `center`,
   `categorical` and `norm` of the call. The colorbars of the adjacency plots follow the colorbar of the style.
+- **A `PlotStyle` sets the colors of the diagnostic overlays.** The new fields `series_color` (the
+  convergence curve, the cells and centroids of the Voronoi animation), `accent_color` (displacement
+  targets, violated adjacency, the final value of the convergence plot, the displacement arrows of the
+  symbol plot, the extra-ring tiles of `plot_tiling`), `positive_color` (the convergence mark, reassigned
+  cells) and `highlight_color` (satellite cells, the core tiles of `plot_tiling`) are set by the
+  `"default"` and `"dark"` styles and unset in `"classic"`, which keeps the former colors. The base
+  layers of the Voronoi displacement, topology and repair plots use the reference fill and the axes edge
+  color of the style, and the nodes of `plot_adjacency` the text color. `PlotStyle.pick(name, default)`
+  returns a field or the default.
 - **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
   through the morph, holds and returns**, for `animate_geometry_keyframes` with
   `position_mapper=linear_over("time")`.

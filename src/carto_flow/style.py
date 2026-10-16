@@ -136,6 +136,10 @@ class PlotStyle:
     reference_facecolor, reference_edgecolor, reference_linewidth, reference_alpha : optional
         The reference layer: the geometries drawn under or beside a cartogram for context (the base of a dot density
         map).
+    series_color, accent_color, positive_color, highlight_color : optional
+        Colors of the diagnostic overlays: the line of a series (the convergence curve, the cells and centroids of an
+        animation), the mark of a deviation (displacement arrows, targets, violated adjacency), of a good outcome (the
+        convergence mark, reassigned cells) and of a case to look at (satellite cells).
     annotation_size : float, optional
         Font size of the labels placed on a map.
     hatch_cycle : tuple of str, optional
@@ -158,6 +162,10 @@ class PlotStyle:
     reference_edgecolor: str | None = None
     reference_linewidth: float | None = None
     reference_alpha: float | None = None
+    series_color: str | None = None
+    accent_color: str | None = None
+    positive_color: str | None = None
+    highlight_color: str | None = None
     annotation_size: float | None = None
     hatch_cycle: tuple[str, ...] | None = None
 
@@ -252,6 +260,11 @@ class PlotStyle:
     def rc_context(self):
         """Context manager that applies the rcParams of the style."""
         return mpl.rc_context(rc=dict(self.rc))
+
+    def pick(self, name: str, default: Any) -> Any:
+        """The value of the field ``name``, or ``default`` if the style leaves it unset."""
+        value = getattr(self, name)
+        return default if value is None else value
 
     def channel_value(self, channel: str, default: Any = None) -> Any:
         """The value of a channel when it is not data-driven, or ``default``."""
@@ -526,6 +539,10 @@ def _light() -> PlotStyle:
         reference_facecolor="#dde4ea",
         reference_edgecolor=surface,
         reference_linewidth=0.5,
+        series_color="#2c6e9e",
+        accent_color="#c0392b",
+        positive_color="#2e8b57",
+        highlight_color="#d98200",
     )
 
 
@@ -557,6 +574,10 @@ def _dark() -> PlotStyle:
         reference_facecolor="#2a3037",
         reference_edgecolor=surface,
         reference_linewidth=0.5,
+        series_color="#6cb4ee",
+        accent_color="#ff6b5e",
+        positive_color="#4cc38a",
+        highlight_color="#ffb347",
     )
 
 

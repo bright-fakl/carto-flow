@@ -210,7 +210,12 @@ def plot_displacement(
         angles="xy",
         scale_units="xy",
         scale=1,
-        **{"color": "red", "alpha": 0.7, "width": 0.003 * arrow_scale, **(arrows_kwargs or {})},
+        **{
+            "color": resolve_style().pick("accent_color", "red"),
+            "alpha": 0.7,
+            "width": 0.003 * arrow_scale,
+            **(arrows_kwargs or {}),
+        },
     )
 
     ax.set_aspect("equal")
@@ -429,7 +434,7 @@ def plot_adjacency(
             centers[:, 0],
             centers[:, 1],
             s=node_markersize,
-            c="black",
+            c=st.rc.get("text.color", "black"),
             zorder=5,
         )
 

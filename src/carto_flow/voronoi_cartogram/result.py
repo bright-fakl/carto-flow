@@ -1034,7 +1034,7 @@ class VoronoiCartogram:
             Show the displacement-magnitude colorbar (and any other legends).
             Default ``True``.
         geometry_kwargs : dict or None
-            Styling for geometry polygons, merged over defaults
+            Styling for geometry polygons, merged over defaults (the colors of ``style="classic"``)
             ``{"facecolor": "#e8eef4", "edgecolor": "#9aafc4", "linewidth": 0.4, "alpha": 0.6}``.
             All keys forwarded to ``GeoDataFrame.plot()``.
 
@@ -1046,11 +1046,11 @@ class VoronoiCartogram:
             - 1-D numeric array → per-geometry values mapped via ``"cmap"``.
             - list/array of color strings → per-geometry colors.
         adjacency_kwargs : dict or None
-            Styling for adjacency graph edges, merged over defaults
+            Styling for adjacency graph edges, merged over defaults (the colors of ``style="classic"``)
             ``{"color": "#6b8fa8", "linewidth": 0.6, "alpha": 0.5, "zorder": 2}``.
             All keys forwarded to ``ax.plot()``.
         centroid_kwargs : dict or None
-            Styling for centroid scatter markers, merged over defaults
+            Styling for centroid scatter markers, merged over defaults (the colors of ``style="classic"``)
             ``{"s": 18, "c": "#1a5276", "zorder": 3, "linewidths": 0}``.
             All keys forwarded to ``ax.scatter()``.
 
@@ -1059,7 +1059,7 @@ class VoronoiCartogram:
             ``"viridis"``) for column/numeric cases.
         position_kwargs : dict or None
             Styling for the ``self.positions`` generator-point overlay (only
-            used when ``show_positions=True``), merged over defaults
+            used when ``show_positions=True``), merged over defaults (the colors of ``style="classic"``)
             ``{"s": 14, "marker": "x", "c": "#e74c3c", "zorder": 5, "linewidths": 0.8}``.
             All keys forwarded to ``ax.scatter()``.
         displacement_kwargs : dict or None

@@ -72,11 +72,11 @@ def animate_voronoi_history(
     show_convergence_title : bool
         Include iteration number and CV(area) in the title.  Default ``True``.
     cell_kwargs : dict or None
-        Styling for cell polygons, merged over defaults
+        Styling for cell polygons, merged over defaults (the colors of ``style="classic"``)
         ``{"facecolor": "#d0e4f7", "edgecolor": "#1a5276", "linewidth": 0.4, "alpha": 0.7}``.
         All keys forwarded to ``GeoDataFrame.plot()``.
     point_kwargs : dict or None
-        Styling for generator points, merged over defaults
+        Styling for generator points, merged over defaults (the colors of ``style="classic"``)
         ``{"s": 14, "c": "#e74c3c", "zorder": 3, "linewidths": 0}``.
         All keys forwarded to ``ax.scatter()``.
     figsize : tuple of float
@@ -109,17 +109,19 @@ def animate_voronoi_history(
     if not snapshots:
         raise RuntimeError("result.history is empty — no snapshots were recorded")
 
+    st = resolve_style(style)
+
     # Merge style defaults
     _cell_kw: dict = {
-        "facecolor": "#d0e4f7",
-        "edgecolor": "#1a5276",
+        "facecolor": st.pick("reference_facecolor", "#d0e4f7"),
+        "edgecolor": st.pick("series_color", "#1a5276"),
         "linewidth": 0.4,
         "alpha": 0.7,
         **(cell_kwargs or {}),
     }
     _pt_kw: dict = {
         "s": 14,
-        "c": "#e74c3c",
+        "c": st.pick("accent_color", "#e74c3c"),
         "zorder": 3,
         "linewidths": 0,
         **(point_kwargs or {}),
@@ -135,7 +137,6 @@ def animate_voronoi_history(
     pad_x = (x_max - x_min) * 0.05 or 1.0
     pad_y = (y_max - y_min) * 0.05 or 1.0
 
-    st = resolve_style(style)
     with st.rc_context():
         fig, ax = plt.subplots(figsize=figsize)
     ax.set_aspect("equal")

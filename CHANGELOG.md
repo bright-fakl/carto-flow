@@ -71,6 +71,7 @@ Releases before 2.0.0 have no changelog entry; see the
   returns a field or the default. `VelocityPlotOptions.color` is `None` by default and takes the
   accent color of the style (in `"classic"` black on the bare axes of `plot_velocity_field`, white over the density of the animations), the gray reference lines of the workflow convergence
   plot and the key of the line-width legend of the symbol plot take the axes edge color.
+- **`alpha_norm`, `linewidth_norm` and `label_fontsize_norm` set how a column is spread over the range of a scalar channel of the symbol plots.** They take `"linear"`, `"sqrt"`, `"log"` (positive data), `"auto"` (logarithmic when the data spans more than `log_span` decades), `"rank"` (equal steps for equal numbers of symbols) or a `Normalize`. `Channel(scale=...)` sets the default of a style (the `"default"` and `"dark"` styles take `"auto"` for the line width, in 1 to 4.5 points). The line-width legend and the alpha colorbar follow the scale.
 - **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
   through the morph, holds and returns**, for `animate_geometry_keyframes` with
   `position_mapper=linear_over("time")`.
@@ -284,7 +285,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
-- **A data-driven `linewidth` of the symbol plots is visible without an `edgecolor`.** The edge color defaulted to the boundary color of the style, a faint color made for separating symbols, or to `"none"` in `"classic"`, so the widths could not be seen. The default is now the text color of the style (black in `"classic"`). The `"default"` and `"dark"` styles also draw data-driven widths from 1 to 4.5 points (`Channel(range=...)` of `"linewidth"`).
+- **Data-driven edges of the symbol plots are visible without an `edgecolor`, and the scalar channels take a scale.** The edge color defaulted to the boundary color of the style, a faint color made for separating symbols, or to `"none"` in `"classic"`, so a data-driven `linewidth` or a `hatch` could not be seen. A style has a new `"stroke"` channel (the color of an edge that carries data; `"#3b4650"` in `"default"`, `"#c9d1d9"` in `"dark"`, black in `"classic"`) which `plot_symbols` uses when `linewidth` is a column or `hatch` is set and no `edgecolor` is given; the hatch warning is raised only for an explicit `edgecolor="none"`.
 - **`legend_kwargs={"label": ...}` of the symbol plots sets the label of the colorbar** (it was ignored in favor of the column name).
 - **`plot_partitions` drew the complement black when the partitions were colored by a continuous value**
   (`facecolor="area"` or a numeric column): the missing color value of the complement became NaN and

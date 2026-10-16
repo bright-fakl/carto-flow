@@ -1124,28 +1124,33 @@ def _resolve_scalar(
     value_range: tuple[float, float],
     n: int,
     default: float,
-) -> tuple[float | NDArray, bool]:
-    """Resolve *alpha* or *linewidth* to a scalar or per-symbol ``(n,)`` array.
+    norm: Any = None,
+    style: Any = None,
+    channel: str | None = None,
+) -> tuple[float | NDArray, bool, Any]:
+    """Resolve *alpha*, *linewidth* or a label size to a scalar or per-symbol ``(n,)`` array.
 
-    Returns ``(value, is_array)``.
+    A column is spread over *value_range* by the scale of *norm* or of the channel in *style*.
+    Returns ``(value, is_array, scale)``; the scale is ``None`` unless a column was scaled.
     """
     if param is None:
-        return default, False
+        return default, False, None
 
     if isinstance(param, int | float):
-        return float(param), False
+        return float(param), False, None
 
     if isinstance(param, str):
+        from ..style import PlotStyle
+
         col_vals = _find_column(param, result, source_gdf).astype(float)
+        scale = (style if style is not None else PlotStyle.classic()).unit_scale(col_vals, norm, channel)
         lo, hi = value_range
-        col_min, col_max = float(np.nanmin(col_vals)), float(np.nanmax(col_vals))
-        t = (col_vals - col_min) / (col_max - col_min) if col_max > col_min else np.full(n, 0.5)
-        return lo + t * (hi - lo), True
+        return lo + scale(col_vals) * (hi - lo), True, scale
 
     arr = np.asarray(param, dtype=float)
     if arr.ndim != 1 or len(arr) != n:
         raise ValueError(f"Expected scalar or 1-D array of length {n}, got shape {arr.shape}.")
-    return arr, True
+    return arr, True, None
 
 
 def _resolve_hatch(
@@ -1327,11 +1332,13 @@ def plot_symbols(
     # Transparency
     alpha: float | str | Sequence | None = None,
     alpha_range: tuple[float, float] | None = None,
+    alpha_norm: Any = None,
     # Edge
     edgecolor: Any = None,
     edge_cmap: str | dict | None = None,
     linewidth: float | str | Sequence | None = None,
     linewidth_range: tuple[float, float] | None = None,
+    linewidth_norm: Any = None,
     # Hatch
     hatch: str | Sequence | None = None,
     hatch_map: dict[str, str] | None = None,
@@ -1354,6 +1361,7 @@ def plot_symbols(
     label_legend_kwargs: dict | None = None,
     label_fontsize: float | str | Sequence | None = None,
     label_fontsize_range: tuple[float, float] | None = None,
+    label_fontsize_norm: Any = None,
     label_kwargs: dict | None = None,
     # Other
     center: float | None = None,
@@ -1416,17 +1424,21 @@ def plot_symbols(
         Symbol opacity (0 = transparent, 1 = opaque).
 
         * Scalar float → global opacity.
-        * Column name → linearly interpolated into *alpha_range*.
+        * Column name → spread over *alpha_range* (see *alpha_norm*).
         * 1-D array of floats → per-symbol opacity.
 
         Defaults to the alpha of the style, else ``0.9``.
     alpha_range : (float, float)
         ``(min_alpha, max_alpha)`` used when *alpha* is a column name.
         Defaults to the range of the alpha channel of the style, else ``(0.2, 1.0)``.
+    alpha_norm : str or Normalize, optional
+        How a column of *alpha* is spread over *alpha_range*: ``"linear"``, ``"sqrt"``, ``"log"`` (positive data),
+        ``"auto"`` (log when the data spans more than a decade), ``"rank"`` (equal steps for equal numbers of
+        symbols) or a ``Normalize`` instance. Defaults to the scale of the alpha channel of the style, else linear.
     edgecolor : color, column name, or array-like, optional
         Symbol edge color.  Accepts the same forms as *facecolor*.
-        Defaults to the edge color of the style, else ``"none"`` (no visible border); when *linewidth* is data-driven,
-        the text color.
+        Defaults to the edge color of the style, else ``"none"`` (no visible border); when *linewidth* is
+        data-driven or *hatch* is set, the stroke color of the style, else ``"black"``.
     edge_cmap : str or dict, optional
         Colormap for edge color mapping.  Accepts the same forms as *cmap*
         (string name for numeric, dict for categorical).
@@ -1435,13 +1447,17 @@ def plot_symbols(
         Edge line width.
 
         * Scalar float → global width.
-        * Column name → linearly interpolated into *linewidth_range*.
+        * Column name → spread over *linewidth_range* (see *linewidth_norm*).
         * 1-D array → per-symbol widths.
 
         Defaults to the line width of the style, else ``0.5``.
     linewidth_range : (float, float)
         ``(min_lw, max_lw)`` used when *linewidth* is a column name.
         Defaults to the range of the linewidth channel of the style, else ``(0.5, 3.0)``.
+    linewidth_norm : str or Normalize, optional
+        How a column of *linewidth* is spread over *linewidth_range*: ``"linear"``, ``"sqrt"``, ``"log"`` (positive data),
+        ``"auto"`` (log when the data spans more than a decade), ``"rank"`` (equal steps for equal numbers of
+        symbols) or a ``Normalize`` instance. Defaults to the scale of the linewidth channel of the style, else linear.
     hatch : str, column name, or sequence, optional
         Fill hatching.
 
@@ -1517,6 +1533,10 @@ def plot_symbols(
     label_fontsize_range : (float, float)
         ``(min, max)`` font-size range when *label_fontsize* is a column name.
         Defaults to the range of the label channel of the style, else ``(6.0, 14.0)``.
+    label_fontsize_norm : str or Normalize, optional
+        How a column of *label_fontsize* is spread over *label_fontsize_range*: ``"linear"``, ``"sqrt"``, ``"log"`` (positive data),
+        ``"auto"`` (log when the data spans more than a decade), ``"rank"`` (equal steps for equal numbers of
+        symbols) or a ``Normalize`` instance. Defaults to the scale of the label channel of the style, else linear.
     label_kwargs : dict, optional
         Additional keyword arguments forwarded to ``Axes.text()`` for every
         label (e.g. ``{"fontweight": "bold", "ha": "left"}``).
@@ -1603,10 +1623,10 @@ def plot_symbols(
         alpha = st.channel_value("alpha", 0.9)
     if alpha_range is None:
         alpha_range = st.channel_range("alpha", (0.2, 1.0))
+    edge_given = edgecolor is not None
     if edgecolor is None:
-        if linewidth is not None and not isinstance(linewidth, (int, float)):
-            # an edge that encodes data has to be seen: the text color, not the faint boundary color of the style
-            edgecolor = mpl.rcParams["text.color"]
+        if hatch is not None or (linewidth is not None and not isinstance(linewidth, (int, float))):
+            edgecolor = st.channel_value("stroke", "black")  # an edge that carries data has to be seen
         else:
             edgecolor = st.channel_value("edge", "none")
     if linewidth is None:
@@ -1627,9 +1647,9 @@ def plot_symbols(
         _, ax = plt.subplots(figsize=figsize)
 
     # Warn when hatching would be invisible
-    if hatch is not None and edgecolor in (None, "none"):
+    if hatch is not None and edge_given and edgecolor == "none":
         warnings.warn(
-            "hatch is set but edgecolor='none' (the default). "
+            "hatch is set but edgecolor='none'. "
             "Hatching requires a visible edge color. "
             "Set edgecolor to a color such as 'black'.",
             UserWarning,
@@ -1654,18 +1674,11 @@ def plot_symbols(
     )
 
     alpha_col_name: str | None = None
-    alpha_col_values: NDArray | None = None
     if isinstance(alpha, str) and _is_column(alpha, result, source_gdf):
         alpha_col_name = alpha
-        alpha_col_values = _find_column(alpha, result, source_gdf).astype(float)
 
-    alpha_val, alpha_is_arr = _resolve_scalar(
-        alpha,
-        result,
-        source_gdf,
-        alpha_range,
-        n,
-        default=0.9,
+    alpha_val, alpha_is_arr, alpha_scale = _resolve_scalar(
+        alpha, result, source_gdf, alpha_range, n, default=0.9, norm=alpha_norm, style=st, channel="alpha"
     )
 
     # Don't inherit a facecolor categorical dict for edges — only inherit string cmaps
@@ -1685,18 +1698,19 @@ def plot_symbols(
     )
 
     lw_col_name: str | None = None
-    lw_col_values: NDArray | None = None
     if isinstance(linewidth, str) and _is_column(linewidth, result, source_gdf):
         lw_col_name = linewidth
-        lw_col_values = _find_column(linewidth, result, source_gdf).astype(float)
 
-    lw_val, lw_is_arr = _resolve_scalar(
+    lw_val, lw_is_arr, lw_scale = _resolve_scalar(
         linewidth,
         result,
         source_gdf,
         linewidth_range,
         n,
         default=0.5,
+        norm=linewidth_norm,
+        style=st,
+        channel="linewidth",
     )
 
     hatch_list, hatch_is_mapped, cat_hatch_map, hatch_col_name = _resolve_hatch(
@@ -1811,11 +1825,13 @@ def plot_symbols(
         import matplotlib.lines as mlines
 
         n_steps = 5
-        data_vals = np.linspace(float(np.nanmin(lw_col_values)), float(np.nanmax(lw_col_values)), n_steps)  # type: ignore[arg-type]
+        steps = np.linspace(0.0, 1.0, n_steps)
+        data_vals = lw_scale.inverse(steps)
         lo_lw, hi_lw = linewidth_range
-        lw_steps = np.linspace(lo_lw, hi_lw, n_steps)
+        lw_steps = lo_lw + steps * (hi_lw - lo_lw)
+        key_color = edge_colors if isinstance(edge_colors, str) else st.channel_value("stroke", "black")
         handles = [
-            mlines.Line2D([], [], color=st.rc.get("axes.edgecolor", "gray"), linewidth=float(lw), label=f"{dv:.3g}")
+            mlines.Line2D([], [], color=key_color, linewidth=float(lw), label=f"{dv:.3g}")
             for dv, lw in zip(data_vals, lw_steps, strict=False)
         ]
         _lkwds = dict(linewidth_legend_kwargs or {})
@@ -1848,20 +1864,21 @@ def plot_symbols(
             alphas,
         ])
         _alpha_cmap = mc.LinearSegmentedColormap.from_list("_alpha", cmap_colors)
-        data_min = float(np.nanmin(alpha_col_values))  # type: ignore[arg-type]
-        data_max = float(np.nanmax(alpha_col_values))  # type: ignore[arg-type]
-        _anorm = mc.Normalize(vmin=data_min, vmax=data_max)
         _akwds = {k: v for k, v in (alpha_legend_kwargs or {}).items() if k not in ("title", "loc", "label")}
+        _alabel = (alpha_legend_kwargs or {}).get(
+            "label", (alpha_legend_kwargs or {}).get("title", alpha_col_name or "")
+        )
         _fig = ax.get_figure()
         assert _fig is not None  # noqa: S101
-        alpha_colorbar = st.add_colorbar(
-            _fig,
-            ax,
-            _alpha_cmap,
-            _anorm,
-            (alpha_legend_kwargs or {}).get("label", (alpha_legend_kwargs or {}).get("title", alpha_col_name or "")),
-            **_akwds,
-        )
+        if alpha_scale.name == "linear":
+            _anorm = mc.Normalize(vmin=alpha_scale.low, vmax=alpha_scale.high)
+            alpha_colorbar = st.add_colorbar(_fig, ax, _alpha_cmap, _anorm, _alabel, **_akwds)
+        else:
+            # the data is spread non-linearly: the bar runs over the scaled unit interval, with ticks at data values
+            alpha_colorbar = st.add_colorbar(_fig, ax, _alpha_cmap, mc.Normalize(vmin=0.0, vmax=1.0), _alabel, **_akwds)
+            ticks = np.linspace(0.0, 1.0, 5)
+            alpha_colorbar.set_ticks(ticks)
+            alpha_colorbar.set_ticklabels([f"{v:.3g}" for v in alpha_scale.inverse(ticks)])
 
     # --- Per-symbol labels ---
     label_artists: list[Any] = []
@@ -1904,13 +1921,16 @@ def plot_symbols(
             label_colors_list = [lc_colors] * n
 
         # Resolve label fontsize
-        fs_val, fs_is_arr = _resolve_scalar(
+        fs_val, fs_is_arr, _ = _resolve_scalar(
             label_fontsize,
             result,
             source_gdf,
             label_fontsize_range,
             n,
             default=8.0,
+            norm=label_fontsize_norm,
+            style=st,
+            channel="label",
         )
         fs_arr = np.asarray(fs_val) if fs_is_arr else None
 

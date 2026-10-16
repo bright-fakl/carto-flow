@@ -28,7 +28,7 @@ nav:
       - Steer the Flow with a Directional Tensor: how-to/steer-the-flow-with-a-directional-tensor.ipynb
       - Animate the Morphing Process: how-to/create-animation.ipynb
       - Co-Morph Landmarks and Coordinates: how-to/co-morph-landmarks-and-coordinates.ipynb
-      - Style Plots and Animations: how-to/style-plots.md
+      - Style Plots and Animations: how-to/style-plots.ipynb
     - Proportional Cartogram:
       - Apply Partitions to a Flow Cartogram: how-to/partitions-on-flow-cartogram.ipynb
     - Symbol Cartogram:

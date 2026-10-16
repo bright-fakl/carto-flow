@@ -25,7 +25,7 @@ Displace cities, annotations, or point coordinates consistently with the cartogr
 ### [Pre-Morph Before Symbol and Voronoi Layouts](premorph-before-layouts.ipynb)
 Start the symbol and Voronoi layouts from a flow cartogram instead of the raw geometries: how to do it, how many iterations it saves for each layout, and when to skip it.
 
-### [Style Plots and Animations](style-plots.md)
+### [Style Plots and Animations](style-plots.ipynb)
 Set the look of the plots and animations in one place with `PlotStyle`: the built-in `default`, `dark` and `classic` styles, palettes by data type, the color scale and the colorbar, and your own registered styles.
 
 ## Proportional Cartogram

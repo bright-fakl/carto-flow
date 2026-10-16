@@ -12,10 +12,12 @@ Carto-flow provides tools to transform geographic data into meaningful cartograp
 
 - **Flow-based cartograms**: Smoothly morph geometries while maintaining spatial contiguity and recognizable shapes, where region sizes are proportional to a data variable (e.g., population, GDP)
 - **Symbol cartograms**: Represent regions as proportional symbols (circles, squares, hexagons) or custom tile maps
+- **Voronoi cartograms**: Represent regions as Voronoi cells whose areas are proportional to a data variable
+- **Non-contiguous cartograms**: Scale every region about its own center to an area proportional to a data variable
 - **Proportional cartograms**: Split and shrink shapes to show proportions within regions
 - **Dot density cartograms**: Visualize data through randomly distributed points
 
-The library uses advanced diffusion-based algorithms for smooth morphing, force-based simulation for optimal symbol placement, and provides tools for multi-resolution processing and batch operations.
+The library uses advanced diffusion-based algorithms for smooth morphing, force-based simulation for optimal symbol placement, and provides plot styles that set the look of every plot and animation in one place, and tools for multi-resolution processing and batch operations.
 
 ![Example Flow Cartogram showing population distribution](./generated/gallery/images/mkd_glr_plot_flow_cartogram_001.png)
 
@@ -27,7 +29,7 @@ This example shows a flow-based cartogram where region sizes are proportional to
 pip install carto-flow
 ```
 
-Requires Python 3.9+ and NumPy 2.0.2+.
+Requires Python 3.10+ and NumPy 2.0.2+.
 
 ## Quick Start
 

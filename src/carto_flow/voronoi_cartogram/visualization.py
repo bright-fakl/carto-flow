@@ -157,7 +157,7 @@ def plot_cartogram(
         Keyword arguments of the legend or colorbar. A ``"label"`` key sets the label of a colorbar.
     legend_label : str, optional
         Label of the colorbar. Defaults to the name of the data.
-    norm : Normalize, {"linear", "log", "auto"}, optional
+    norm : Normalize, {"linear", "sqrt", "log", "auto"}, optional
         Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
         ``vmax`` fixes a linear normalization unless a scale is named.
     center : float, optional
@@ -318,7 +318,7 @@ def plot_comparison(
         Figure size when ``axes`` is ``None``.
     title : str or None
         Figure suptitle.  Defaults to ``"Original vs Voronoi Cartogram"``.
-    norm : Normalize, {"linear", "log", "auto"}, optional
+    norm : Normalize, {"linear", "sqrt", "log", "auto"}, optional
         Normalization of continuous data, as in :func:`plot_cartogram`.
     center : float, optional
         Treat the data as diverging around this value.
@@ -494,6 +494,7 @@ def plot_displacement(
     centroid_kwargs: dict | None = None,
     position_kwargs: dict | None = None,
     displacement_kwargs: dict | None = None,
+    norm: Any = None,
     ax: Any | None = None,
     figsize: tuple[float, float] = (10, 8),
     title: str = "Voronoi cartogram — centroid redistribution",
@@ -555,12 +556,15 @@ def plot_displacement(
         All keys forwarded to ``ax.scatter()``.
     displacement_kwargs : dict or None
         Styling for displacement arrows, merged over defaults
-        ``{"cmap": "plasma", "lw": 0.9, "mutation_scale": 6, "arrowstyle": "-|>", "min_frac": 0.01}``.
+        ``{"lw": 0.9, "mutation_scale": 6, "arrowstyle": "-|>", "min_frac": 0.01}``.
 
-        - ``"cmap"`` — arrow/colorbar colormap.
+        - ``"cmap"`` — arrow/colorbar colormap (default: the sequential colormap of the style, else ``"plasma"``).
         - ``"min_frac"`` — skip arrows whose magnitude is below this
           fraction of the maximum.
         - remaining keys forwarded into ``arrowprops``.
+    norm : Normalize or {"linear", "sqrt", "log", "auto"}, optional
+        Scale of the displacement magnitude that colors the arrows. Default: the color scale of the style, else
+        linear from 0.
     ax : matplotlib Axes or None
         Axes to draw on.  A new figure is created if ``None``.
     figsize : tuple of float
@@ -631,7 +635,6 @@ def plot_displacement(
         **_norm_scatter(position_kwargs),
     }
     disp_kw: dict = {
-        "cmap": "plasma",
         "lw": 0.9,
         "mutation_scale": 6,
         "arrowstyle": "-|>",
@@ -737,11 +740,18 @@ def plot_displacement(
     # --- displacement arrows -------------------------------------------------
     if show_displacement:
         min_frac = disp_kw.pop("min_frac", 0.01)
-        disp_cmap = plt.get_cmap(disp_kw.pop("cmap", "plasma"))
+        disp_cmap = plt.get_cmap(disp_kw.pop("cmap", None) or st.colormap("sequential") or "plasma")
         arrow_kw = disp_kw
 
         max_mag = disp_mag.max() or 1.0
-        norm = mcolors.Normalize(vmin=0, vmax=max_mag)
+        shown = disp_mag >= max_mag * min_frac
+        if isinstance(norm, mcolors.Normalize):
+            mag_norm = norm
+        elif norm is None and st.color_scale is None:
+            mag_norm = mcolors.Normalize(vmin=0, vmax=max_mag)
+        else:
+            # the scale is spread over the arrows that are drawn
+            mag_norm = st.norm(disp_mag[shown], "sequential", scale=norm)
         for i in range(len(geometries)):
             if disp_mag[i] < max_mag * min_frac:
                 continue
@@ -749,13 +759,11 @@ def plot_displacement(
                 "",
                 xy=(cell_centroids[i, 0], cell_centroids[i, 1]),
                 xytext=(old_pos[i, 0], old_pos[i, 1]),
-                arrowprops={"color": disp_cmap(norm(disp_mag[i])), **arrow_kw},
+                arrowprops={"color": disp_cmap(mag_norm(disp_mag[i])), **arrow_kw},
                 zorder=4,
             )
         if legend:
-            sm = plt.cm.ScalarMappable(cmap=disp_cmap, norm=norm)
-            sm.set_array([])
-            cbar = ax.figure.colorbar(sm, ax=ax, fraction=0.03, pad=0.02)
+            cbar = st.add_colorbar(ax.figure, ax, disp_cmap, mag_norm, None, fraction=0.03, pad=0.02)
             cbar.set_label("Displacement magnitude", fontsize=9)
 
     ax.set_title(title, fontsize=11)
@@ -1244,7 +1252,7 @@ def plot_compactness(
         Figure size when ``ax`` is ``None``.
     title : str
         Axis title.
-    norm : Normalize, {"linear", "log", "auto"}, optional
+    norm : Normalize, {"linear", "sqrt", "log", "auto"}, optional
         Normalization of the inertia: an instance, or the scale of the style's normalization.
     style : PlotStyle or str, optional
         Style of the plot (default: the style of the block or session, else ``"default"``).

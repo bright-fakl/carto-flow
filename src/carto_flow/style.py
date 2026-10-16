@@ -34,7 +34,7 @@ from typing import Any
 import matplotlib as mpl
 import matplotlib.style
 import numpy as np
-from matplotlib.colors import Colormap, LinearSegmentedColormap, LogNorm, Normalize, to_hex, to_rgb
+from matplotlib.colors import Colormap, LinearSegmentedColormap, LogNorm, Normalize, PowerNorm, to_hex, to_rgb
 
 __all__ = [
     "Channel",
@@ -52,7 +52,7 @@ __all__ = [
 
 ROLES = ("sequential", "diverging", "categorical")
 CHANNELS = ("fill", "edge", "stroke", "hatch", "alpha", "linewidth", "label")
-_SCALES = ("linear", "log", "auto")
+_SCALES = ("linear", "sqrt", "log", "auto")
 SCALAR_SCALES = ("linear", "sqrt", "log", "auto", "rank")
 _TICK_FORMATS = ("plain", "si")
 _ORIENTATIONS = ("vertical", "horizontal")
@@ -192,7 +192,7 @@ class PlotStyle:
     channels : dict
         :class:`Channel` by channel name; ``channels["edge"].value`` is the boundary color and
         ``channels["linewidth"].value`` its width.
-    color_scale : {"linear", "log", "auto"}, optional
+    color_scale : {"linear", "sqrt", "log", "auto"}, optional
         Scale of continuous data; ``"auto"`` takes a log scale when all values are positive and span more than
         ``log_span`` decades.
     log_span : float, optional
@@ -424,6 +424,8 @@ class PlotStyle:
             if not positive:
                 raise ValueError("a logarithmic color scale needs positive values")
             return LogNorm(vmin=vmin, vmax=vmax)
+        if scale == "sqrt":
+            return PowerNorm(0.5, vmin=vmin, vmax=vmax)
         return Normalize(vmin=vmin, vmax=vmax)
 
     def resolve_norm(

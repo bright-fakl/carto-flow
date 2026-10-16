@@ -1414,7 +1414,7 @@ def plot_symbols(
         Unspecified categories take the categorical colors of the style,
         else ``"tab10"``. Defaults to the sequential palette of the style (the
         diverging palette with *center*), else ``"viridis"``.
-    norm : matplotlib Normalize or {"linear", "log", "auto"}, optional
+    norm : matplotlib Normalize or {"linear", "sqrt", "log", "auto"}, optional
         Custom normalization for the colormap: an instance, or the scale of
         the style's normalization.
     vmin, vmax : float, optional

@@ -45,7 +45,7 @@ cartogram.plot(facecolor="Population", norm="log")      # a logarithmic scale
 cartogram.plot(facecolor="Population", cmap="Reds")     # a palette of the call
 ```
 
-The default style takes a logarithmic scale for positive data that spans more than one decade (`color_scale="auto"`) and writes the tick labels in real numbers (`1M`, `2M`, `5M`). `norm=` accepts a matplotlib `Normalize` or one of `"linear"`, `"log"`, `"auto"`.
+The default style takes a logarithmic scale for positive data that spans more than one decade (`color_scale="auto"`) and writes the tick labels in real numbers (`1M`, `2M`, `5M`). `norm=` accepts a matplotlib `Normalize` or one of `"linear"`, `"sqrt"`, `"log"`, `"auto"`; the magnitudes of the velocity field (`VelocityPlotOptions(norm=...)`) and of the Voronoi displacement (`plot_displacement(norm=...)`) take the same scales.
 
 To keep a linear scale for data that spans more than one decade, pass `norm="linear"` to the call, set `color_scale="linear"` in a style (`PlotStyle.default().copy_with(color_scale="linear")`), or raise the threshold with `log_span` (the number of decades that triggers `"auto"`, default 1). A `vmin` or `vmax` in the call also fixes a linear scale; combined with `norm="log"` they are the limits of the logarithmic scale.
 

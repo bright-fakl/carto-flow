@@ -51,7 +51,7 @@ class TestPlotStyle:
 
     def test_validation(self):
         with pytest.raises(ValueError, match="color_scale"):
-            PlotStyle(color_scale="sqrt")
+            PlotStyle(color_scale="cubic")
         with pytest.raises(ValueError, match="tick_format"):
             PlotStyle(tick_format="eng")
         with pytest.raises(ValueError, match="colorbar_orientation"):
@@ -133,7 +133,7 @@ class TestNorm:
         with pytest.raises(ValueError, match="positive"):
             PlotStyle().norm([0, 5], scale="log")
         with pytest.raises(ValueError, match="scale"):
-            PlotStyle().norm([1, 5], scale="sqrt")
+            PlotStyle().norm([1, 5], scale="cubic")
 
     def test_diverging_is_symmetric(self):
         norm = PlotStyle().norm([-1, 3], "diverging")
@@ -340,3 +340,10 @@ class TestMerge:
     def test_log_span_merges_like_any_field(self):
         assert (PlotStyle.default() | PlotStyle(log_span=3)).log_span == 3
         assert PlotStyle.default().log_span is None
+
+
+def test_sqrt_scale():
+    from matplotlib.colors import PowerNorm
+
+    assert isinstance(PlotStyle().norm([1, 5], scale="sqrt"), PowerNorm)
+    assert PlotStyle(color_scale="sqrt").color_scale == "sqrt"

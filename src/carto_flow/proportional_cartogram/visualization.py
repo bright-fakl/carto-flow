@@ -230,7 +230,7 @@ def plot_partitions(
         Keyword arguments of the colorbar. A ``"label"`` key sets its label.
     legend_label : str, optional
         Label of the colorbar.
-    norm : Normalize, {"linear", "log", "auto"}, optional
+    norm : Normalize, {"linear", "sqrt", "log", "auto"}, optional
         Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
         ``vmax`` fixes a linear normalization unless a scale is named.
     **kwargs

@@ -13,6 +13,9 @@ Save a cartogram to disk and reload it, or export the morphed geometries to a Ge
 ### [Reduce Boundary Distortion](reduce-boundary-distortion.ipynb)
 Use `prescale_components`, `DensityBorderExtension`, anisotropy fields, and velocity modifiers like `BoundaryDecay` to control distortion at the edges of your cartogram.
 
+### [Steer the Flow with a Directional Tensor](steer-the-flow-with-a-directional-tensor.ipynb)
+Choose along which direction a map is stretched with `DirectionalTensor`: a uniform direction, or a radial or tangential one, compared on the same data.
+
 ### [Animate the Morphing Process](create-animation.ipynb)
 Capture intermediate frames with `snapshot_every`, build an animation with `animate_morph_history()`, and save to GIF or MP4.
 

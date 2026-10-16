@@ -25,6 +25,7 @@ nav:
       - Diagnose and Improve Convergence: how-to/diagnose-convergence.ipynb
       - Save and Export Results: how-to/save-and-export-results.ipynb
       - Reduce Boundary Distortion: how-to/reduce-boundary-distortion.ipynb
+      - Steer the Flow with a Directional Tensor: how-to/steer-the-flow-with-a-directional-tensor.ipynb
       - Animate the Morphing Process: how-to/create-animation.ipynb
       - Co-Morph Landmarks and Coordinates: how-to/co-morph-landmarks-and-coordinates.ipynb
       - Style Plots and Animations: how-to/style-plots.md

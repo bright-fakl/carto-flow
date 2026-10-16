@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from .._plot_params import deprecated_params
+from ..style import rc_wrapped, resolve_style
 
 if TYPE_CHECKING:
     from matplotlib.animation import FuncAnimation
@@ -50,6 +51,7 @@ def animate_voronoi_history(
     figsize: tuple[float, float] = (8, 6),
     fps: int = 15,
     repeat: bool = True,
+    style: Any = None,
 ) -> FuncAnimation:
     """Animate Lloyd relaxation through per-iteration snapshots.
 
@@ -84,6 +86,8 @@ def animate_voronoi_history(
         ``save_animation`` separately to control output fps).
     repeat : bool
         Whether the animation loops.  Default ``True``.
+    style : PlotStyle or str, optional
+        Style of the animation (default: the style of the block or session, else ``"default"``).
 
     Returns
     -------
@@ -131,7 +135,9 @@ def animate_voronoi_history(
     pad_x = (x_max - x_min) * 0.05 or 1.0
     pad_y = (y_max - y_min) * 0.05 or 1.0
 
-    fig, ax = plt.subplots(figsize=figsize)
+    st = resolve_style(style)
+    with st.rc_context():
+        fig, ax = plt.subplots(figsize=figsize)
     ax.set_aspect("equal")
     ax.axis("off")
     ax.set_xlim(x_min - pad_x, x_max + pad_x)
@@ -171,7 +177,8 @@ def animate_voronoi_history(
             )
 
     # Draw first frame immediately so the figure is not blank
-    _draw_frame(snapshots[0])
+    with st.rc_context():
+        _draw_frame(snapshots[0])
 
     def _update(frame_idx: int) -> None:
         _draw_frame(snapshots[frame_idx])
@@ -179,7 +186,7 @@ def animate_voronoi_history(
     interval_ms = max(1, round(1000 / fps))
     anim = FuncAnimation(
         fig,
-        _update,  # type: ignore[arg-type]
+        rc_wrapped(st, _update),
         frames=len(snapshots),
         interval=interval_ms,
         repeat=repeat,
@@ -234,5 +241,9 @@ def save_animation(
     if writer is not None:
         save_kwargs["writer"] = writer
     save_kwargs.update(kwargs)
+    # The saved frames have the surface of the figure (the style's), not the default white of the writer
+    savefig_kwargs = dict(save_kwargs.get("savefig_kwargs") or {})
+    savefig_kwargs.setdefault("facecolor", anim._fig.get_facecolor())  # type: ignore[attr-defined]
+    save_kwargs["savefig_kwargs"] = savefig_kwargs
 
     anim.save(str(path), **save_kwargs)

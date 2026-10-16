@@ -133,6 +133,11 @@ class PlotStyle:
         Placement of a colorbar.
     colorbar_outline_color, colorbar_outline_width : optional
         Outline of a colorbar.
+    reference_facecolor, reference_edgecolor, reference_linewidth, reference_alpha : optional
+        The reference layer: the geometries drawn under or beside a cartogram for context (the base of a dot density
+        map).
+    annotation_size : float, optional
+        Font size of the labels placed on a map.
     """
 
     rc: Mapping[str, Any] = field(default_factory=dict)
@@ -147,6 +152,11 @@ class PlotStyle:
     colorbar_aspect: float | None = None
     colorbar_outline_color: str | None = None
     colorbar_outline_width: float | None = None
+    reference_facecolor: str | None = None
+    reference_edgecolor: str | None = None
+    reference_linewidth: float | None = None
+    reference_alpha: float | None = None
+    annotation_size: float | None = None
 
     def __post_init__(self) -> None:
         if self.color_scale is not None and self.color_scale not in _SCALES:
@@ -505,6 +515,9 @@ def _light() -> PlotStyle:
         colorbar_shrink=0.8,
         colorbar_outline_color=spine,
         colorbar_outline_width=1.0,
+        reference_facecolor="#dde4ea",
+        reference_edgecolor=surface,
+        reference_linewidth=0.5,
     )
 
 
@@ -533,6 +546,9 @@ def _dark() -> PlotStyle:
         colorbar_shrink=0.8,
         colorbar_outline_color=spine,
         colorbar_outline_width=1.0,
+        reference_facecolor="#2a3037",
+        reference_edgecolor=surface,
+        reference_linewidth=0.5,
     )
 
 
@@ -624,16 +640,17 @@ def resolve_style(style: PlotStyle | str | Sequence[PlotStyle | str] | None = No
 def styled(func):
     """Decorator that adds a ``style`` keyword to a plot function.
 
-    The function runs with the rcParams of the style, so the figure and axes it creates, and the text it draws, have the
-    look of the style; an axes passed in as ``ax`` gets the surface of the style.
+    The function runs with the rcParams of the style and with the style as the style of the block (``resolve_style()``
+    inside the function returns it), so the figure and axes it creates, and the text it draws, have the look of the
+    style; an axes passed in as ``ax`` gets the surface of the style.
     """
     signature = inspect.signature(func)
     has_ax = "ax" in signature.parameters
 
     @functools.wraps(func)
-    def wrapper(*args, style: PlotStyle | str | None = None, **kwargs):
+    def wrapper(*args, style: PlotStyle | str | Sequence[PlotStyle | str] | None = None, **kwargs):
         resolved = resolve_style(style)
-        with resolved.rc_context():
+        with style_context(resolved), resolved.rc_context():
             if has_ax:
                 ax = signature.bind_partial(*args, **kwargs).arguments.get("ax")
                 if ax is not None:

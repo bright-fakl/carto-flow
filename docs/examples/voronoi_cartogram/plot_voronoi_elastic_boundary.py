@@ -51,7 +51,7 @@ for ax, res, title in zip(
         vmin=0,
         vmax=40,
         legend=True,
-        legend_kwds={"shrink": 0.6, "label": "Population (Millions)"},
+        legend_kwargs={"shrink": 0.6, "label": "Population (Millions)"},
     )
     ax.set(title=title)
     ax.axis("off")

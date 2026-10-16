@@ -27,8 +27,10 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.colors import Normalize
 
 from .._plot_params import classify_string, deprecated_palette, deprecated_params
+from ..style import resolve_style, styled
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -85,12 +87,15 @@ def _adjust_color(
 
 def _get_colors_from_cmap(
     values: np.ndarray,
-    cmap: str,
+    cmap: Any,
     vmin: float | None = None,
     vmax: float | None = None,
+    norm: Any = None,
 ) -> list[str]:
-    """Get hex colors for values using a colormap."""
+    """Get hex colors for values using a colormap; a ``norm`` replaces the linear normalization from vmin to vmax."""
     colormap = plt.get_cmap(cmap)
+    if norm is not None:
+        return [mcolors.to_hex(colormap(norm(v))) for v in values]
     if vmin is None:
         vmin = np.nanmin(values)
     if vmax is None:
@@ -110,17 +115,18 @@ def _get_colors_from_cmap(
     background_facecolor="background_color",
     complement_facecolor=("complement_color_by", "complement_color"),
 )
+@styled
 def plot_partitions(
     gdf: gpd.GeoDataFrame,
     columns: list[str] | None = None,
     # Coloring
     facecolor: str | list[str] | None = None,
-    cmap: str | dict[str, str] | None = None,
+    cmap: Any = None,
     vmin: float | None = None,
     vmax: float | None = None,
     # Standard styling (for highlighted partitions)
-    edgecolor: str = "white",
-    linewidth: float = 0.5,
+    edgecolor: str | None = None,
+    linewidth: float | None = None,
     # Highlighting
     highlight: str | list[str] | None = None,
     background_alpha: float | None = None,
@@ -131,13 +137,16 @@ def plot_partitions(
     background_linewidth: float | None = None,
     # Complement styling
     include_complement: bool = True,
-    complement_facecolor: str = "#e0e0e0",
+    complement_facecolor: str | None = None,
     complement_alpha: float = 1.0,
     complement_edgecolor: str | None = None,
     complement_linewidth: float | None = None,
     # General
     ax: Axes | None = None,
     legend: bool = True,
+    legend_kwargs: dict | None = None,
+    legend_label: str | None = None,
+    norm: Any = None,
     **kwargs: Any,
 ) -> PartitionsPlotResult:
     """
@@ -145,6 +154,9 @@ def plot_partitions(
 
     Takes the output of partition_geometries() and plots all partition
     geometries together, with coloring based on area, category, or data values.
+
+    The ``style`` keyword (a ``PlotStyle`` or a registered name; default: the style of the block or session, else
+    ``"default"``) sets the look of the plot.
 
     Parameters
     ----------
@@ -168,17 +180,17 @@ def plot_partitions(
 
         A string that is a column of ``gdf`` and also a built-in value or a color
         is read as the column, then as the built-in value, and a warning is issued.
-    cmap : str or dict[str, str], optional
-        Colormap name for continuous data. Defaults to 'viridis'. A dict maps
-        category values to colors for categorical data; categories that are not
-        in the dict take the colors of 'tab10'.
+    cmap : str, Colormap or dict[str, str], optional
+        Colormap of continuous data. Defaults to the sequential palette of the style, else 'viridis'. A dict
+        maps category values to colors for categorical data; categories that are not in the dict take the
+        categorical colors of the style, else the colors of 'tab10'.
     vmin, vmax : float, optional
         Value range for continuous colormap normalization.
 
-    edgecolor : str, default='white'
-        Edge color for partition boundaries.
-    linewidth : float, default=0.5
-        Line width for partition boundaries.
+    edgecolor : str, optional
+        Edge color for partition boundaries. Defaults to the edge color of the style, else 'white'.
+    linewidth : float, optional
+        Line width for partition boundaries. Defaults to the line width of the style, else 0.5.
 
     highlight : str or list[str], optional
         Partition category/categories to highlight. Other partitions are
@@ -200,9 +212,9 @@ def plot_partitions(
 
     include_complement : bool, default=True
         Whether to include the complement geometry (remainder) in the plot.
-    complement_facecolor : str, default='#e0e0e0'
-        Fill of the complement: a column of ``gdf`` colors it by that column,
-        otherwise a color.
+    complement_facecolor : str, optional
+        Fill of the complement: a column of ``gdf`` colors it by that column, otherwise a color. Defaults to the
+        reference fill of the style, else '#e0e0e0'.
     complement_alpha : float, default=1.0
         Alpha for complement partitions.
     complement_edgecolor : str, optional
@@ -214,6 +226,13 @@ def plot_partitions(
         Axes to plot on. If None, creates a new figure.
     legend : bool, default=True
         Whether to show a legend or colorbar.
+    legend_kwargs : dict, optional
+        Keyword arguments of the colorbar. A ``"label"`` key sets its label.
+    legend_label : str, optional
+        Label of the colorbar.
+    norm : Normalize, {"linear", "log", "auto"}, optional
+        Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
+        ``vmax`` fixes a linear normalization unless a scale is named.
     **kwargs
         Additional arguments passed to GeoDataFrame.plot().
 
@@ -258,9 +277,16 @@ def plot_partitions(
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(10, 8))
 
+    st = resolve_style()
+    edgecolor = edgecolor if edgecolor is not None else st.channel_value("edge", "white")
+    linewidth = linewidth if linewidth is not None else st.channel_value("linewidth", 0.5)
+    if complement_facecolor is None:
+        complement_facecolor = st.reference_facecolor or "#e0e0e0"
+
     palette: dict[str, str] | None = None
     if isinstance(cmap, dict):
         palette, cmap = cmap, None
+    cmap_given = cmap is not None
 
     # Resolve the fill: a built-in value, data columns or a constant color
     constant_color: str | None = None
@@ -336,9 +362,10 @@ def plot_partitions(
         dtypes = [gdf[col].dtype for col in set(color_by_columns)]
         is_categorical = all(not pd.api.types.is_numeric_dtype(dt) for dt in dtypes)
 
-    # Set default cmap
+    # Set default cmap: the palette of the style, else the former default
+    limits_given = (vmin, vmax)
     if cmap is None:
-        cmap = "tab10" if is_categorical else "viridis"
+        cmap = (None if is_categorical else st.colormap("sequential")) or ("tab10" if is_categorical else "viridis")
 
     # Collect all values for consistent color scaling (continuous only)
     all_values: list[float] = []
@@ -359,6 +386,11 @@ def plot_partitions(
             vmin = min(all_values)
         if vmax is None:
             vmax = max(all_values)
+    norm_obj = (
+        st.resolve_norm(norm, "sequential", np.array(all_values, dtype=float), limits=limits_given)
+        if all_values and not is_categorical
+        else None
+    )
 
     # Build records for plotting
     records = []
@@ -423,6 +455,9 @@ def plot_partitions(
     cat_colors_map: dict = {
         v: mcolors.to_hex(_cat_cmap_obj(i / max(len(cat_values) - 1, 1))) for i, v in enumerate(cat_values)
     }
+    style_colors = st.categorical_colors(list(cat_values)) if is_categorical and not cmap_given else None
+    if style_colors is not None:
+        cat_colors_map = dict(zip(cat_values, style_colors, strict=True))
 
     # Single pass: assign color and all styling columns together
     colors = []
@@ -437,11 +472,11 @@ def plot_partitions(
 
         # Base color
         if is_comp:
-            if cv is not None:
+            if cv is not None and not pd.isna(cv):
                 if is_categorical:
                     base_color = palette[cv] if palette and cv in palette else cat_colors_map.get(cv, complement_fill)
                 else:
-                    base_color = _get_colors_from_cmap(np.array([cv]), cmap, vmin, vmax)[0]
+                    base_color = _get_colors_from_cmap(np.array([cv]), cmap, vmin, vmax, norm_obj)[0]
             else:
                 base_color = complement_fill
         elif constant_color is not None:
@@ -449,7 +484,7 @@ def plot_partitions(
         elif is_categorical:
             base_color = palette[cv] if palette and cv in palette else cat_colors_map.get(cv, "#888888")
         else:
-            base_color = _get_colors_from_cmap(np.array([cv]), cmap, vmin, vmax)[0]
+            base_color = _get_colors_from_cmap(np.array([cv]), cmap, vmin, vmax, norm_obj)[0]
 
         # Final color + styling
         if is_comp:
@@ -527,9 +562,16 @@ def plot_partitions(
         else:
             # Continuous colorbar
             if vmin is not None and vmax is not None:
-                sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=vmin, vmax=vmax))
-                sm.set_array([])
-                colorbar_art = plt.colorbar(sm, ax=ax)
+                guide = dict(legend_kwargs or {})
+                label = guide.pop("label", legend_label)
+                colorbar_art = st.add_colorbar(
+                    ax.figure,
+                    ax,
+                    cmap,
+                    norm_obj if norm_obj is not None else Normalize(vmin=vmin, vmax=vmax),
+                    label,
+                    **guide,
+                )
 
     # Set title
     if highlight_set is not None:

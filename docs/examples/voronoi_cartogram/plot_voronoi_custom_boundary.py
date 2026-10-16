@@ -35,7 +35,7 @@ result.plot(
     vmin=0,
     vmax=40,
     legend=True,
-    legend_kwds={"shrink": 0.6, "label": "Population (Millions)"},
+    legend_kwargs={"shrink": 0.6, "label": "Population (Millions)"},
 )
 ax.set(title="Cartogram of US States by Population — circular boundary")
 ax.axis("off")

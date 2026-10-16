@@ -139,7 +139,7 @@ class VelocityPlotOptions:
         Color arrows by ``"magnitude"`` or ``"direction"``. None for solid color.
     cmap : str, optional
         Colormap when ``color_by`` is set. Default: the sequential colormap of the style for ``"magnitude"`` (else
-        ``"viridis"``), ``"twilight"`` for ``"direction"``.
+        ``"viridis"``), the cyclic colormap of the style for ``"direction"`` (else ``"twilight"``).
     norm : Normalize or {"linear", "sqrt", "log", "auto"}, optional
         Scale of the magnitude, which sets the color for ``color_by="magnitude"`` and the opacity for
         ``alpha_by_magnitude``. Default: the color scale of the style, else linear.
@@ -538,7 +538,7 @@ def _prepare_velocity_colors(
         direction = np.arctan2(vy, vx)
         C_norm = (direction + np.pi) / (2 * np.pi)
         colorbar_label = "Direction"
-        effective_cmap = cmap if cmap is not None else "twilight"
+        effective_cmap = cmap if cmap is not None else (st.colormap("cyclic") or "twilight")
     else:
         C_norm = np.zeros_like(magnitude)
         colorbar_label = None
@@ -1085,6 +1085,12 @@ def plot_convergence(
     )
 
 
+def _add_field_colorbar(style: Any, fig: Any, ax: Any, mappable: Any, label: str | None, kwargs: dict) -> Any:
+    """Colorbar of a field image or a quiver mappable, drawn by the style; ``kwargs["label"]`` replaces ``label``."""
+    options = dict(kwargs)
+    return style.add_colorbar(fig, ax, mappable.cmap, mappable.norm, options.pop("label", label), **options)
+
+
 def _with_arrow_color(opts: "VelocityPlotOptions", style: Any = None, fallback: str = "black") -> "VelocityPlotOptions":
     """``opts`` with the arrow color of the style (the accent color, else ``fallback``) where it sets none."""
     if opts.color is not None:
@@ -1196,8 +1202,7 @@ def plot_density_field(
         geometry_mask=geometry_mask,
     )
 
-    cbar_kw = {"label": colorbar_label, **opts.legend_kwargs}
-    cbar = plt.colorbar(im, ax=ax, **cbar_kw)
+    cbar = _add_field_colorbar(resolve_style(), ax.figure, ax, im, colorbar_label, opts.legend_kwargs)
 
     # Apply custom tick formatter for ratio mode (colorbar shows ratio, not log2)
     if opts.normalize == "ratio":
@@ -1373,8 +1378,7 @@ def plot_velocity_field(
         cmap_obj = plt.get_cmap(effective_cmap)
         sm = cm.ScalarMappable(cmap=cmap_obj, norm=norm)
         sm.set_array([])
-        cbar_kw = {"label": colorbar_label, **opts.legend_kwargs}
-        colorbar_art = plt.colorbar(sm, ax=ax, **cbar_kw)
+        colorbar_art = _add_field_colorbar(resolve_style(), ax.figure, ax, sm, colorbar_label, opts.legend_kwargs)
 
     ax.set_aspect("equal")
     ax.set_title(f"Velocity Field (iteration {snapshot.iteration})")

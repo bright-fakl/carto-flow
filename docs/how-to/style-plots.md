@@ -37,6 +37,7 @@ The plot function decides the role of the data from the data itself, and the sty
 | a numeric column or array | sequential | `palettes.sequential` (the default style truncates `YlGnBu` so that no fill is close to the surface) |
 | `facecolor="errors_pct"`, or any data with `center=` | diverging, symmetric around the center | `palettes.diverging` |
 | a text, categorical or boolean column, or `categorical=True` | categorical | `palettes.categorical` |
+| a direction (`VelocityPlotOptions(color_by="direction")`) | cyclic | `palettes.cyclic` |
 
 ```python
 cartogram.plot(facecolor="Region")                      # categories

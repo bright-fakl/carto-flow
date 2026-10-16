@@ -173,3 +173,61 @@ class TestVoronoiDisplacement:
         plot = voronoi.plot_displacement(norm="log")
         bars = [a for a in plot.ax.figure.axes if a.get_label() == "<colorbar>"]
         assert bars and bars[0].get_yscale() == "log"
+
+
+class TestCyclicAndColorbars:
+    def test_cyclic_is_a_palette_role(self):
+        assert PlotStyle(palettes=Palettes(cyclic="hsv")).colormap("cyclic").name == "hsv"
+        assert PlotStyle().colormap("cyclic") is None
+        assert PlotStyle.default().colormap("cyclic").name == "hsv"
+        with pytest.raises(ValueError):
+            PlotStyle().colormap("circular")
+
+    def test_cyclic_merges(self):
+        merged = PlotStyle(palettes=Palettes(cyclic="hsv")) | PlotStyle(palettes=Palettes(sequential="Reds"))
+        assert merged.palettes.cyclic == "hsv"
+        assert merged.palettes.sequential == "Reds"
+
+    def test_direction_uses_the_cyclic_palette(self, cartogram):
+        style = PlotStyle(palettes=Palettes(cyclic="hsv"))
+        plot = plot_velocity_field(cartogram, velocity=VelocityPlotOptions(color_by="direction"), style=style)
+        assert plot.colorbar.mappable.cmap.name == "hsv"
+
+    def test_direction_default_and_classic(self, cartogram):
+        classic = plot_velocity_field(cartogram, velocity=VelocityPlotOptions(color_by="direction"), style="classic")
+        assert classic.colorbar.mappable.cmap.name == "twilight"
+
+    def test_density_colorbar_is_drawn_by_the_style(self, cartogram):
+        style = PlotStyle(colorbar_outline_color="#123456", colorbar_outline_width=2.0)
+        plot = plot_density_field(cartogram, style=style)
+        outline = plot.colorbar.outline
+        assert matplotlib.colors.to_hex(outline.get_edgecolor()) == "#123456"
+
+    def test_velocity_colorbar_is_drawn_by_the_style(self, cartogram):
+        style = PlotStyle(colorbar_outline_color="#123456", colorbar_outline_width=2.0)
+        plot = plot_velocity_field(cartogram, velocity=VelocityPlotOptions(color_by="magnitude"), style=style)
+        assert matplotlib.colors.to_hex(plot.colorbar.outline.get_edgecolor()) == "#123456"
+
+    def test_label_in_legend_kwargs_wins(self, cartogram):
+        plot = plot_density_field(cartogram, density=DensityPlotOptions(legend_kwargs={"label": "rho"}))
+        assert plot.colorbar.ax.get_ylabel() == "rho"
+
+    def test_ratio_ticks_stay_ratios(self, cartogram):
+        plot = plot_density_field(cartogram, density=DensityPlotOptions(normalize="ratio"), style="default")
+        labels = [t.get_text() for t in plot.colorbar.ax.get_yticklabels()]
+        assert any(label in ("1", "2", "0.5", "0.50") for label in labels)
+
+    def test_animation_colorbars(self, cartogram):
+        anim = animate_fields(
+            cartogram,
+            show_velocity=True,
+            density=DensityPlotOptions(),
+            velocity=VelocityPlotOptions(color_by="direction"),
+            fps=2,
+            duration=1,
+            style="dark",
+        )
+        anim._init_draw()
+        anim._func(1)
+        bars = [a for a in anim._fig.axes if a.get_label() == "<colorbar>"]
+        assert len(bars) == 2

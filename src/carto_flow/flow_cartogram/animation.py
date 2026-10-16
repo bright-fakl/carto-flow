@@ -2044,6 +2044,7 @@ def animate_fields(
     from .visualization import (
         DensityPlotOptions,
         VelocityPlotOptions,
+        _add_field_colorbar,
         _compute_quiver_scale,
         _prepare_density_display,
         _prepare_velocity_colors,
@@ -2292,8 +2293,7 @@ def animate_fields(
                 style=st,
             )
             if not density_cbar_added[0]:
-                _cbar_kw = {"label": label, **density_opts.legend_kwargs}
-                fig.colorbar(im, ax=ax, **_cbar_kw)
+                _add_field_colorbar(st, fig, ax, im, label, density_opts.legend_kwargs)
                 density_cbar_added[0] = True
 
         # Draw velocity field
@@ -2321,8 +2321,7 @@ def animate_fields(
                 _cnorm = _vnorm if velocity_opts.color_by == "magnitude" else plt.Normalize(vmin=-np.pi, vmax=np.pi)
                 sm = plt.cm.ScalarMappable(cmap=_vcmap, norm=_cnorm)
                 sm.set_array([])
-                _cbar_kw = {"label": _colorbar_label, **velocity_opts.legend_kwargs}
-                fig.colorbar(sm, ax=ax, **_cbar_kw)
+                _add_field_colorbar(st, fig, ax, sm, _colorbar_label, velocity_opts.legend_kwargs)
                 velocity_cbar_added[0] = True
 
         ax.set_aspect("equal")
@@ -3060,6 +3059,7 @@ def animate_workflow_fields(
     from .visualization import (
         DensityPlotOptions,
         VelocityPlotOptions,
+        _add_field_colorbar,
         _compute_quiver_scale,
         _prepare_density_display,
         _prepare_velocity_colors,
@@ -3259,8 +3259,7 @@ def animate_workflow_fields(
                 style=st,
             )
             if not density_cbar_added[0]:
-                _cbar_kw = {"label": label, **density_opts.legend_kwargs}
-                fig.colorbar(im, ax=ax, **_cbar_kw)
+                _add_field_colorbar(st, fig, ax, im, label, density_opts.legend_kwargs)
                 density_cbar_added[0] = True
 
         # Draw velocity field
@@ -3303,8 +3302,7 @@ def animate_workflow_fields(
                 _cnorm = _vnorm if velocity_opts.color_by == "magnitude" else plt.Normalize(vmin=-np.pi, vmax=np.pi)
                 sm = plt.cm.ScalarMappable(cmap=_vcmap, norm=_cnorm)
                 sm.set_array([])
-                _cbar_kw = {"label": _colorbar_label, **velocity_opts.legend_kwargs}
-                fig.colorbar(sm, ax=ax, **_cbar_kw)
+                _add_field_colorbar(st, fig, ax, sm, _colorbar_label, velocity_opts.legend_kwargs)
                 velocity_cbar_added[0] = True
 
         ax.set_aspect("equal")

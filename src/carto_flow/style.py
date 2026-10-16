@@ -575,9 +575,9 @@ def _dark() -> PlotStyle:
         reference_edgecolor=surface,
         reference_linewidth=0.5,
         series_color="#6cb4ee",
-        accent_color="#ff6b5e",
+        accent_color="#ffd23f",
         positive_color="#4cc38a",
-        highlight_color="#ffb347",
+        highlight_color="#c792ea",
     )
 
 

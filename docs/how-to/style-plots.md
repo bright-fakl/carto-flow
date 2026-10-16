@@ -1,6 +1,6 @@
 # Style Plots and Animations
 
-A `PlotStyle` sets the look of the plots and animations of the flow, Voronoi and proportional cartograms in one place: the surface and text colors, the boundary, the palettes by data type, the color scale and the colorbar. A call decides which data a plot shows, the style decides how it looks by default, and an argument of the call always wins over the style.
+A `PlotStyle` sets the look of the plots and animations of the flow, Voronoi, proportional and symbol cartograms in one place: the surface and text colors, the boundary, the palettes by data type, the color scale and the colorbar. A call decides which data a plot shows, the style decides how it looks by default, and an argument of the call always wins over the style.
 
 ## Choose a style
 
@@ -26,7 +26,7 @@ cf.set_style(None)        # back to the default
 
 The style of a call is the `style=` argument, else the block, else the session, else `"default"`.
 
-Plots that take `style=`: `Cartogram.plot`, `plot_cartogram`, `plot_comparison`, the field and convergence plots and the `animate_*` functions of the flow cartogram; `VoronoiCartogram.plot`, `plot_displacement`, `plot_comparison`, `plot_compactness`, the topology plots, the convergence plot and `animate_voronoi_history`; `plot_partitions` and `plot_dot_density` of the proportional cartogram.
+Plots that take `style=`: `Cartogram.plot`, `plot_cartogram`, `plot_comparison`, the field and convergence plots and the `animate_*` functions of the flow cartogram; `VoronoiCartogram.plot`, `plot_displacement`, `plot_comparison`, `plot_compactness`, the topology plots, the convergence plot and `animate_voronoi_history`; `plot_partitions` and `plot_dot_density` of the proportional cartogram; `SymbolCartogram.plot`, `plot_symbols`, `plot_comparison`, `plot_adjacency`, `plot_adjacency_heatmap`, `plot_tiling` and `plot_displacement` of the symbol cartogram.
 
 ## What the style sets for each type of data
 
@@ -69,7 +69,8 @@ cartogram.plot(facecolor="Population", style="mine")
 - `rc` holds matplotlib rcParams (surface, text and tick colors, font sizes, grid, legend). `copy_with(rc=...)` replaces them, `copy_with(rc_update=...)` merges.
 - `PlotStyle.from_mplstyle("ggplot")` or `PlotStyle.from_mplstyle("my.mplstyle")` builds a style from a matplotlib style sheet.
 - `palettes` holds the colormap of each role. `channels["edge"].value` and `channels["linewidth"].value` are the boundary color and width of the regions.
-- `reference_facecolor`, `reference_edgecolor`, `reference_linewidth` and `reference_alpha` are the layer of context geometries (the base of a dot density map, the complement of `plot_partitions`); `annotation_size` is the font size of the labels placed on a map (`label_fontsize` of the Voronoi plots).
+- `channels` also sets the fixed fill (`"fill"`), opacity (`"alpha"`) and the boundary of the symbols; with `range=(low, high)` a channel sets the output range of the data-driven `alpha`, `linewidth` and `label` (font size) of `plot_symbols`. `hatch_cycle` is the sequence of hatch patterns assigned to the categories of `hatch=`.
+- `reference_facecolor`, `reference_edgecolor`, `reference_linewidth` and `reference_alpha` are the layer of context geometries (the base of a dot density map, the complement of `plot_partitions`, the tiles of `plot_tiling`); `annotation_size` is the font size of the labels placed on a map (`label_fontsize` of the Voronoi plots).
 - `color_scale` (`"linear"`, `"log"`, `"auto"`), `tick_format` (`"plain"`, `"si"`) and the `colorbar_*` fields set the colorbar.
 - A field left `None` leaves matplotlib or the library default alone, so `PlotStyle()` is the classic look.
 - `style.rc_params()` returns the rcParams, to use the look in your own matplotlib code with `plt.rc_context(style.rc_params())`. A figure that you created yourself gets the surface with `style.apply(fig)`.

@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from .._plot_params import classify_string, deprecated_params, deprecated_to_dict
+from ..style import resolve_style, styled
 from .result import SymbolCartogram
 
 if TYPE_CHECKING:
@@ -36,6 +38,7 @@ _HATCH_DEFAULTS: list[str] = ["/", "\\", ".", "x", "o", "+", "-", "|", "*", "O"]
 
 
 @deprecated_params(facecolor="column")
+@styled
 def plot_comparison(
     original_gdf: gpd.GeoDataFrame,
     result: SymbolCartogram,
@@ -57,7 +60,8 @@ def plot_comparison(
     figsize : tuple
         Figure size.
     **kwargs
-        Passed to GeoDataFrame.plot()
+        Passed to :meth:`SymbolCartogram.plot`. The original geometries take ``cmap``, ``center``, ``categorical``,
+        ``norm``, ``vmin``, ``vmax``, ``alpha``, a numeric ``linewidth`` and a color ``edgecolor``.
 
     Returns
     -------
@@ -72,18 +76,52 @@ def plot_comparison(
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=figsize)
 
     # Plot original — capture collections added by geopandas
+    import pandas as pd
+
+    from .._fill import Fill, plot_fill
+
+    st = resolve_style()
+    st.apply_axes(ax1)
     before = len(ax1.collections)
-    original_fill: dict[str, Any] = {}
+    fill = Fill({})
     if isinstance(facecolor, str):
         try:
             kind = classify_string(facecolor, original_gdf.columns, stacklevel=3)
         except ValueError:
             kind = None  # a column of the symbols only: the original geometries stay uncolored
         if kind == "column":
-            original_fill = {"column": facecolor, "legend": True}
+            values = original_gdf[facecolor]
+            numeric = pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values)
+            categorical = kwargs.get("categorical")
+            if categorical is True or (categorical is None and not numeric):
+                role = "categorical"
+            elif kwargs.get("center") is not None:
+                role = "diverging"
+            else:
+                role = "sequential"
+            fill = Fill({"column": facecolor}, role, facecolor, facecolor)
         elif kind == "color":
-            original_fill = {"facecolor": facecolor}
-    original_gdf.plot(ax=ax1, **original_fill, **kwargs)
+            fill = Fill({"facecolor": facecolor})
+    shared = {k: v for k, v in kwargs.items() if k in ("vmin", "vmax", "alpha") and isinstance(v, (int, float))}
+    if isinstance(kwargs.get("linewidth"), (int, float)):
+        shared["linewidth"] = kwargs["linewidth"]
+    if isinstance(kwargs.get("edgecolor"), str) and _is_mpl_color(kwargs["edgecolor"]):
+        shared["edgecolor"] = kwargs["edgecolor"]
+    plot_fill(
+        ax1,
+        original_gdf,
+        fill,
+        st,
+        cmap=kwargs.get("cmap"),
+        default_cmap=None,
+        norm=kwargs.get("norm"),
+        center=kwargs.get("center"),
+        legend=True,
+        legend_kwargs=None,
+        legend_label=None,
+        categorical=kwargs.get("categorical"),
+        kwargs=shared,
+    )
     original_collections = list(ax1.collections[before:])
     ax1.set_aspect("equal")
     ax1.set_axis_off()
@@ -104,6 +142,7 @@ def plot_comparison(
 
 
 @deprecated_to_dict("arrows_kwargs", arrow_color="color", arrow_alpha="alpha")
+@styled
 def plot_displacement(
     result: SymbolCartogram,
     ax: plt.Axes | None = None,
@@ -190,13 +229,14 @@ def plot_displacement(
     link_legend="colorbar",
     link_legend_kwargs="colorbar_kwds",
 )
+@styled
 def plot_adjacency(
     result: SymbolCartogram,
     original_gdf: gpd.GeoDataFrame | None = None,
     adjacency: NDArray | None = None,
     ax: plt.Axes | None = None,
     link_color: str | None = None,
-    link_cmap: str = "viridis",
+    link_cmap: Any = None,
     link_alpha: float = 0.6,
     link_linewidth: float = 1.5,
     node_markersize: float = 20,
@@ -228,8 +268,9 @@ def plot_adjacency(
     link_color : str, optional
         Fixed color for all edges. If None, edges are colored by weight
         using ``link_cmap``.
-    link_cmap : str
-        Colormap name for edge weights (used when ``link_color`` is None).
+    link_cmap : str or Colormap, optional
+        Colormap for edge weights (used when ``link_color`` is None). Default: the sequential colormap of the
+        style, else ``"viridis"``.
     link_alpha : float
         Edge transparency.
     link_linewidth : float
@@ -271,6 +312,10 @@ def plot_adjacency(
 
     from .plot_results import AdjacencyPlotResult
 
+    st = resolve_style()
+    if link_cmap is None:
+        link_cmap = st.colormap("sequential") or "viridis"
+
     if ax is None:
         _, ax = plt.subplots(1, 1, figsize=(10, 8))
 
@@ -290,7 +335,7 @@ def plot_adjacency(
     original_collections: list = []
     if show_original and original_gdf is not None:
         before = len(ax.collections)
-        original_gdf.plot(ax=ax, facecolor="none", edgecolor="lightgray", linewidth=0.5)
+        original_gdf.plot(ax=ax, facecolor="none", edgecolor=st.rc.get("axes.edgecolor", "lightgray"), linewidth=0.5)
         original_collections = list(ax.collections[before:])
 
     symbols_result = None
@@ -370,11 +415,10 @@ def plot_adjacency(
                 linewidths=link_linewidth,
             )
             if link_legend:
-                sm = plt.cm.ScalarMappable(cmap=cmap_obj, norm=norm)
-                sm.set_array([])
-                _cb_kwds = {"ax": ax, "shrink": 0.6, "label": "adjacency weight", **(link_legend_kwargs or {})}
+                _cb_kwds = {"shrink": 0.6, "label": "adjacency weight", **(link_legend_kwargs or {})}
                 if (_fig := ax.get_figure()) is not None:
-                    colorbar_art = _fig.colorbar(sm, **_cb_kwds)
+                    cb_ax = _cb_kwds.pop("ax", ax)
+                    colorbar_art = st.add_colorbar(_fig, cb_ax, cmap_obj, norm, _cb_kwds.pop("label"), **_cb_kwds)
         ax.add_collection(lc)
         edge_collection = lc
 
@@ -405,6 +449,7 @@ def plot_adjacency(
 
 
 @deprecated_params(legend="colorbar", legend_kwargs="colorbar_kwds", tick_labelsize="tick_fontsize")
+@styled
 def plot_adjacency_heatmap(
     source: SymbolCartogram | LayoutResult | NDArray,
     labels: str | Sequence | None = None,
@@ -412,7 +457,7 @@ def plot_adjacency_heatmap(
     *,
     ax: plt.Axes | None = None,
     figsize: tuple[float, float] | None = None,
-    cmap: str = "YlOrRd",
+    cmap: Any = None,
     vmin: float | None = None,
     vmax: float | None = None,
     show_values: bool = False,
@@ -457,8 +502,8 @@ def plot_adjacency_heatmap(
     figsize : tuple, optional
         Figure size when creating a new figure.  Defaults to an auto-scaled
         value based on *n* (capped between 4 and 16 inches per side).
-    cmap : str
-        Colormap name.  Default ``"YlOrRd"``.
+    cmap : str or Colormap, optional
+        Colormap.  Default: the sequential colormap of the style, else ``"YlOrRd"``.
     vmin, vmax : float, optional
         Colormap data limits.  Defaults to the observed min/max of the matrix.
     show_values : bool
@@ -526,6 +571,10 @@ def plot_adjacency_heatmap(
     import matplotlib.pyplot as plt
 
     from .plot_results import AdjacencyHeatmapResult
+
+    st = resolve_style()
+    if cmap is None:
+        cmap = st.colormap("sequential") or "YlOrRd"
 
     # ------------------------------------------------------------------
     # A. Duck-type source and extract adjacency matrix
@@ -673,7 +722,8 @@ def plot_adjacency_heatmap(
     if legend:
         _cb_kwds = {"shrink": 0.8, "label": "weight", **(legend_kwargs or {})}
         if (_fig := ax.get_figure()) is not None:
-            colorbar_art = _fig.colorbar(im, ax=ax, **_cb_kwds)
+            cb_ax = _cb_kwds.pop("ax", ax)
+            colorbar_art = st.add_colorbar(_fig, cb_ax, im.cmap, im.norm, _cb_kwds.pop("label"), **_cb_kwds)
 
     # ------------------------------------------------------------------
     # K. Title and return
@@ -690,17 +740,18 @@ def plot_adjacency_heatmap(
 
 
 @deprecated_params(assigned_facecolor="assigned_color", unassigned_facecolor="unassigned_color")
+@styled
 def plot_tiling(
     result: SymbolCartogram,
     ax: plt.Axes | None = None,
     show_symbols: bool = True,
     show_assigned: bool = True,
     show_unassigned: bool = True,
-    assigned_facecolor: str = "#d4e6f1",
-    unassigned_facecolor: str = "#f5f5f5",
-    tile_edgecolor: str = "#999999",
-    tile_linewidth: float = 0.5,
-    tile_alpha: float = 0.5,
+    assigned_facecolor: str | None = None,
+    unassigned_facecolor: str | None = None,
+    tile_edgecolor: str | None = None,
+    tile_linewidth: float | None = None,
+    tile_alpha: float | None = None,
     **kwargs: Any,
 ) -> TilingPlotResult:
     """Visualize the tiling grid underlying a grid-placement cartogram.
@@ -720,16 +771,16 @@ def plot_tiling(
         Whether to show tiles that have a region assigned. Default True.
     show_unassigned : bool
         Whether to show unassigned (empty) tiles. Default True.
-    assigned_facecolor : str
-        Fill color for tiles that have a region assigned.
-    unassigned_facecolor : str
-        Fill color for unassigned (empty) tiles.
-    tile_edgecolor : str
-        Edge color for tile outlines.
-    tile_linewidth : float
-        Line width for tile outlines.
-    tile_alpha : float
-        Fill transparency for tiles.
+    assigned_facecolor : str, optional
+        Fill color for tiles that have a region assigned. Default: the fill value of the style, else the reference fill moved toward the text color, else ``"#d4e6f1"``.
+    unassigned_facecolor : str, optional
+        Fill color for unassigned (empty) tiles. Default: the reference fill of the style, else ``"#f5f5f5"``.
+    tile_edgecolor : str, optional
+        Edge color for tile outlines. Default: the reference edge of the style, else ``"#999999"``.
+    tile_linewidth : float, optional
+        Line width for tile outlines. Default: the reference line width of the style, else 0.5.
+    tile_alpha : float, optional
+        Fill transparency for tiles. Default: the reference alpha of the style, else 0.5.
     **kwargs
         Passed to ``result.plot()`` if ``show_symbols=True``.
 
@@ -845,12 +896,12 @@ def _find_column(
 
 def _apply_cmap(
     values: NDArray,
-    cmap: str,
+    cmap: Any,
     norm: Normalize | None,
     vmin: float | None,
     vmax: float | None,
 ) -> NDArray:
-    """Apply *cmap* to a float array, returning an ``(n, 4)`` RGBA array."""
+    """Apply *cmap* (a name or a ``Colormap``) to a float array, returning an ``(n, 4)`` RGBA array."""
     import matplotlib.colors as mc
     import matplotlib.pyplot as plt
 
@@ -863,21 +914,21 @@ def _apply_cmap(
 
 def _split_cmap(
     cmap_param: Any,
-    fallback: str = "viridis",
-) -> tuple[str, dict[str, Any] | None]:
-    """Split a unified cmap parameter into ``(cmap_name, color_map_dict)``.
+    fallback: Any = "viridis",
+) -> tuple[Any, dict[str, Any] | None]:
+    """Split a unified cmap parameter into ``(colormap, color_map_dict)``.
 
     *cmap_param* may be:
 
-    * A colormap name string → ``(cmap_param, None)``
+    * A colormap name or ``Colormap`` → ``(cmap_param, None)``
     * A ``dict`` of category → color overrides → ``(fallback, cmap_param)``
     * ``None`` → ``(fallback, None)``
     """
     if isinstance(cmap_param, dict):
         return fallback, cmap_param
-    if isinstance(cmap_param, str):
-        return cmap_param, None
-    return fallback, None
+    if cmap_param is None:
+        return fallback, None
+    return cmap_param, None
 
 
 def _is_numeric_values(values: Any) -> bool:
@@ -890,40 +941,75 @@ def _is_numeric_values(values: Any) -> bool:
     return bool(pd.api.types.is_numeric_dtype(dtype) and not pd.api.types.is_bool_dtype(dtype))
 
 
-def _apply_color_mapping(
+@dataclass
+class _Mapping:
+    """How a column was mapped to colors: the colors, the data role and what the legend needs to redraw the mapping."""
+
+    colors: NDArray
+    role: str
+    cmap: Any = None
+    norm: Normalize | None = None
+    cat_colors: dict[str, Any] | None = None
+    categories: list[str] | None = None
+
+
+def _map_colors(
     col_vals: NDArray,
-    cmap: str | dict,
-    norm: Normalize | None,
+    cmap: Any,
+    norm: Any,
     vmin: float | None,
     vmax: float | None,
-) -> NDArray:
-    """Map column values to an ``(n, 4)`` RGBA array.
+    style: Any = None,
+    channel: str = "fill",
+    center: float | None = None,
+    categorical: bool | None = None,
+) -> _Mapping:
+    """Map column values to an ``(n, 4)`` RGBA array with the palette of the data role.
 
-    Numeric columns use *cmap* / *norm*.
-    Categorical columns cycle through the ``"tab10"`` qualitative palette,
-    with optional per-category overrides from *cmap* when it is a ``dict``.
+    The role is categorical for non-numeric data (or ``categorical=True``), diverging for a ``center``, else
+    sequential. A continuous role uses *cmap*, then the palette of the *style* for the channel, then ``"viridis"``,
+    with the normalization of *norm* or the style, else linear from *vmin* to *vmax*. A categorical role takes the
+    per-category overrides of a *cmap* dict, then the categorical colors of the style, then ``"tab10"``.
     """
     import matplotlib.colors as mc
     import matplotlib.pyplot as plt
 
-    cmap_str, color_map = _split_cmap(cmap)
+    from ..style import PlotStyle
+
+    style = style if style is not None else PlotStyle.classic()
     is_numeric = _is_numeric_values(col_vals)
+    if categorical is True or (categorical is None and not is_numeric):
+        role = "categorical"
+    else:
+        role = "diverging" if center is not None else "sequential"
 
-    if is_numeric:
-        return _apply_cmap(col_vals.astype(float), cmap_str, norm, vmin, vmax)
+    if role != "categorical":
+        values = col_vals.astype(float)
+        cm_spec, _ = _split_cmap(cmap, style.colormap(role, channel) or "viridis")
+        cm = plt.get_cmap(cm_spec)
+        norm_obj = style.resolve_norm(norm, role, values, center=center, limits=(vmin, vmax))
+        if norm_obj is None:
+            norm_obj = mc.Normalize(
+                vmin=vmin if vmin is not None else float(np.nanmin(values)),
+                vmax=vmax if vmax is not None else float(np.nanmax(values)),
+            )
+        return _Mapping(cm(norm_obj(values)), role, cm, norm_obj)
 
-    # Categorical: assign colors from tab10 palette
     col_strs = col_vals.astype(str)
     unique_vals = list(dict.fromkeys(col_strs))  # preserve insertion order
-    qual_cmap = plt.get_cmap("tab10")
-    cat_colors: dict[str, Any] = {v: qual_cmap(i % 10) for i, v in enumerate(unique_vals)}
-
-    # Apply per-category overrides
-    if color_map:
+    _, color_map = _split_cmap(cmap)
+    style_colors = style.categorical_colors(unique_vals, channel)
+    if style_colors is not None:
+        cat_colors: dict[str, Any] = {v: mc.to_rgba(c) for v, c in zip(unique_vals, style_colors, strict=True)}
+    else:
+        qual_cmap = plt.get_cmap("tab10")
+        cat_colors = {v: qual_cmap(i % 10) for i, v in enumerate(unique_vals)}
+    if color_map:  # per-category overrides
         for k, v in color_map.items():
             cat_colors[str(k)] = mc.to_rgba(v)
-
-    return np.array([cat_colors[str(v)] for v in col_strs])
+    return _Mapping(
+        np.array([cat_colors[str(v)] for v in col_strs]), role, cat_colors=cat_colors, categories=unique_vals
+    )
 
 
 def _to_rgba_array(colors: Any, n: int) -> NDArray:
@@ -948,13 +1034,17 @@ def _resolve_color(
     param: Any,
     result: SymbolCartogram,
     source_gdf: gpd.GeoDataFrame | None,
-    cmap: str | dict,
+    cmap: Any,
     norm: Normalize | None,
     vmin: float | None,
     vmax: float | None,
     n: int,
     default: Any = "steelblue",
-) -> tuple[Any, bool, NDArray | None, str | None]:
+    style: Any = None,
+    channel: str = "fill",
+    center: float | None = None,
+    categorical: bool | None = None,
+) -> tuple[Any, bool, NDArray | None, str | None, _Mapping | None]:
     """Resolve a color parameter to a matplotlib-compatible color specification.
 
     Returns
@@ -963,23 +1053,24 @@ def _resolve_color(
     is_mapped : True when driven by a data column (triggers legend).
     col_values : raw column values, or None.
     col_name : column name used, or None.
+    mapping : how the column was mapped (for the legend), or None.
 
     """
     import matplotlib.colors as mc
 
     if param is None:
-        return default, False, None, None
+        return default, False, None, None, None
 
     # Pass through matplotlib special edge-color tokens unchanged
     if isinstance(param, str) and param in ("none", "face"):
-        return param, False, None, None
+        return param, False, None, None, None
 
     if isinstance(param, str):
         is_color = _is_mpl_color(param)
         is_col = _is_column(param, result, source_gdf)
 
         if is_color and not is_col:
-            return param, False, None, None
+            return param, False, None, None, None
 
         if is_col:
             if is_color:
@@ -991,8 +1082,8 @@ def _resolve_color(
                     stacklevel=5,
                 )
             col_vals = _find_column(param, result, source_gdf)
-            colors = _apply_color_mapping(col_vals, cmap, norm, vmin, vmax)
-            return colors, True, col_vals, param
+            mapping = _map_colors(col_vals, cmap, norm, vmin, vmax, style, channel, center, categorical)
+            return mapping.colors, True, col_vals, param, mapping
 
         # Not a color and not a column → try column lookup for a better error
         _find_column(param, result, source_gdf)  # raises ValueError
@@ -1004,17 +1095,16 @@ def _resolve_color(
     if arr.ndim == 2 and arr.shape[0] == n and arr.shape[1] in (3, 4):
         if arr.shape[1] == 3:
             arr = np.concatenate([arr.astype(float), np.ones((n, 1))], axis=1)
-        return arr.astype(float), False, None, None
+        return arr.astype(float), False, None, None, None
 
     # (n,) numeric → apply colormap
     if arr.ndim == 1 and len(arr) == n and arr.dtype.kind in ("f", "i", "u"):
-        cmap_str = cmap if isinstance(cmap, str) else "viridis"
-        colors = _apply_cmap(arr.astype(float), cmap_str, norm, vmin, vmax)
-        return colors, False, arr, None
+        mapping = _map_colors(arr.astype(float), cmap, norm, vmin, vmax, style, channel, center, False)
+        return mapping.colors, False, arr, None, mapping
 
     # (n,) object array → list of colors
     if arr.ndim == 1 and len(arr) == n:
-        return np.array([mc.to_rgba(str(c)) for c in arr]), False, None, None
+        return np.array([mc.to_rgba(str(c)) for c in arr]), False, None, None, None
 
     raise ValueError(
         f"Cannot interpret {type(param).__name__!r} value as a color specification. "
@@ -1059,6 +1149,7 @@ def _resolve_hatch(
     source_gdf: gpd.GeoDataFrame | None,
     hatch_map: dict[str, str] | None,
     n: int,
+    cycle: Sequence[str] | None = None,
 ) -> tuple[list[str] | None, bool, dict[str, str] | None, str | None]:
     """Resolve hatch parameter to a per-symbol list of hatch strings.
 
@@ -1077,10 +1168,11 @@ def _resolve_hatch(
         if _is_column(param, result, source_gdf):
             col_vals = _find_column(param, result, source_gdf).astype(str)
             unique_vals = list(dict.fromkeys(col_vals))
+            patterns = list(cycle) if cycle else _HATCH_DEFAULTS
             _map: dict[str, str] = dict(hatch_map or {})
             for i, v in enumerate(unique_vals):
                 if v not in _map:
-                    _map[v] = _HATCH_DEFAULTS[i % len(_HATCH_DEFAULTS)]
+                    _map[v] = patterns[i % len(patterns)]
             # Build ordered cat→hatch map (only unique values, insertion-order preserved)
             cat_hatch_map = {v: _map[v] for v in unique_vals}
             return [_map.get(v, "") for v in col_vals], True, cat_hatch_map, param
@@ -1097,14 +1189,12 @@ def _add_legend(
     ax: plt.Axes,
     col_values: NDArray,
     col_name: str | None,
-    cmap: str | dict,
-    norm: Normalize | None,
-    vmin: float | None,
-    vmax: float | None,
+    mapping: _Mapping,
     legend_kwargs: dict,
     role: str = "face",
+    style: Any = None,
 ) -> Colorbar | Legend:
-    """Attach a colorbar (numeric) or patch legend (categorical) to *ax*.
+    """Attach a colorbar (continuous) or patch legend (categorical) for *mapping* to *ax*.
 
     Parameters
     ----------
@@ -1114,57 +1204,38 @@ def _add_legend(
         styling.  Only affects the categorical path.
 
     """
-    import matplotlib.colors as mc
-    import matplotlib.pyplot as plt
+    import matplotlib.patches as mpatches
 
-    cmap_str, color_map = _split_cmap(cmap)
-    is_numeric = _is_numeric_values(col_values)
+    from ..style import PlotStyle
 
-    if is_numeric:
-        cm = plt.get_cmap(cmap_str)
-        _vmin = vmin if vmin is not None else float(np.nanmin(col_values))
-        _vmax = vmax if vmax is not None else float(np.nanmax(col_values))
-        _norm = norm if norm is not None else mc.Normalize(vmin=_vmin, vmax=_vmax)
-        sm = plt.cm.ScalarMappable(cmap=cm, norm=_norm)
-        sm.set_array([])
-        cbar_kwds = {k: v for k, v in legend_kwargs.items() if k not in ("title", "loc")}
+    style = style if style is not None else PlotStyle.classic()
+    if mapping.role != "categorical":
+        cbar_kwds = {k: v for k, v in legend_kwargs.items() if k not in ("title", "loc", "label")}
+        label = legend_kwargs.get("label", legend_kwargs.get("title", col_name or ""))
         _fig = ax.get_figure()
         assert _fig is not None  # noqa: S101
-        cbar = _fig.colorbar(sm, ax=ax, **cbar_kwds)
-        label = legend_kwargs.get("title", col_name or "")
-        cbar.set_label(label)
-        return cbar
+        return style.add_colorbar(_fig, ax, mapping.cmap, mapping.norm, label, **cbar_kwds)
+
+    cat_colors = mapping.cat_colors or {}
+    unique_vals = mapping.categories or list(cat_colors)
+    if role == "edge":
+        handles = [mpatches.Patch(facecolor="none", edgecolor=cat_colors[v], linewidth=2, label=v) for v in unique_vals]
     else:
-        import matplotlib.patches as mpatches
+        handles = [mpatches.Patch(facecolor=cat_colors[v], label=v) for v in unique_vals]
 
-        col_strs = np.asarray(col_values).astype(str)
-        unique_vals = list(dict.fromkeys(col_strs))
-        qual_cmap = plt.get_cmap("tab10")
-        cat_colors: dict[str, Any] = {v: qual_cmap(i % 10) for i, v in enumerate(unique_vals)}
-        if color_map:
-            for k, v in color_map.items():
-                cat_colors[str(k)] = mc.to_rgba(v)
+    legend_patch_kwds = {k: v for k, v in legend_kwargs.items() if k not in ("shrink", "orientation")}
+    if col_name and "title" not in legend_patch_kwds:
+        legend_patch_kwds["title"] = col_name
 
-        if role == "edge":
-            handles = [
-                mpatches.Patch(facecolor="none", edgecolor=cat_colors[v], linewidth=2, label=v) for v in unique_vals
-            ]
-        else:
-            handles = [mpatches.Patch(facecolor=cat_colors[v], label=v) for v in unique_vals]
-
-        legend_patch_kwds = {k: v for k, v in legend_kwargs.items() if k not in ("shrink", "orientation")}
-        if col_name and "title" not in legend_patch_kwds:
-            legend_patch_kwds["title"] = col_name
-
-        # If there is already a legend on the axes, preserve it with add_artist
-        # before drawing the new one, so both are visible simultaneously.
-        existing = ax.get_legend()
-        if existing is not None:
-            ax.add_artist(existing)
-        ax.legend(handles=handles, **legend_patch_kwds)
-        leg = ax.get_legend()
-        assert leg is not None  # noqa: S101
-        return leg
+    # If there is already a legend on the axes, preserve it with add_artist
+    # before drawing the new one, so both are visible simultaneously.
+    existing = ax.get_legend()
+    if existing is not None:
+        ax.add_artist(existing)
+    ax.legend(handles=handles, **legend_patch_kwds)
+    leg = ax.get_legend()
+    assert leg is not None  # noqa: S101
+    return leg
 
 
 def _add_hatch_legend(
@@ -1235,6 +1306,7 @@ def _add_hatch_legend(
     label_legend_kwargs="label_legend_kwds",
     labels="label",
 )
+@styled
 def plot_symbols(
     result: SymbolCartogram,
     ax: plt.Axes | None = None,
@@ -1243,18 +1315,18 @@ def plot_symbols(
     source_gdf: gpd.GeoDataFrame | None = None,
     # Fill
     facecolor: Any = None,
-    cmap: str | dict = "viridis",
+    cmap: Any = None,
     norm: Normalize | None = None,
     vmin: float | None = None,
     vmax: float | None = None,
     # Transparency
-    alpha: float | str | Sequence | None = 0.9,
-    alpha_range: tuple[float, float] = (0.2, 1.0),
+    alpha: float | str | Sequence | None = None,
+    alpha_range: tuple[float, float] | None = None,
     # Edge
-    edgecolor: Any = "none",
+    edgecolor: Any = None,
     edge_cmap: str | dict | None = None,
-    linewidth: float | str | Sequence | None = 0.5,
-    linewidth_range: tuple[float, float] = (0.5, 3.0),
+    linewidth: float | str | Sequence | None = None,
+    linewidth_range: tuple[float, float] | None = None,
     # Hatch
     hatch: str | Sequence | None = None,
     hatch_map: dict[str, str] | None = None,
@@ -1271,14 +1343,16 @@ def plot_symbols(
     alpha_legend_kwargs: dict | None = None,
     # Labels
     labels: str | Sequence | None = None,
-    label_color: Any = "black",
+    label_color: Any = None,
     label_cmap: str | dict | None = None,
     label_legend: bool = True,
     label_legend_kwargs: dict | None = None,
-    label_fontsize: float | str | Sequence | None = 8,
-    label_fontsize_range: tuple[float, float] = (6.0, 14.0),
+    label_fontsize: float | str | Sequence | None = None,
+    label_fontsize_range: tuple[float, float] | None = None,
     label_kwargs: dict | None = None,
     # Other
+    center: float | None = None,
+    categorical: bool | None = None,
     zorder: int = 1,
     title: str | None = None,
 ) -> SymbolsPlotResult:
@@ -1290,6 +1364,10 @@ def plot_symbols(
     * **Data-driven** - a column name (``str``) looked up in the cartogram or
       source data and mapped to the visual channel.
     * **Explicitly per-symbol** - a list or NumPy array with one value per symbol.
+
+    The ``style`` keyword (a ``PlotStyle`` or a registered name; default: the style of the block or session, else
+    ``"default"``) sets the look of the plot: the surface, the palettes by data role, the edge, line width and alpha
+    of the symbols, the colorbars and the label size.
 
     Parameters
     ----------
@@ -1314,18 +1392,21 @@ def plot_symbols(
         * An ``(n, 3)`` or ``(n, 4)`` float array of RGB / RGBA values.
         * A list of color strings or RGBA tuples, one per symbol.
 
-        Defaults to ``"steelblue"`` when *None*.
-    cmap : str or dict
+        Defaults to the fill of the style, else ``"steelblue"``, when *None*.
+    cmap : str, Colormap or dict, optional
         Colormap for data-driven *facecolor*.  Pass a **colormap name** string
         for numeric columns (e.g. ``"viridis"``) or a ``dict`` of
         ``{category: color}`` for categorical columns
         (e.g. ``{"Europe": "#2ca02c", "Africa": "#d62728"}``).
-        Unspecified categories receive auto-assigned ``"tab10"`` colors.
-        Default ``"viridis"``.
-    norm : matplotlib Normalize, optional
-        Custom normalization for the colormap.
+        Unspecified categories take the categorical colors of the style,
+        else ``"tab10"``. Defaults to the sequential palette of the style (the
+        diverging palette with *center*), else ``"viridis"``.
+    norm : matplotlib Normalize or {"linear", "log", "auto"}, optional
+        Custom normalization for the colormap: an instance, or the scale of
+        the style's normalization.
     vmin, vmax : float, optional
-        Explicit data range for the colormap normalization.
+        Explicit data range for the colormap normalization; it fixes a linear
+        normalization unless a scale is named.
     alpha : float, column name, or array-like, optional
         Symbol opacity (0 = transparent, 1 = opaque).
 
@@ -1333,13 +1414,13 @@ def plot_symbols(
         * Column name → linearly interpolated into *alpha_range*.
         * 1-D array of floats → per-symbol opacity.
 
-        Default ``0.9``.
+        Defaults to the alpha of the style, else ``0.9``.
     alpha_range : (float, float)
         ``(min_alpha, max_alpha)`` used when *alpha* is a column name.
-        Default ``(0.2, 1.0)``.
+        Defaults to the range of the alpha channel of the style, else ``(0.2, 1.0)``.
     edgecolor : color, column name, or array-like, optional
         Symbol edge color.  Accepts the same forms as *facecolor*.
-        Use ``"none"`` (default) for no visible border.
+        Defaults to the edge color of the style, else ``"none"`` (no visible border).
     edge_cmap : str or dict, optional
         Colormap for edge color mapping.  Accepts the same forms as *cmap*
         (string name for numeric, dict for categorical).
@@ -1351,10 +1432,10 @@ def plot_symbols(
         * Column name → linearly interpolated into *linewidth_range*.
         * 1-D array → per-symbol widths.
 
-        Default ``0.5``.
+        Defaults to the line width of the style, else ``0.5``.
     linewidth_range : (float, float)
         ``(min_lw, max_lw)`` used when *linewidth* is a column name.
-        Default ``(0.5, 3.0)``.
+        Defaults to the range of the linewidth channel of the style, else ``(0.5, 3.0)``.
     hatch : str, column name, or sequence, optional
         Fill hatching.
 
@@ -1415,7 +1496,7 @@ def plot_symbols(
         * ``None`` → no labels (default).
     label_color : color, column name, or array-like, optional
         Text color for the labels.  Accepts the same forms as *facecolor*.
-        Default ``"black"``.
+        Defaults to the text color of the style, else black.
     label_cmap : str or dict, optional
         Colormap for data-driven *label_color*.  Accepts the same forms as
         *cmap*.  Falls back to *cmap* (string only) when ``None``.
@@ -1426,16 +1507,21 @@ def plot_symbols(
         * Column name → linearly interpolated into *label_fontsize_range*.
         * 1-D array → per-symbol sizes.
 
-        Default ``8``.
+        Defaults to the annotation size of the style, else ``8``.
     label_fontsize_range : (float, float)
         ``(min, max)`` font-size range when *label_fontsize* is a column name.
-        Default ``(6.0, 14.0)``.
+        Defaults to the range of the label channel of the style, else ``(6.0, 14.0)``.
     label_kwargs : dict, optional
         Additional keyword arguments forwarded to ``Axes.text()`` for every
         label (e.g. ``{"fontweight": "bold", "ha": "left"}``).
     zorder : int
         Matplotlib drawing order for symbol patches.  Labels are placed at
         ``zorder + 1``.  Default ``1``.
+    center : float, optional
+        Treat numeric data-driven colors as diverging around this value.
+    categorical : bool, optional
+        Force (True) or prevent (False) the categorical treatment of a
+        data-driven color; by default the data type decides.
     title : str, optional
         Axes title.
 
@@ -1499,11 +1585,30 @@ def plot_symbols(
     """
     from collections import defaultdict
 
+    import matplotlib as mpl
     import matplotlib.pyplot as plt
     from matplotlib.collections import PatchCollection
     from matplotlib.patches import Polygon as MplPolygon
 
     from .plot_results import SymbolsPlotResult
+
+    st = resolve_style()
+    if alpha is None:
+        alpha = st.channel_value("alpha", 0.9)
+    if alpha_range is None:
+        alpha_range = st.channel_range("alpha", (0.2, 1.0))
+    if edgecolor is None:
+        edgecolor = st.channel_value("edge", "none")
+    if linewidth is None:
+        linewidth = st.channel_value("linewidth", 0.5)
+    if linewidth_range is None:
+        linewidth_range = st.channel_range("linewidth", (0.5, 3.0))
+    if label_fontsize is None:
+        label_fontsize = st.annotation_size or 8
+    if label_fontsize_range is None:
+        label_fontsize_range = st.channel_range("label", (6.0, 14.0))
+    if label_color is None:
+        label_color = mpl.rcParams["text.color"]
 
     symbols = result.symbols
     n = len(symbols)
@@ -1522,7 +1627,7 @@ def plot_symbols(
         )
 
     # --- Resolve visual properties ---
-    face_colors, is_mapped, col_values, col_name = _resolve_color(
+    face_colors, is_mapped, col_values, col_name, face_mapping = _resolve_color(
         facecolor,
         result,
         source_gdf,
@@ -1531,7 +1636,11 @@ def plot_symbols(
         vmin,
         vmax,
         n,
-        default="steelblue",
+        default=st.channel_value("fill", "steelblue"),
+        style=st,
+        channel="fill",
+        center=center,
+        categorical=categorical,
     )
 
     alpha_col_name: str | None = None
@@ -1550,8 +1659,8 @@ def plot_symbols(
     )
 
     # Don't inherit a facecolor categorical dict for edges — only inherit string cmaps
-    _edge_cmap: str | dict = edge_cmap if edge_cmap is not None else (cmap if isinstance(cmap, str) else "viridis")
-    edge_colors, edge_is_mapped, edge_col_values, edge_col_name = _resolve_color(
+    _edge_cmap: Any = edge_cmap if edge_cmap is not None else (None if isinstance(cmap, dict) else cmap)
+    edge_colors, edge_is_mapped, edge_col_values, edge_col_name, edge_mapping = _resolve_color(
         edgecolor,
         result,
         source_gdf,
@@ -1561,6 +1670,8 @@ def plot_symbols(
         None,
         n,
         default="none",
+        style=st,
+        channel="edge",
     )
 
     lw_col_name: str | None = None
@@ -1578,7 +1689,9 @@ def plot_symbols(
         default=0.5,
     )
 
-    hatch_list, hatch_is_mapped, cat_hatch_map, hatch_col_name = _resolve_hatch(hatch, result, source_gdf, hatch_map, n)
+    hatch_list, hatch_is_mapped, cat_hatch_map, hatch_col_name = _resolve_hatch(
+        hatch, result, source_gdf, hatch_map, n, st.hatch_cycle
+    )
 
     # Capture base facecolor before it gets overwritten — needed for alpha colorbar.
     face_colors_base = face_colors
@@ -1648,18 +1761,8 @@ def plot_symbols(
     # --- Legend / colorbar for facecolor ---
     face_colorbar = None
     face_legend = None
-    if legend and is_mapped and col_values is not None:
-        art = _add_legend(
-            ax,
-            col_values,
-            col_name,
-            cmap,
-            norm,
-            vmin,
-            vmax,
-            legend_kwargs or {},
-            role="face",
-        )
+    if legend and is_mapped and col_values is not None and face_mapping is not None:
+        art = _add_legend(ax, col_values, col_name, face_mapping, legend_kwargs or {}, role="face", style=st)
         from matplotlib.colorbar import Colorbar as _Colorbar
 
         if isinstance(art, _Colorbar):
@@ -1679,18 +1782,11 @@ def plot_symbols(
         edge_legend
         and edge_is_mapped
         and edge_col_values is not None
+        and edge_mapping is not None
         and edge_col_name != col_name  # skip if same column already has a legend
     ):
         art = _add_legend(
-            ax,
-            edge_col_values,
-            edge_col_name,
-            _edge_cmap,
-            None,
-            None,
-            None,
-            edge_legend_kwargs or {},
-            role="edge",
+            ax, edge_col_values, edge_col_name, edge_mapping, edge_legend_kwargs or {}, role="edge", style=st
         )
         from matplotlib.colorbar import Colorbar as _Colorbar
 
@@ -1745,13 +1841,17 @@ def plot_symbols(
         data_min = float(np.nanmin(alpha_col_values))  # type: ignore[arg-type]
         data_max = float(np.nanmax(alpha_col_values))  # type: ignore[arg-type]
         _anorm = mc.Normalize(vmin=data_min, vmax=data_max)
-        _sm = plt.cm.ScalarMappable(cmap=_alpha_cmap, norm=_anorm)
-        _sm.set_array([])
-        _akwds = {k: v for k, v in (alpha_legend_kwargs or {}).items() if k not in ("title", "loc")}
+        _akwds = {k: v for k, v in (alpha_legend_kwargs or {}).items() if k not in ("title", "loc", "label")}
         _fig = ax.get_figure()
         assert _fig is not None  # noqa: S101
-        alpha_colorbar = _fig.colorbar(_sm, ax=ax, **_akwds)
-        alpha_colorbar.set_label((alpha_legend_kwargs or {}).get("title", alpha_col_name or ""))
+        alpha_colorbar = st.add_colorbar(
+            _fig,
+            ax,
+            _alpha_cmap,
+            _anorm,
+            (alpha_legend_kwargs or {}).get("label", (alpha_legend_kwargs or {}).get("title", alpha_col_name or "")),
+            **_akwds,
+        )
 
     # --- Per-symbol labels ---
     label_artists: list[Any] = []
@@ -1770,10 +1870,8 @@ def plot_symbols(
 
         # Resolve label colors to a per-symbol list
         # Use label_cmap when provided; fall back to cmap only if it's a string
-        _label_cmap: str | dict = (
-            label_cmap if label_cmap is not None else (cmap if isinstance(cmap, str) else "viridis")
-        )
-        lc_colors, lc_is_mapped, lc_col_values, lc_col_name = _resolve_color(
+        _label_cmap: Any = label_cmap if label_cmap is not None else (None if isinstance(cmap, dict) else cmap)
+        lc_colors, lc_is_mapped, lc_col_values, lc_col_name, lc_mapping = _resolve_color(
             label_color,
             result,
             source_gdf,
@@ -1782,7 +1880,9 @@ def plot_symbols(
             None,
             None,
             n,
-            default="black",
+            default=mpl.rcParams["text.color"],
+            style=st,
+            channel="label",
         )
         if isinstance(lc_colors, np.ndarray) and lc_colors.ndim == 2:
             # RGBA array → list of tuples
@@ -1828,20 +1928,10 @@ def plot_symbols(
         label_legend
         and lc_is_mapped
         and lc_col_values is not None
+        and lc_mapping is not None
         and lc_col_name != col_name  # skip if same column already has a face legend
     ):
-        _lc_cmap: str | dict = label_cmap if label_cmap is not None else (cmap if isinstance(cmap, str) else "viridis")
-        art = _add_legend(
-            ax,
-            lc_col_values,
-            lc_col_name,
-            _lc_cmap,
-            None,
-            None,
-            None,
-            label_legend_kwargs or {},
-            role="face",
-        )
+        art = _add_legend(ax, lc_col_values, lc_col_name, lc_mapping, label_legend_kwargs or {}, role="face", style=st)
         from matplotlib.colorbar import Colorbar as _Colorbar
 
         if isinstance(art, _Colorbar):

@@ -49,6 +49,17 @@ Releases before 2.0.0 have no changelog entry; see the
   context layer: the base of a dot density map, the complement of `plot_partitions`) and
   `annotation_size` (the labels of the Voronoi cells). `save_animation` of the Voronoi module saves
   the frames with the surface of the figure.
+- **The symbol plots take `style=` too.** `SymbolCartogram.plot`, `plot_symbols`, `plot_comparison`,
+  `plot_adjacency`, `plot_adjacency_heatmap`, `plot_tiling` and `plot_displacement` use the
+  surface, the palettes by data role (categorical colors for categories, the sequential palette for
+  numbers, the diverging palette with `center=`), the colorbar and the boundary of the style. The
+  fill, edge and label colors take their palette from the style unless `cmap` is given; the
+  channels `fill`, `alpha`, `edge`, `linewidth` and `label` of a style set the default value or, with
+  `range=`, the output range of the data-driven alpha, line width and label size. `hatch_cycle` of a
+  style sets the hatch patterns of the categories, and the reference fields set the tiles of
+  `plot_tiling`. `plot_symbols` takes `center=`
+  and `categorical=`; the original panel of `plot_comparison` takes the palettes of the style and `cmap`, `center`,
+  `categorical` and `norm` of the call. The colorbars of the adjacency plots follow the colorbar of the style.
 - **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
   through the morph, holds and returns**, for `animate_geometry_keyframes` with
   `position_mapper=linear_over("time")`.
@@ -262,6 +273,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **`legend_kwargs={"label": ...}` of the symbol plots sets the label of the colorbar** (it was ignored in favor of the column name).
 - **`plot_partitions` drew the complement black when the partitions were colored by a continuous value**
   (`facecolor="area"` or a numeric column): the missing color value of the complement became NaN and
   was colored with the "bad" color of the colormap instead of `complement_facecolor`.

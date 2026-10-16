@@ -101,7 +101,8 @@ class TestFlowAndLegend:
         from carto_flow.flow_cartogram.visualization import _with_arrow_color
 
         assert _with_arrow_color(flow.VelocityPlotOptions(), PlotStyle(accent_color="#222222")).color == "#222222"
-        assert _with_arrow_color(flow.VelocityPlotOptions(), "classic").color == "white"
+        assert _with_arrow_color(flow.VelocityPlotOptions(), "classic").color == "black"
+        assert _with_arrow_color(flow.VelocityPlotOptions(), "classic", "white").color == "white"
         assert _with_arrow_color(flow.VelocityPlotOptions(color="red"), "dark").color == "red"
 
     def test_velocity_plot_runs_in_every_style(self, cartogram):
@@ -111,6 +112,6 @@ class TestFlowAndLegend:
             plot_velocity_field(cartogram, style=style)
 
     def test_linewidth_legend_key_uses_the_axes_edge_color(self, symbols):
-        plot = symbols.plot(linewidth="population", edgecolor="black", style="dark")
+        plot = symbols.plot(linewidth="population", style="dark")
         handles = plot.linewidth_legend.legend_handles
         assert to_hex(handles[0].get_color()) == "#6b747c"

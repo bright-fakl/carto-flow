@@ -132,7 +132,7 @@ class VelocityPlotOptions:
         maximum magnitude in the field. Pass the same value to multiple calls
         for consistent scaling.
     color : str, optional
-        Base arrow color when ``color_by`` is None. Default: the accent color of the style, else ``"white"``.
+        Base arrow color when ``color_by`` is None. Default: the accent color of the style, else white over a density image and black on the bare axes.
     alpha : float, default=0.8
         Base arrow transparency.
     color_by : str, optional
@@ -1057,11 +1057,11 @@ def plot_convergence(
     )
 
 
-def _with_arrow_color(opts: "VelocityPlotOptions", style: Any = None) -> "VelocityPlotOptions":
-    """``opts`` with the arrow color of the style (the accent color, else white) where it sets none."""
+def _with_arrow_color(opts: "VelocityPlotOptions", style: Any = None, fallback: str = "black") -> "VelocityPlotOptions":
+    """``opts`` with the arrow color of the style (the accent color, else ``fallback``) where it sets none."""
     if opts.color is not None:
         return opts
-    return dataclasses.replace(opts, color=resolve_style(style).pick("accent_color", "white"))
+    return dataclasses.replace(opts, color=resolve_style(style).pick("accent_color", fallback))
 
 
 @styled
@@ -1330,7 +1330,7 @@ def plot_velocity_field(
         alpha_by_magnitude=opts.alpha_by_magnitude,
         alpha_range=opts.alpha_range,
         cmap=opts.cmap,
-        base_color=opts.color or "white",
+        base_color=opts.color or "black",
         base_alpha=opts.alpha,
     )
 

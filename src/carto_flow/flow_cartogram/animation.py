@@ -2053,7 +2053,7 @@ def animate_fields(
     )
 
     density_opts = density or DensityPlotOptions()
-    velocity_opts = _with_arrow_color(velocity or VelocityPlotOptions(legend=False), style)
+    velocity_opts = _with_arrow_color(velocity or VelocityPlotOptions(legend=False), style, "white")
 
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")
@@ -3070,7 +3070,7 @@ def animate_workflow_fields(
 
     # Default: ratio normalization for workflow animations
     density_opts = density if density is not None else DensityPlotOptions(normalize="ratio")
-    velocity_opts = _with_arrow_color(velocity or VelocityPlotOptions(legend=False), style)
+    velocity_opts = _with_arrow_color(velocity or VelocityPlotOptions(legend=False), style, "white")
 
     if interpolation not in ("nearest", "linear"):
         raise ValueError(f"interpolation must be 'nearest' or 'linear', got {interpolation!r}")

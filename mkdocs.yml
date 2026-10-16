@@ -105,6 +105,13 @@ nav:
         - Output:
             - Visualization: reference/voronoi_cartogram/visualization.md
             - Animation: reference/voronoi_cartogram/animation.md
+    - Non-contiguous Cartogram:
+        - Overview: reference/noncontiguous_cartogram/index.md
+        - Main Interface:
+            - API: reference/noncontiguous_cartogram/api.md
+            - Result: reference/noncontiguous_cartogram/result.md
+        - Output:
+            - Visualization: reference/noncontiguous_cartogram/visualization.md
     - Plot Styles: reference/style.md
     - Geo Utilities:
         - Overview: reference/geo_utils/index.md
@@ -121,6 +128,8 @@ nav:
         - Performance: explanations/performance.ipynb
     - Proportional Cartogram:
         - Splitting and Shrinking: explanations/proportional-cartogram.md
+    - Non-contiguous Cartogram:
+        - Scaling Regions: explanations/noncontiguous-cartogram.md
     - Symbol Cartogram:
         - Pipeline Overview: explanations/symbol-cartogram-pipeline.md
         - Grid Layout Algorithm: explanations/symbol-cartogram-grid-layout.md
@@ -153,6 +162,7 @@ plugins:
       execute_ignore:
         - "docs/generated/gallery/*.ipynb"
         - "docs/generated/gallery/flow_cartogram/*.ipynb"
+        - "docs/generated/gallery/noncontiguous_cartogram/*.ipynb"
         - "docs/generated/gallery/proportional_cartogram/*.ipynb"
         - "docs/generated/gallery/symbol_cartogram/*.ipynb"
         - "docs/generated/gallery/voronoi_cartogram/*.ipynb"

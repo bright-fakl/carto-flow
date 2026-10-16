@@ -7,6 +7,7 @@ Complete API documentation for the carto-flow library.
 | Module | Description |
 |--------|-------------|
 | **[Flow Cartogram](flow_cartogram/index.md)** | Cartogram generation with flow-based morphing |
+| **[Non-contiguous Cartogram](noncontiguous_cartogram/index.md)** | Olson cartograms: regions scaled about their centers |
 | **[Proportional Cartogram](proportional_cartogram/index.md)** | Shape splitting and shrinking algorithms, including dot density |
 | **[Symbol Cartogram](symbol_cartogram/index.md)** | Symbol-based cartograms (Dorling, tile maps) |
 | **[Voronoi Cartogram](voronoi_cartogram/index.md)** | Voronoi Tessellation cartograms |

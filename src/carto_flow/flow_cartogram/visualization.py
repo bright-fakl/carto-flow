@@ -33,8 +33,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from .._fill import Fill as _Fill
+from .._fill import fill_plan as _shared_fill_plan
 from .._fill import plot_fill as _plot_fill
-from .._plot_params import deprecated_init_params, deprecated_params, resolve_fill
+from .._plot_params import deprecated_init_params, deprecated_params
 from ..style import resolve_style, styled
 
 if TYPE_CHECKING:
@@ -570,48 +571,18 @@ _BUILTIN_COLUMNS = {"errors_pct": "_morph_error_pct", "density": "_morph_density
 _BUILTIN_LABELS = {"_morph_error_pct": "Error %", "_morph_density": "Density"}
 
 
-def _fill_arguments(gdf: Any, facecolor: Any) -> tuple[Any, dict[str, Any]]:
-    """Resolve ``facecolor`` against a GeoDataFrame into the data and the arguments for ``GeoDataFrame.plot``.
-
-    Returns the GeoDataFrame (a copy when a column was added) and ``{"column": name}`` for data or
-    ``{"facecolor": value}`` for a literal or an array of colors. A string is resolved by
-    :func:`carto_flow._plot_params.resolve_fill`.
-    """
-    kind, value = resolve_fill(facecolor, set(gdf.columns), _BUILTIN_COLUMNS, n=len(gdf), stacklevel=5)
-    if kind == "none":
-        return gdf, {}
-    if kind == "column":
-        return gdf, {"column": value}
-    if kind == "builtin":
-        column = _BUILTIN_COLUMNS[value]
-        if column not in gdf.columns:
-            raise ValueError(f"'{value}' is not available for this cartogram (no column '{column}')")
-        return gdf, {"column": column}
-    if kind == "values":
-        gdf = gdf.copy()
-        gdf["_facecolor"] = value
-        return gdf, {"column": "_facecolor"}
-    return gdf, {"facecolor": value}
-
-
 def _fill_plan(gdf: Any, facecolor: Any, categorical: bool | None, center: float | None) -> tuple[Any, _Fill]:
     """The fill of a plot and its data role: categorical, diverging (the errors, or a ``center``) or sequential."""
-    import pandas as pd
-
-    gdf, args = _fill_arguments(gdf, facecolor)
-    column = args.get("column")
-    if column is None:
-        return gdf, _Fill(args)
-    values = gdf[column]
-    numeric = pd.api.types.is_numeric_dtype(values) and not pd.api.types.is_bool_dtype(values)
-    if categorical is True or (categorical is None and not numeric):
-        role = "categorical"
-    elif column == "_morph_error_pct" or center is not None:
-        role = "diverging"
-    else:
-        role = "sequential"
-    label = _BUILTIN_LABELS.get(column, None if column == "_facecolor" else column)
-    return gdf, _Fill(args, role, column, label)
+    return _shared_fill_plan(
+        gdf,
+        facecolor,
+        categorical,
+        center,
+        builtins=_BUILTIN_COLUMNS,
+        labels=_BUILTIN_LABELS,
+        diverging=("_morph_error_pct",),
+        stacklevel=5,
+    )
 
 
 @deprecated_params(facecolor="column", legend_kwargs="legend_kwds")

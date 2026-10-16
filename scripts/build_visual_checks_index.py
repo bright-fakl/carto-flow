@@ -29,7 +29,7 @@ optional and, when present, are rendered in the page's definition list: ``pr``,
 ``kind`` is ``pr`` (a change under review; the default when ``pr`` is set),
 ``exploration`` (experiments and investigations; the default otherwise) or
 ``proposal`` (a change not yet in a PR).  ``topic`` is a comma-separated list
-from ``flow``, ``voronoi``, ``symbol``, ``proportional``, ``data``, ``infra``.
+from ``flow``, ``voronoi``, ``symbol``, ``proportional``, ``noncontiguous``, ``data``, ``infra``.
 
 Status of a ``pr`` page comes from the PR's GitHub state via one ``gh`` call -
 merged or closed is done, open needs review - and an explicit ``status:``
@@ -189,7 +189,7 @@ Every page has a `kind`:
 - `exploration`: an experiment or investigation. This is the default otherwise.
 - `proposal`: a change worked out in a page but not yet in a PR.
 
-`topic` is a comma-separated list from `flow`, `voronoi`, `symbol`, `proportional`,
+`topic` is a comma-separated list from `flow`, `voronoi`, `symbol`, `proportional`, `noncontiguous`,
 `data` and `infra`. The index filters and sorts on kind, topic and status.
 
 The status of a `pr` page comes from the PR on GitHub (see below). An exploration or
@@ -689,7 +689,7 @@ DONE_STATUSES = {"reviewed", "merged", "closed", "superseded", "led-to", "no-act
 KNOWN_STATUSES = OUTSTANDING_STATUSES | PARKED_STATUSES | DONE_STATUSES
 
 KINDS = ("pr", "exploration", "proposal")
-TOPICS = ("flow", "voronoi", "symbol", "proportional", "data", "infra")
+TOPICS = ("flow", "voronoi", "symbol", "proportional", "noncontiguous", "data", "infra")
 
 
 def status_class(status: str) -> str:

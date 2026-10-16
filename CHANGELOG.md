@@ -67,7 +67,7 @@ Releases before 2.0.0 have no changelog entry; see the
   cells) and `highlight_color` (satellite cells, the core tiles of `plot_tiling`) are set by the
   `"default"` and `"dark"` styles and unset in `"classic"`, which keeps the former colors. The base
   layers of the Voronoi displacement, topology and repair plots use the reference fill and the axes edge
-  color of the style, and the nodes of `plot_adjacency` the text color. `PlotStyle.pick(name, default)`
+  color of the style, and the nodes of `plot_adjacency` the stroke color. `PlotStyle.pick(name, default)`
   returns a field or the default. `VelocityPlotOptions.color` is `None` by default and takes the
   accent color of the style (in `"classic"` black on the bare axes of `plot_velocity_field`, white over the density of the animations), the gray reference lines of the workflow convergence
   plot and the key of the line-width legend of the symbol plot take the axes edge color.

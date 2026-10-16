@@ -222,3 +222,11 @@ class TestScales:
         assert values == sorted(values)
         ratios = [values[i + 1] / values[i] for i in range(len(values) - 1)]
         assert ratios == pytest.approx([ratios[0]] * len(ratios), rel=0.02)
+
+
+def test_adjacency_nodes_use_the_stroke_color(symbols):
+    from carto_flow.symbol_cartogram import plot_adjacency
+
+    for style, expected in (("classic", "#000000"), ("default", "#3b4650"), ("dark", "#c9d1d9")):
+        plot = plot_adjacency(symbols, style=style, link_legend=False)
+        assert to_hex(plot.nodes.get_facecolor()[0]) == expected

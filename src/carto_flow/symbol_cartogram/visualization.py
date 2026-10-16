@@ -434,7 +434,7 @@ def plot_adjacency(
             centers[:, 0],
             centers[:, 1],
             s=node_markersize,
-            c=st.rc.get("text.color", "black"),
+            c=st.channel_value("stroke", "black"),
             zorder=5,
         )
 

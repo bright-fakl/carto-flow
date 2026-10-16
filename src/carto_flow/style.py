@@ -34,7 +34,7 @@ from typing import Any
 import matplotlib as mpl
 import matplotlib.style
 import numpy as np
-from matplotlib.colors import Colormap, LinearSegmentedColormap, LogNorm, Normalize, to_hex, to_rgb
+from matplotlib.colors import Colormap, LinearSegmentedColormap, LogNorm, Normalize, PowerNorm, to_hex, to_rgb
 
 __all__ = [
     "Channel",
@@ -50,9 +50,9 @@ __all__ = [
     "unregister_style",
 ]
 
-ROLES = ("sequential", "diverging", "categorical")
+ROLES = ("sequential", "diverging", "categorical", "cyclic")
 CHANNELS = ("fill", "edge", "stroke", "hatch", "alpha", "linewidth", "label")
-_SCALES = ("linear", "log", "auto")
+_SCALES = ("linear", "sqrt", "log", "auto")
 SCALAR_SCALES = ("linear", "sqrt", "log", "auto", "rank")
 _TICK_FORMATS = ("plain", "si")
 _ORIENTATIONS = ("vertical", "horizontal")
@@ -74,12 +74,15 @@ class Palettes:
     categorical : str, Colormap, sequence of colors or dict, optional
         Colors of categories: a qualitative colormap name, a list of colors, or a ``{category: color}`` dict (categories
         that are not in the dict take the colors of ``tab10``).
+    cyclic : str or Colormap, optional
+        Colormap of data that wraps around, such as a direction (the two ends are the same color).
     """
 
     sequential: str | Colormap | None = None
     sequential_range: tuple[float, float] | None = None
     diverging: str | Colormap | None = None
     categorical: str | Colormap | Sequence[str] | Mapping[str, str] | None = None
+    cyclic: str | Colormap | None = None
 
     def __post_init__(self) -> None:
         if self.sequential_range is not None:
@@ -192,7 +195,7 @@ class PlotStyle:
     channels : dict
         :class:`Channel` by channel name; ``channels["edge"].value`` is the boundary color and
         ``channels["linewidth"].value`` its width.
-    color_scale : {"linear", "log", "auto"}, optional
+    color_scale : {"linear", "sqrt", "log", "auto"}, optional
         Scale of continuous data; ``"auto"`` takes a log scale when all values are positive and span more than
         ``log_span`` decades.
     log_span : float, optional
@@ -362,12 +365,13 @@ class PlotStyle:
         return self.palettes, (found.palettes if found is not None else None)
 
     def colormap(self, role: str, channel: str = "fill") -> Colormap | None:
-        """The colormap of a continuous role (``"sequential"`` or ``"diverging"``), or ``None`` if the style has none.
+        """The colormap of a continuous role (``"sequential"``, ``"diverging"`` or ``"cyclic"``), or ``None`` if the
+        style has none.
 
         The sequential colormap is truncated to ``sequential_range``.
         """
-        if role not in ("sequential", "diverging"):
-            raise ValueError(f"role must be 'sequential' or 'diverging', got {role!r}")
+        if role not in ("sequential", "diverging", "cyclic"):
+            raise ValueError(f"role must be 'sequential', 'diverging' or 'cyclic', got {role!r}")
         base, override = self._palettes(channel)
         spec = getattr(override, role, None) if override is not None else None
         spec = spec if spec is not None else getattr(base, role)
@@ -424,6 +428,8 @@ class PlotStyle:
             if not positive:
                 raise ValueError("a logarithmic color scale needs positive values")
             return LogNorm(vmin=vmin, vmax=vmax)
+        if scale == "sqrt":
+            return PowerNorm(0.5, vmin=vmin, vmax=vmax)
         return Normalize(vmin=vmin, vmax=vmax)
 
     def resolve_norm(
@@ -611,7 +617,13 @@ def _light() -> PlotStyle:
             "legend.facecolor": surface,
             "legend.edgecolor": spine,
         },
-        palettes=Palettes(sequential="YlGnBu", sequential_range=(0.22, 1.0), diverging="RdYlBu_r", categorical=tab10),
+        palettes=Palettes(
+            sequential="YlGnBu",
+            sequential_range=(0.22, 1.0),
+            diverging="RdYlBu_r",
+            categorical=tab10,
+            cyclic="hsv",
+        ),
         channels={
             "edge": Channel(value=edge),
             "stroke": Channel(value="#3b4650"),
@@ -649,7 +661,11 @@ def _dark() -> PlotStyle:
             "legend.edgecolor": spine,
         },
         palettes=Palettes(
-            sequential="viridis", sequential_range=(0.25, 1.0), diverging="RdYlBu_r", categorical="tab10"
+            sequential="viridis",
+            sequential_range=(0.25, 1.0),
+            diverging="RdYlBu_r",
+            categorical="tab10",
+            cyclic="hsv",
         ),
         channels={
             "edge": Channel(value=edge),

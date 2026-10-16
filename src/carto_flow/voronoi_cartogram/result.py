@@ -934,7 +934,7 @@ class VoronoiCartogram:
             Keyword arguments of the legend or colorbar.
         legend_label : str, optional
             Label of the colorbar. Defaults to the name of the data.
-        norm : Normalize, {"linear", "log", "auto"}, optional
+        norm : Normalize, {"linear", "sqrt", "log", "auto"}, optional
             Normalization of continuous data: an instance, or the scale of the style's normalization.
         center : float, optional
             Treat the data as diverging around this value.
@@ -1004,6 +1004,7 @@ class VoronoiCartogram:
         centroid_kwargs: dict | None = None,
         position_kwargs: dict | None = None,
         displacement_kwargs: dict | None = None,
+        norm: Any = None,
         ax: Any | None = None,
         figsize: tuple[float, float] = (10, 8),
         title: str = "Voronoi cartogram — centroid redistribution",
@@ -1064,12 +1065,15 @@ class VoronoiCartogram:
             All keys forwarded to ``ax.scatter()``.
         displacement_kwargs : dict or None
             Styling for displacement arrows, merged over defaults
-            ``{"cmap": "plasma", "lw": 0.9, "mutation_scale": 6, "arrowstyle": "-|>", "min_frac": 0.01}``.
+            ``{"lw": 0.9, "mutation_scale": 6, "arrowstyle": "-|>", "min_frac": 0.01}``.
 
             - ``"cmap"`` — arrow/colorbar colormap.
             - ``"min_frac"`` — skip arrows whose magnitude is below this
               fraction of the maximum.
             - remaining keys forwarded into ``arrowprops``.
+        norm : Normalize or {"linear", "sqrt", "log", "auto"}, optional
+            Scale of the displacement magnitude that colors the arrows. Default: the color scale of the style, else
+            linear from 0.
         ax : matplotlib Axes or None
             Axes to draw on.  A new figure is created if ``None``.
         figsize : tuple of float
@@ -1107,6 +1111,7 @@ class VoronoiCartogram:
             centroid_kwargs=centroid_kwargs,
             position_kwargs=position_kwargs,
             displacement_kwargs=displacement_kwargs,
+            norm=norm,
             ax=ax,
             figsize=figsize,
             title=title,

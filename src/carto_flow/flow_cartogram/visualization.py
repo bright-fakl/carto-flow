@@ -138,7 +138,11 @@ class VelocityPlotOptions:
     color_by : str, optional
         Color arrows by ``"magnitude"`` or ``"direction"``. None for solid color.
     cmap : str, optional
-        Colormap when ``color_by`` is set.
+        Colormap when ``color_by`` is set. Default: the sequential colormap of the style for ``"magnitude"`` (else
+        ``"viridis"``), the cyclic colormap of the style for ``"direction"`` (else ``"twilight"``).
+    norm : Normalize or {"linear", "sqrt", "log", "auto"}, optional
+        Scale of the magnitude, which sets the color for ``color_by="magnitude"`` and the opacity for
+        ``alpha_by_magnitude``. Default: the color scale of the style, else linear.
     legend : bool, default=True
         Whether to show a colorbar when ``color_by`` is set.
     alpha_by_magnitude : bool, default=False
@@ -158,6 +162,7 @@ class VelocityPlotOptions:
     alpha: float = 0.8
     color_by: str | None = None
     cmap: str | None = None
+    norm: Any = None
     legend: bool = True
     alpha_by_magnitude: bool = False
     alpha_range: tuple = (0.2, 1.0)
@@ -357,6 +362,7 @@ def _render_density_on_ax(
     override_vmin: float | None = None,
     override_vmax: float | None = None,
     geometry_mask: np.ndarray | None = None,
+    style: Any = None,
 ) -> "tuple[AxesImage, str]":
     """Render a density field on an axes and return the artist and colorbar label.
 
@@ -401,7 +407,12 @@ def _render_density_on_ax(
         max_scale=opts.max_scale,
         geometry_mask=geometry_mask,
     )
-    effective_cmap = opts.cmap if opts.cmap is not None else default_cmap
+    effective_cmap: Any
+    if opts.cmap is not None:
+        effective_cmap = opts.cmap
+    else:
+        st = style if style is not None else resolve_style()
+        effective_cmap = st.colormap("diverging" if opts.normalize is not None else "sequential") or default_cmap
 
     # Precedence: override_vmin/vmax > opts.vmin/vmax > per-field local_vmin/vmax
     if override_vmin is not None:
@@ -448,7 +459,9 @@ def _prepare_velocity_colors(
     base_color: str = "white",
     base_alpha: float = 0.8,
     mag_range: tuple[float, float] | None = None,
-) -> tuple[np.ndarray, str | None, str | None]:
+    norm: Any = None,
+    style: Any = None,
+) -> tuple[np.ndarray, str | None, Any, Any]:
     """Prepare velocity field colors based on magnitude/direction.
 
     This internal helper is used by both plot_velocity_field and animate_fields
@@ -472,17 +485,23 @@ def _prepare_velocity_colors(
         Base alpha when not using alpha_by_magnitude.
     mag_range : tuple, optional
         (min, max) magnitude for normalization. If None, computed from data.
+    norm : Normalize or str, optional
+        Scale of the magnitude (a ``Normalize`` or a scale name of the style).
+    style : PlotStyle, optional
+        Style for the default scale and colormap (default: the style in effect).
 
     Returns
     -------
     tuple
-        (colors, colorbar_label, effective_cmap)
+        (colors, colorbar_label, effective_cmap, magnitude_norm)
         - colors: RGBA array of shape (n, 4) for quiver
         - colorbar_label: Label for colorbar (or None)
         - effective_cmap: Colormap name used (or None)
+        - magnitude_norm: the ``Normalize`` that maps the magnitude to [0, 1] (for a colorbar)
     """
-    from matplotlib.colors import to_rgba
+    from matplotlib.colors import Normalize, to_rgba
 
+    st = style if style is not None else resolve_style()
     magnitude = np.sqrt(vx**2 + vy**2)
 
     if mag_range is not None:
@@ -490,8 +509,17 @@ def _prepare_velocity_colors(
     else:
         mag_min, mag_max = magnitude.min(), magnitude.max()
 
+    if isinstance(norm, Normalize):
+        magnitude_scale = norm
+    elif mag_max > mag_min:
+        low = mag_min
+        if norm == "log" and mag_min <= 0 and (magnitude > 0).any():
+            low = float(magnitude[magnitude > 0].min())  # zeros have no place on a logarithmic scale
+        magnitude_scale = st.norm(np.array([low, mag_max], dtype=float), "sequential", scale=norm)
+    else:
+        magnitude_scale = Normalize(vmin=mag_min, vmax=mag_min + 1.0)
     if mag_max > mag_min:
-        magnitude_norm = np.clip((magnitude - mag_min) / (mag_max - mag_min), 0, 1)
+        magnitude_norm = np.clip(np.ma.filled(magnitude_scale(magnitude), 0.0), 0, 1)
     else:
         magnitude_norm = np.ones_like(magnitude)
 
@@ -499,18 +527,18 @@ def _prepare_velocity_colors(
         # Simple solid color
         base_rgba = to_rgba(base_color, alpha=base_alpha)
         colors = np.tile(base_rgba, (vx.size, 1))
-        return colors, None, None
+        return colors, None, None, magnitude_scale
 
     # Determine colormap and color values
     if color_by == "magnitude":
         C_norm = magnitude_norm
         colorbar_label = "Magnitude"
-        effective_cmap = cmap if cmap is not None else "viridis"
+        effective_cmap = cmap if cmap is not None else (st.colormap("sequential") or "viridis")
     elif color_by == "direction":
         direction = np.arctan2(vy, vx)
         C_norm = (direction + np.pi) / (2 * np.pi)
         colorbar_label = "Direction"
-        effective_cmap = cmap if cmap is not None else "twilight"
+        effective_cmap = cmap if cmap is not None else (st.colormap("cyclic") or "twilight")
     else:
         C_norm = np.zeros_like(magnitude)
         colorbar_label = None
@@ -534,7 +562,7 @@ def _prepare_velocity_colors(
         alphas = alpha_min + magnitude_norm.ravel() * (alpha_max - alpha_min)
         colors[:, 3] = alphas
 
-    return colors, colorbar_label, effective_cmap
+    return colors, colorbar_label, effective_cmap, magnitude_scale
 
 
 # Built-in quantities of a cartogram, by their name in the vocabulary and the column that holds them
@@ -629,7 +657,7 @@ def plot_cartogram(
         ``"label"`` key sets the label of a colorbar.
     legend_label : str, optional
         Label of the colorbar. Defaults to the name of the data.
-    norm : Normalize, {"linear", "log", "auto"}, optional
+    norm : Normalize, {"linear", "sqrt", "log", "auto"}, optional
         Normalization of continuous data: an instance, or the scale of the style's normalization. A ``vmin`` or
         ``vmax`` fixes a linear normalization unless a scale is named; with an instance it raises ``ValueError``.
     center : float, optional
@@ -733,7 +761,7 @@ def plot_comparison(
         Figure size (width, height).
     cmap : str or Colormap, optional
         Colormap of continuous data. Defaults to the palette of the style for the data role.
-    norm : Normalize, {"linear", "log", "auto"}, optional
+    norm : Normalize, {"linear", "sqrt", "log", "auto"}, optional
         Normalization of continuous data: an instance, or the scale of the style's normalization. With a style
         that sets a scale, both panels share the normalization of the values of both. A ``vmin`` or ``vmax`` fixes a
         linear normalization unless a scale is named.
@@ -922,8 +950,8 @@ def plot_convergence(
                     max_errors.append(snapshot.errors.max_log_error)  # type: ignore[attr-defined]
 
     # Colors for the two error types
-    max_color = "C0"  # Blue
-    mean_color = "C1"  # Orange
+    max_color = resolve_style().pick("series_color", "C0")
+    mean_color = resolve_style().pick("highlight_color", "C1")
 
     # Track returned artists
     max_line: Line2D | None = None
@@ -1057,6 +1085,12 @@ def plot_convergence(
     )
 
 
+def _add_field_colorbar(style: Any, fig: Any, ax: Any, mappable: Any, label: str | None, kwargs: dict) -> Any:
+    """Colorbar of a field image or a quiver mappable, drawn by the style; ``kwargs["label"]`` replaces ``label``."""
+    options = dict(kwargs)
+    return style.add_colorbar(fig, ax, mappable.cmap, mappable.norm, options.pop("label", label), **options)
+
+
 def _with_arrow_color(opts: "VelocityPlotOptions", style: Any = None, fallback: str = "black") -> "VelocityPlotOptions":
     """``opts`` with the arrow color of the style (the accent color, else ``fallback``) where it sets none."""
     if opts.color is not None:
@@ -1168,8 +1202,7 @@ def plot_density_field(
         geometry_mask=geometry_mask,
     )
 
-    cbar_kw = {"label": colorbar_label, **opts.legend_kwargs}
-    cbar = plt.colorbar(im, ax=ax, **cbar_kw)
+    cbar = _add_field_colorbar(resolve_style(), ax.figure, ax, im, colorbar_label, opts.legend_kwargs)
 
     # Apply custom tick formatter for ratio mode (colorbar shows ratio, not log2)
     if opts.normalize == "ratio":
@@ -1313,8 +1346,7 @@ def plot_velocity_field(
     vy_sub = vy[:: opts.skip, :: opts.skip]
 
     # Compute magnitude for arrow scaling and colorbar
-    magnitude = np.sqrt(vx_sub**2 + vy_sub**2)
-    mag_min, mag_max = magnitude.min(), magnitude.max()
+    mag_max = np.sqrt(vx_sub**2 + vy_sub**2).max()
 
     # Build quiver kwargs for consistent arrow scaling
     quiver_kw = {
@@ -1323,7 +1355,7 @@ def plot_velocity_field(
     }
 
     # Use shared helper for velocity colors
-    colors, colorbar_label, effective_cmap = _prepare_velocity_colors(
+    colors, colorbar_label, effective_cmap, magnitude_scale = _prepare_velocity_colors(
         vx_sub,
         vy_sub,
         color_by=opts.color_by,
@@ -1332,6 +1364,7 @@ def plot_velocity_field(
         cmap=opts.cmap,
         base_color=opts.color or "black",
         base_alpha=opts.alpha,
+        norm=opts.norm,
     )
 
     quiver_art = ax.quiver(X_sub, Y_sub, vx_sub, vy_sub, color=colors, **quiver_kw)
@@ -1341,16 +1374,11 @@ def plot_velocity_field(
         import matplotlib.cm as cm
         from matplotlib.colors import Normalize
 
-        norm = (
-            Normalize(vmin=mag_min, vmax=mag_max)
-            if opts.color_by == "magnitude"
-            else Normalize(vmin=-np.pi, vmax=np.pi)
-        )
+        norm = magnitude_scale if opts.color_by == "magnitude" else Normalize(vmin=-np.pi, vmax=np.pi)
         cmap_obj = plt.get_cmap(effective_cmap)
         sm = cm.ScalarMappable(cmap=cmap_obj, norm=norm)
         sm.set_array([])
-        cbar_kw = {"label": colorbar_label, **opts.legend_kwargs}
-        colorbar_art = plt.colorbar(sm, ax=ax, **cbar_kw)
+        colorbar_art = _add_field_colorbar(resolve_style(), ax.figure, ax, sm, colorbar_label, opts.legend_kwargs)
 
     ax.set_aspect("equal")
     ax.set_title(f"Velocity Field (iteration {snapshot.iteration})")
@@ -1491,8 +1519,8 @@ def plot_workflow_convergence(
         run_boundaries.append(iter_offset)
 
     # Colors for metrics
-    max_color_base = "C0"  # Blue for max error
-    mean_color_base = "C1"  # Orange for mean error
+    max_color_base = resolve_style().pick("series_color", "C0")
+    mean_color_base = resolve_style().pick("highlight_color", "C1")
 
     # Track returned artists
     max_lines: list[Line2D] = []
@@ -1557,11 +1585,17 @@ def plot_workflow_convergence(
     # Configure y-axis labels
     y_label = "Error (%)" if use_pct else "Error (log2)"
     if metric == "both":
-        ax.set_ylabel(f"Max {y_label}", color=max_color_base if not color_by_run else "black")
+        ax.set_ylabel(
+            f"Max {y_label}",
+            color=max_color_base if not color_by_run else resolve_style().rc.get("text.color", "black"),
+        )
         if not color_by_run:
             ax.tick_params(axis="y", labelcolor=max_color_base)
         if ax2 is not None:
-            ax2.set_ylabel(f"Mean {y_label}", color=mean_color_base if not color_by_run else "black")
+            ax2.set_ylabel(
+                f"Mean {y_label}",
+                color=mean_color_base if not color_by_run else resolve_style().rc.get("text.color", "black"),
+            )
             if not color_by_run:
                 ax2.tick_params(axis="y", labelcolor=mean_color_base)
     elif metric == "max":

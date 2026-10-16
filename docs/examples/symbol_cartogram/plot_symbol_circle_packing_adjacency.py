@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 
 import carto_flow.data as examples
 import carto_flow.symbol_cartogram as smb
+from carto_flow import get_style
 
 us_states = examples.load_us_census(population=True)
 
@@ -41,11 +42,11 @@ fig, axes = plt.subplots(
     sharey=True,
     gridspec_kw={"wspace": 0.02, "left": 0.02, "right": 0.98, "top": 0.98, "bottom": 0.02},
 )
+get_style().apply(fig)
 
 _ = smb.plot_adjacency(
     symbol_carto,
     ax=axes[0],
-    link_cmap="cool",
     link_alpha=1,
     facecolor="lightblue",
     link_legend=False,
@@ -58,7 +59,6 @@ _ = smb.plot_adjacency(
 _ = smb.plot_adjacency(
     symbol_carto,
     ax=axes[1],
-    link_cmap="cool",
     link_alpha=1,
     facecolor="lightblue",
     link_legend_kwargs={"shrink": 0.4, "ax": axes, "pad": 0.01},

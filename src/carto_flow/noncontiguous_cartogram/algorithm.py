@@ -147,9 +147,9 @@ def create_noncontiguous_cartogram(
         if not reference_density > 0:
             raise ValueError(f"a reference density must be positive, got {reference!r}")
 
-    scale = np.zeros(len(gdf))
+    scale: np.ndarray = np.zeros(len(gdf))
     scale[usable] = np.sqrt(density / reference_density)
-    capped = np.zeros(len(gdf), dtype=bool)
+    capped: np.ndarray = np.zeros(len(gdf), dtype=bool)
     if max_scale is not None:
         capped = usable & (scale > max_scale * (1 + 1e-9))
         if capped.any():

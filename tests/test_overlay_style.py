@@ -85,3 +85,32 @@ def test_symbol_displacement_classic(symbols):
 def test_preset_overlay_colors_differ_by_polarity():
     assert PlotStyle.default().accent_color != PlotStyle.dark().accent_color
     assert PlotStyle.classic().accent_color is None
+
+
+class TestFlowAndLegend:
+    @pytest.fixture(scope="class")
+    def cartogram(self, gdf):
+        import carto_flow.flow_cartogram as flow
+
+        return flow.create_flow_cartogram(
+            gdf, "population", options=flow.MorphOptions(grid=32, n_iter=3, save_internals=True, show_progress=False)
+        )
+
+    def test_velocity_color_follows_the_accent(self, cartogram):
+        import carto_flow.flow_cartogram as flow
+        from carto_flow.flow_cartogram.visualization import _with_arrow_color
+
+        assert _with_arrow_color(flow.VelocityPlotOptions(), PlotStyle(accent_color="#222222")).color == "#222222"
+        assert _with_arrow_color(flow.VelocityPlotOptions(), "classic").color == "white"
+        assert _with_arrow_color(flow.VelocityPlotOptions(color="red"), "dark").color == "red"
+
+    def test_velocity_plot_runs_in_every_style(self, cartogram):
+        from carto_flow.flow_cartogram.visualization import plot_velocity_field
+
+        for style in ("classic", "default", "dark"):
+            plot_velocity_field(cartogram, style=style)
+
+    def test_linewidth_legend_key_uses_the_axes_edge_color(self, symbols):
+        plot = symbols.plot(linewidth="population", edgecolor="black", style="dark")
+        handles = plot.linewidth_legend.legend_handles
+        assert to_hex(handles[0].get_color()) == "#6b747c"

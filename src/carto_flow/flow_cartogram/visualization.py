@@ -25,6 +25,7 @@ Examples
 >>> plot_convergence(cartogram.snapshots)
 """
 
+import dataclasses
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -130,8 +131,8 @@ class VelocityPlotOptions:
         Reference velocity magnitude for arrow scaling. Defaults to the
         maximum magnitude in the field. Pass the same value to multiple calls
         for consistent scaling.
-    color : str, default="white"
-        Base arrow color when ``color_by`` is None.
+    color : str, optional
+        Base arrow color when ``color_by`` is None. Default: the accent color of the style, else ``"white"``.
     alpha : float, default=0.8
         Base arrow transparency.
     color_by : str, optional
@@ -153,7 +154,7 @@ class VelocityPlotOptions:
     skip: int = 4
     velocity_scale: float | None = None
     ref_magnitude: float | None = None
-    color: str = "white"
+    color: str | None = None
     alpha: float = 0.8
     color_by: str | None = None
     cmap: str | None = None
@@ -1033,7 +1034,7 @@ def plot_convergence(
             for i, recomp_iter in enumerate(recompute_iters):
                 vline = ax.axvline(
                     x=recomp_iter,
-                    color="gray",
+                    color=resolve_style().rc.get("axes.edgecolor", "gray"),
                     linestyle="--",
                     alpha=0.4,
                     label="Density recompute" if i == 0 else None,
@@ -1054,6 +1055,13 @@ def plot_convergence(
         tolerance_lines=tolerance_lines,
         recompute_lines=recompute_lines,
     )
+
+
+def _with_arrow_color(opts: "VelocityPlotOptions", style: Any = None) -> "VelocityPlotOptions":
+    """``opts`` with the arrow color of the style (the accent color, else white) where it sets none."""
+    if opts.color is not None:
+        return opts
+    return dataclasses.replace(opts, color=resolve_style(style).pick("accent_color", "white"))
 
 
 @styled
@@ -1267,7 +1275,7 @@ def plot_velocity_field(
     >>> plot_velocity_field(cartogram, iteration=0, ax=ax1, velocity=opts)
     >>> plot_velocity_field(cartogram, ax=ax2, velocity=opts)
     """
-    opts = velocity or VelocityPlotOptions()
+    opts = _with_arrow_color(velocity or VelocityPlotOptions())
 
     # Extract internals from cartogram
     if cartogram.internals is None:
@@ -1322,7 +1330,7 @@ def plot_velocity_field(
         alpha_by_magnitude=opts.alpha_by_magnitude,
         alpha_range=opts.alpha_range,
         cmap=opts.cmap,
-        base_color=opts.color,
+        base_color=opts.color or "white",
         base_alpha=opts.alpha,
     )
 
@@ -1566,7 +1574,7 @@ def plot_workflow_convergence(
         for i, boundary in enumerate(run_boundaries[1:-1], start=1):
             vline = ax.axvline(
                 x=boundary,
-                color="gray",
+                color=resolve_style().rc.get("axes.edgecolor", "gray"),
                 linestyle="--",
                 alpha=0.5,
                 linewidth=1,

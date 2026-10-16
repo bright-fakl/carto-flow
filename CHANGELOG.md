@@ -68,7 +68,9 @@ Releases before 2.0.0 have no changelog entry; see the
   `"default"` and `"dark"` styles and unset in `"classic"`, which keeps the former colors. The base
   layers of the Voronoi displacement, topology and repair plots use the reference fill and the axes edge
   color of the style, and the nodes of `plot_adjacency` the text color. `PlotStyle.pick(name, default)`
-  returns a field or the default.
+  returns a field or the default. `VelocityPlotOptions.color` is `None` by default and takes the
+  accent color of the style (white in `"classic"`), the gray reference lines of the workflow convergence
+  plot and the key of the line-width legend of the symbol plot take the axes edge color.
 - **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
   through the morph, holds and returns**, for `animate_geometry_keyframes` with
   `position_mapper=linear_over("time")`.

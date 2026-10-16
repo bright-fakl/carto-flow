@@ -1810,7 +1810,7 @@ def plot_symbols(
         lo_lw, hi_lw = linewidth_range
         lw_steps = np.linspace(lo_lw, hi_lw, n_steps)
         handles = [
-            mlines.Line2D([], [], color="gray", linewidth=float(lw), label=f"{dv:.3g}")
+            mlines.Line2D([], [], color=st.rc.get("axes.edgecolor", "gray"), linewidth=float(lw), label=f"{dv:.3g}")
             for dv, lw in zip(data_vals, lw_steps, strict=False)
         ]
         _lkwds = dict(linewidth_legend_kwargs or {})

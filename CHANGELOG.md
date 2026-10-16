@@ -79,6 +79,7 @@ Releases before 2.0.0 have no changelog entry; see the
 - **`morph_timeline(snapshots)` builds the keyframes and times of a morph that holds, eases
   through the morph, holds and returns**, for `animate_geometry_keyframes` with
   `position_mapper=linear_over("time")`.
+- **A gallery animation morphs a dot density map into a flow cartogram** (`plot_flow_dot_morph.py`): dots generated on the true-area map are carried as landmarks and drawn at every saved iteration with `get_landmarks(iteration, uniform=True)`.
 - **`Cartogram.landmark_area_scaling` and `Cartogram.get_landmarks(iteration, uniform=True)`:**
   the morph sums the divergence of the velocity field along the path of every landmark
   vertex (one bilinear sample per vertex and iteration), which gives the area scaling of

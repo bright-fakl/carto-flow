@@ -13,6 +13,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..._plot_params import deprecated_params
+from ...style import _mix, resolve_style, styled
 
 if TYPE_CHECKING:
     from ..symbols import Symbol
@@ -429,6 +430,7 @@ class TiledLayoutResult(LayoutResult):
     assignments: NDArray[np.intp] | None = None
 
     @deprecated_params(assigned_facecolor="assigned_color", unassigned_facecolor="unassigned_color")
+    @styled
     def plot_tiling(
         self,
         cartogram: SymbolCartogram | None = None,
@@ -437,14 +439,14 @@ class TiledLayoutResult(LayoutResult):
         show_assigned: bool = True,
         show_unassigned: bool = True,
         show_pool: bool = False,
-        assigned_facecolor: str = "#d4e6f1",
-        unassigned_facecolor: str = "#f5f5f5",
+        assigned_facecolor: str | None = None,
+        unassigned_facecolor: str | None = None,
         core_edgecolor: str = "#e6972a",
         ring_edgecolor: str = "#d9534f",
-        tile_edgecolor: str = "#999999",
-        tile_linewidth: float = 0.5,
+        tile_edgecolor: str | None = None,
+        tile_linewidth: float | None = None,
         pool_linewidth: float = 1.5,
-        tile_alpha: float = 0.5,
+        tile_alpha: float | None = None,
         **kwargs: Any,
     ) -> TilingPlotResult:
         """Visualize the tiling grid underlying this layout result.
@@ -482,6 +484,18 @@ class TiledLayoutResult(LayoutResult):
         from matplotlib.patches import Polygon as MplPolygon
 
         from ..plot_results import TilingPlotResult
+
+        st = resolve_style()
+        if assigned_facecolor is None:
+            assigned_facecolor = st.channel_value("fill") or _assigned_color(st)
+        if unassigned_facecolor is None:
+            unassigned_facecolor = st.reference_facecolor or "#f5f5f5"
+        if tile_edgecolor is None:
+            tile_edgecolor = st.reference_edgecolor or "#999999"
+        if tile_linewidth is None:
+            tile_linewidth = st.reference_linewidth if st.reference_linewidth is not None else 0.5
+        if tile_alpha is None:
+            tile_alpha = st.reference_alpha if st.reference_alpha is not None else 0.5
 
         if self.tiling_result is None:
             raise ValueError("Tiling data not available (result was deserialized without tiling).")
@@ -583,6 +597,14 @@ class TiledLayoutResult(LayoutResult):
             ring_tiles=pc_ring,
             symbols=symbols_result,
         )
+
+
+def _assigned_color(st: Any) -> str:
+    """Fill of the occupied tiles: the reference fill moved a quarter of the way to the text color, else light blue."""
+    text = st.rc.get("text.color")
+    if st.reference_facecolor is None or text is None:
+        return "#d4e6f1"
+    return _mix(st.reference_facecolor, text, 0.25)
 
 
 @dataclass

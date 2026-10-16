@@ -138,6 +138,8 @@ class PlotStyle:
         map).
     annotation_size : float, optional
         Font size of the labels placed on a map.
+    hatch_cycle : tuple of str, optional
+        Hatch patterns assigned to categories when a hatch is driven by data.
     """
 
     rc: Mapping[str, Any] = field(default_factory=dict)
@@ -157,6 +159,7 @@ class PlotStyle:
     reference_linewidth: float | None = None
     reference_alpha: float | None = None
     annotation_size: float | None = None
+    hatch_cycle: tuple[str, ...] | None = None
 
     def __post_init__(self) -> None:
         if self.color_scale is not None and self.color_scale not in _SCALES:
@@ -254,6 +257,11 @@ class PlotStyle:
         """The value of a channel when it is not data-driven, or ``default``."""
         found = self.channels.get(channel)
         return default if found is None or found.value is None else found.value
+
+    def channel_range(self, channel: str, default: tuple[float, float]) -> tuple[float, float]:
+        """The output range of a scalar channel when it is data-driven, or ``default``."""
+        found = self.channels.get(channel)
+        return default if found is None or found.range is None else found.range
 
     def _palettes(self, channel: str) -> tuple[Palettes, Palettes | None]:
         found = self.channels.get(channel)

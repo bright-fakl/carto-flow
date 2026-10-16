@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .._plot_params import deprecated_params
+from ..style import styled
 from .status import SymbolCartogramStatus
 
 if TYPE_CHECKING:
@@ -135,17 +136,18 @@ class SymbolCartogram:
         return new_cartogram
 
     @deprecated_params(assigned_facecolor="assigned_color", unassigned_facecolor="unassigned_color")
+    @styled
     def plot_tiling(
         self,
         ax: plt.Axes | None = None,
         show_symbols: bool = True,
         show_assigned: bool = True,
         show_unassigned: bool = True,
-        assigned_facecolor: str = "#d4e6f1",
-        unassigned_facecolor: str = "#f5f5f5",
-        tile_edgecolor: str = "#999999",
-        tile_linewidth: float = 0.5,
-        tile_alpha: float = 0.5,
+        assigned_facecolor: str | None = None,
+        unassigned_facecolor: str | None = None,
+        tile_edgecolor: str | None = None,
+        tile_linewidth: float | None = None,
+        tile_alpha: float | None = None,
         **kwargs,
     ) -> TilingPlotResult:
         """Visualize the tiling grid underlying a grid or mosaic layout.
@@ -185,7 +187,7 @@ class SymbolCartogram:
     def plot(
         self,
         facecolor: Any = None,
-        cmap: str | dict[str, Any] = "viridis",
+        cmap: Any = None,
         norm: Any | None = None,
         vmin: float | None = None,
         vmax: float | None = None,
@@ -194,12 +196,12 @@ class SymbolCartogram:
         ax: plt.Axes | None = None,
         figsize: tuple[float, float] = (10, 8),
         source_gdf: Any | None = None,
-        alpha: Any = 0.9,
-        alpha_range: tuple[float, float] = (0.2, 1.0),
-        edgecolor: Any = "none",
+        alpha: Any = None,
+        alpha_range: tuple[float, float] | None = None,
+        edgecolor: Any = None,
         edge_cmap: str | dict[str, Any] | None = None,
-        linewidth: Any = 0.5,
-        linewidth_range: tuple[float, float] = (0.5, 3.0),
+        linewidth: Any = None,
+        linewidth_range: tuple[float, float] | None = None,
         hatch: Any = None,
         hatch_map: dict[str, str] | None = None,
         # Legend
@@ -213,15 +215,18 @@ class SymbolCartogram:
         alpha_legend_kwargs: dict[str, Any] | None = None,
         # Labels
         labels: Any = None,
-        label_color: Any = "black",
+        label_color: Any = None,
         label_cmap: str | dict[str, Any] | None = None,
         label_legend: bool = True,
         label_legend_kwargs: dict[str, Any] | None = None,
-        label_fontsize: Any = 8,
-        label_fontsize_range: tuple[float, float] = (6.0, 14.0),
+        label_fontsize: Any = None,
+        label_fontsize_range: tuple[float, float] | None = None,
         label_kwargs: dict[str, Any] | None = None,
         title: str | None = None,
         zorder: int = 1,
+        center: float | None = None,
+        categorical: bool | None = None,
+        style: Any = None,
     ) -> SymbolsPlotResult:
         """Plot the symbol cartogram with per-symbol visual styling.
 
@@ -236,8 +241,9 @@ class SymbolCartogram:
             string for numeric columns (e.g. ``"viridis"``, ``"plasma"``), or
             a **dict** of ``{category: color}`` for categorical columns
             (e.g. ``{"Europe": "#2ca02c", "Africa": "#d62728"}``).
-            Unspecified categories receive auto-assigned ``"tab10"`` colors.
-            Default ``"viridis"``.
+            Unspecified categories take the categorical colors of the style,
+            else ``"tab10"``. Defaults to the sequential palette of the style
+            (the diverging palette with *center*), else ``"viridis"``.
         norm : matplotlib Normalize, optional
             Custom normalization for the color mapping.
         vmin, vmax : float, optional
@@ -248,7 +254,7 @@ class SymbolCartogram:
         legend_kwargs : dict, optional
             Extra keyword arguments forwarded to ``Figure.colorbar()``
             (numeric columns) or ``Axes.legend()`` (categorical columns).
-            Use ``"title"`` to label the legend.
+            Use ``"title"`` or ``"label"`` to label the legend.
         ax : plt.Axes, optional
             Axes to draw on.  A new figure is created when ``None``.
         figsize : tuple
@@ -271,23 +277,26 @@ class SymbolCartogram:
             Defaults to ``"steelblue"`` when ``None``.
         alpha : float, column name, or array-like, optional
             Symbol opacity (0 = transparent, 1 = opaque).  A column name is
-            linearly interpolated into *alpha_range*.  Default ``0.9``.
+            linearly interpolated into *alpha_range*.  Defaults to the alpha of the
+            style, else ``0.9``.
         alpha_range : (float, float)
             ``(min, max)`` alpha range for column-driven transparency.
-            Default ``(0.2, 1.0)``.
+            Defaults to the range of the alpha channel of the style, else ``(0.2, 1.0)``.
         edgecolor : color, column name, or array-like, optional
             Symbol edge color.  Same forms as *facecolor*.
-            Default ``"none"`` (no visible border).
+            Defaults to the edge color of the style, else ``"none"`` (no visible border).
         edge_cmap : str or dict, optional
             Colormap for edge color column mapping.  Accepts the same forms
             as *cmap* (string name for numeric, dict for categorical).
             Falls back to *cmap* (string only) when ``None``.
         linewidth : float, column name, or array-like, optional
             Edge line width.  A column name is linearly interpolated into
-            *linewidth_range*.  Default ``0.5``.
+            *linewidth_range*.  Defaults to the line width of the style, else
+            ``0.5``.
         linewidth_range : (float, float)
             ``(min, max)`` linewidth range for column-driven widths.
-            Default ``(0.5, 3.0)``.
+            Defaults to the range of the linewidth channel of the style, else
+            ``(0.5, 3.0)``.
         hatch : str, column name, or sequence, optional
             Fill hatching.  A matplotlib hatch pattern string (``"///"``) is
             applied globally; a column name maps each category to a pattern
@@ -332,16 +341,18 @@ class SymbolCartogram:
             strings.
         label_color : color, column name, or array-like, optional
             Text color for labels.  Accepts the same forms as *facecolor*.
-            Default ``"black"``.
+            Defaults to the text color of the style, else black.
         label_cmap : str or dict, optional
             Colormap for data-driven *label_color*.  Accepts the same forms
             as *cmap*.  Defaults to *cmap* (string only) when ``None``.
         label_fontsize : float, column name, or array-like, optional
             Label font size.  A column name is linearly interpolated into
-            *label_fontsize_range*.  Default ``8``.
+            *label_fontsize_range*.  Defaults to the annotation size of the style,
+            else ``8``.
         label_fontsize_range : (float, float)
             ``(min, max)`` font-size range for column-driven sizing.
-            Default ``(6.0, 14.0)``.
+            Defaults to the range of the label channel of the style, else
+            ``(6.0, 14.0)``.
         label_kwargs : dict, optional
             Extra keyword arguments forwarded to ``Axes.text()`` for every
             label (e.g. ``{"fontweight": "bold"}``).
@@ -349,6 +360,14 @@ class SymbolCartogram:
             Axes title.
         zorder : int
             Matplotlib drawing order.  Default ``1``.
+        center : float, optional
+            Treat numeric data-driven colors as diverging around this value (the diverging palette of the style,
+            symmetric around the center).
+        categorical : bool, optional
+            Force (True) or prevent (False) the categorical treatment of a data-driven color; by default the data
+            type decides.
+        style : PlotStyle or str, optional
+            Style of the plot (default: the style of the block or session, else ``"default"``).
 
         Returns
         -------
@@ -437,6 +456,9 @@ class SymbolCartogram:
             label_kwargs=label_kwargs,
             zorder=zorder,
             title=title,
+            center=center,
+            categorical=categorical,
+            style=style,
         )
 
     def to_geodataframe(

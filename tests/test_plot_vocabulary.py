@@ -198,6 +198,10 @@ ALLOWED = {
         "title",
     },
     "symbol_cartogram": {
+        # style and the role of the data
+        "categorical",
+        "center",
+        "style",
         # objects and data
         "ax",
         "cartogram",

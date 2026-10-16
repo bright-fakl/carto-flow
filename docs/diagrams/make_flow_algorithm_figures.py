@@ -1,10 +1,11 @@
 # ruff: noqa: RUF001
 """Figures of the explanation "Flow Cartogram Algorithm".
 
-Regenerates ``flow-diffusion-idea.svg``, ``flow-electrostatic-analogy.png`` and ``flow-1d-mechanics.png`` in this
-directory, with the colors of the default plot style:
+Draws ``flow-diffusion-idea.svg``, ``flow-electrostatic-analogy.png`` and ``flow-1d-mechanics.png`` with the colors of
+the default plot style. The documentation build runs it through the hook ``docs/hooks/generate_diagrams.py`` and writes
+the files to ``docs/generated/diagrams``, which is not committed. To draw them by hand:
 
-    python docs/diagrams/make_flow_algorithm_figures.py
+    python docs/diagrams/make_flow_algorithm_figures.py [OUTPUT_DIRECTORY]
 
 The figures are drawn with NumPy and matplotlib alone; they illustrate the algorithm and do not call the solver.
 """
@@ -22,6 +23,7 @@ from matplotlib.patches import ConnectionPatch, FancyArrowPatch, Rectangle
 from carto_flow import PlotStyle
 
 HERE = Path(__file__).resolve().parent
+OUT = HERE.parent / "generated" / "diagrams"  # replaced by the argument of generate()
 STYLE = PlotStyle.default()
 SURFACE = STYLE.rc["figure.facecolor"]
 TEXT = STYLE.rc["text.color"]
@@ -34,7 +36,8 @@ LIGHT_TEXT = "white"
 
 
 def _save(fig, name, **kwargs):
-    fig.savefig(HERE / name, facecolor=SURFACE, **kwargs)
+    OUT.mkdir(parents=True, exist_ok=True)
+    fig.savefig(OUT / name, facecolor=SURFACE, **kwargs)
     plt.close(fig)
 
 
@@ -295,7 +298,17 @@ def mechanics_1d():
     _save(fig, "flow-1d-mechanics.png", dpi=100, bbox_inches="tight")
 
 
-if __name__ == "__main__":
+def generate(out_dir=None):
+    """Draw the three figures into ``out_dir`` (default ``docs/generated/diagrams``)."""
+    global OUT
+    if out_dir is not None:
+        OUT = Path(out_dir)
     diffusion_idea()
     electrostatic_analogy()
     mechanics_1d()
+
+
+if __name__ == "__main__":
+    import sys
+
+    generate(sys.argv[1] if len(sys.argv) > 1 else None)

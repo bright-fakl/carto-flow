@@ -147,6 +147,7 @@ nav:
 hooks:
   - docs/hooks/quiet_third_party.py
   - docs/hooks/remove_hidden_toc.py
+  - docs/hooks/generate_diagrams.py
 
 plugins:
   - search

@@ -134,7 +134,7 @@ def _rows_text(labels: list) -> str:
 def _issue(
     kind: str, severity: Literal["error", "warning", "info"], labels: list, text: str, hint: str = ""
 ) -> GeometryIssue:
-    message = f"{len(labels)} {text} (rows {_rows_text(labels)})."
+    message = f"{text} in {len(labels)} row{'' if len(labels) == 1 else 's'}: {_rows_text(labels)}."
     return GeometryIssue(kind, severity, tuple(labels), f"{message} {hint}".strip())
 
 
@@ -150,7 +150,7 @@ def validate_geometries(
     Errors: null or empty geometries, invalid geometries (with the reason from
     :func:`shapely.explain_validity`), and values that are not finite, negative or (with ``zero="error"``) zero.
     Warnings: with ``coverage=True``, polygons that overlap or whose shared edges do not match
-    (:func:`shapely.coverage_is_valid`). Information: repeated consecutive vertices, which do not affect a cartogram.
+    (:func:`shapely.coverage_invalid_edges`). Information: repeated consecutive vertices, which do not affect a cartogram.
 
     Parameters
     ----------
@@ -167,7 +167,7 @@ def validate_geometries(
     -------
     GeometryReport
     """
-    labels = np.asarray(gdf.index)
+    labels = np.asarray(gdf.index, dtype=object)
     geoms = np.asarray(gdf.geometry.values, dtype=object)
     issues: list[GeometryIssue] = []
 
@@ -178,7 +178,7 @@ def validate_geometries(
                 "empty",
                 "error",
                 labels[missing].tolist(),
-                "geometries are null or empty",
+                "Null or empty geometry",
                 "Drop these rows, e.g. gdf[~gdf.geometry.is_empty & gdf.geometry.notna()].",
             )
         )
@@ -193,8 +193,8 @@ def validate_geometries(
                 "invalid",
                 "error",
                 list(reasons),
-                f"geometries are not valid (first: {reasons[first]})",
-                "Repair them with shapely.make_valid or carto_flow.geo_utils.repair_polygons.",
+                f"Invalid geometry (first: {reasons[first]})",
+                "Repair with shapely.make_valid or carto_flow.geo_utils.repair_polygons.",
             )
         )
 
@@ -206,15 +206,13 @@ def validate_geometries(
         try:
             arr = np.asarray(v, dtype=float)
         except (TypeError, ValueError):
-            issues.append(_issue("values", "error", labels.tolist(), "values are not numbers"))
+            issues.append(_issue("values", "error", labels.tolist(), "Value is not a number"))
         else:
             bad = ~np.isfinite(arr) | (arr < 0) | ((arr == 0) if zero == "error" else False)
             if bad.any():
-                allowed = "finite and positive" if zero == "error" else "finite and not negative"
+                what = "missing, infinite, negative or zero" if zero == "error" else "missing, infinite or negative"
                 issues.append(
-                    _issue(
-                        "values", "error", labels[bad].tolist(), f"values are not {allowed}", "Fix or drop these rows."
-                    )
+                    _issue("values", "error", labels[bad].tolist(), f"Value is {what}", "Fix or drop these rows.")
                 )
 
     ok = present & ~invalid
@@ -228,25 +226,22 @@ def validate_geometries(
                     "repeated_vertices",
                     "info",
                     labels[ok][repeated].tolist(),
-                    "geometries have repeated consecutive vertices",
+                    "Repeated consecutive vertices",
                     "Remove them with shapely.remove_repeated_points.",
                 )
             )
-        if coverage:
-            polygonal = np.isin(shapely.get_type_id(sub), (3, 6))
-            if polygonal.all():
-                ok_cov = shapely.coverage_is_valid(sub)
-                if not ok_cov.all():
-                    issues.append(
-                        _issue(
-                            "coverage",
-                            "warning",
-                            labels[ok][~ok_cov].tolist(),
-                            "polygons overlap a neighbor or share an edge that does not match",
-                            "Neighbors may be missed and the cells may overlap in the result; "
-                            "see shapely.coverage_simplify and shapely.coverage_union.",
-                        )
+        if coverage and np.isin(shapely.get_type_id(sub), (3, 6)).all():
+            bad_edges = ~shapely.is_empty(shapely.coverage_invalid_edges(sub))
+            if bad_edges.any():
+                issues.append(
+                    _issue(
+                        "coverage",
+                        "warning",
+                        labels[ok][bad_edges].tolist(),
+                        "Polygon overlaps a neighbor or shares an edge that does not match",
+                        "Neighbors may be missed and the result may overlap; see shapely.coverage_invalid_edges.",
                     )
+                )
     return GeometryReport(tuple(issues))
 
 

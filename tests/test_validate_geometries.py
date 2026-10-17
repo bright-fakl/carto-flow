@@ -97,7 +97,9 @@ def test_overlap_is_a_warning_only_with_coverage():
     assert validate_geometries(gdf).issues == ()
     report = validate_geometries(gdf, coverage=True)
     assert report.ok
-    assert kinds(report) == {"coverage"}
+    (issue,) = report.warnings
+    assert issue.kind == "coverage"
+    assert issue.rows == ("r0", "r1", "r3")  # the overlapped neighbors and the one above that no longer matches
 
 
 def test_message_counts_rows_beyond_the_listed_ones():

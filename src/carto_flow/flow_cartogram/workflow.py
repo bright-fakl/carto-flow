@@ -35,6 +35,7 @@ from typing import Any, Literal
 
 import numpy as np
 
+from ..geo_utils.validity import check_input
 from .algorithm import morph_geometries
 from .cartogram import Cartogram
 from .errors import compute_error_metrics
@@ -124,6 +125,10 @@ class CartogramWorkflow:
     density_per : {'m2', 'km2', 'ha', 'acre', 'sqft', 'sqmi'}, optional
         Unit for density calculations. If specified, automatically computes
         the appropriate area_scale based on the GeoDataFrame's CRS units.
+    validate : bool, default=True
+        Whether to check the input first (see :func:`~carto_flow.geo_utils.validate_geometries`): invalid, empty or
+        null geometries and values that are not finite or are negative raise a ValueError that names the rows;
+        overlapping polygons give a warning.
 
     Examples
     --------
@@ -151,7 +156,11 @@ class CartogramWorkflow:
         coords: Any = None,
         options: MorphOptions | None = None,
         density_per: Literal["m2", "km2", "ha", "acre", "sqft", "sqmi"] | None = None,
+        validate: bool = True,
     ):
+        if validate:
+            check_input(gdf, column, coverage=True, zero="ok", stacklevel=3)
+
         # Handle density_per by computing area_scale
         if density_per is not None:
             source_unit = _get_crs_area_unit(gdf)

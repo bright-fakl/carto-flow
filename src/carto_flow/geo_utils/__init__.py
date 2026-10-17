@@ -27,6 +27,10 @@ compute_complex_polygon_areas_numba
     Parallel area computation for polygons with holes.
 find_adjacent_pairs
     Find touching geometry pairs using buffered intersection.
+validate_geometries
+    Check the input of a cartogram for invalid geometries, bad values and coverage problems.
+repair_polygons
+    Replace invalid polygons by valid ones.
 simplify_coverage
     Simplify polygon geometries while preserving shared boundaries.
 densify_coverage
@@ -116,10 +120,13 @@ from .prescale import (
     prescale_connected_components,
 )
 from .simplification import densify_coverage, simplify_coverage
+from .validity import GeometryIssue, GeometryReport, repair_polygons, validate_geometries
 
 # Define public API for explicit control over what is exported
 __all__ = [
     "GeometryCoordinateInfo",
+    "GeometryIssue",
+    "GeometryReport",
     "components_from_adjacency",
     "compute_complex_polygon_areas_numba",
     "compute_connected_components",
@@ -134,7 +141,9 @@ __all__ = [
     "repair_compactness",
     "repair_contiguity",
     "repair_group_assignment",
+    "repair_polygons",
     "simplify_coverage",
     "unpack_geometries",
     "unpack_geometry",
+    "validate_geometries",
 ]

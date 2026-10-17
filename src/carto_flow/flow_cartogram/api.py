@@ -46,6 +46,7 @@ def create_flow_cartogram(
     options: MorphOptions | None = None,
     displacement_coords: Any = None,
     density_per: Literal["m2", "km2", "ha", "acre", "sqft", "sqmi"] | None = None,
+    validate: bool = True,
 ) -> Cartogram:
     """
     Generate a flow cartogram from a GeoDataFrame.
@@ -73,6 +74,10 @@ def create_flow_cartogram(
         the appropriate area_scale based on the GeoDataFrame's CRS units.
         For example, if CRS uses meters and density_per='km2', density
         values will be expressed as values per km².
+    validate : bool, default=True
+        Whether to check the input first (see :func:`~carto_flow.geo_utils.validate_geometries`): invalid, empty or
+        null geometries and values that are not finite or are negative raise a ValueError that names the rows;
+        overlapping polygons give a warning.
 
     Returns
     -------
@@ -108,7 +113,9 @@ def create_flow_cartogram(
     """
     from .workflow import CartogramWorkflow
 
-    workflow = CartogramWorkflow(gdf, column, landmarks, displacement_coords, options, density_per=density_per)
+    workflow = CartogramWorkflow(
+        gdf, column, landmarks, displacement_coords, options, density_per=density_per, validate=validate
+    )
     return workflow.morph()
 
 

@@ -10,6 +10,7 @@ import numpy as np
 from shapely.ops import unary_union
 
 from carto_flow._history import History
+from carto_flow.geo_utils.validity import check_input
 
 from .backends import AdhesiveBoundary, ElasticBoundary, ExactBackend, RasterBackend, _resolve_relaxation
 from .history import VoronoiSnapshot
@@ -91,7 +92,7 @@ def _premorph(gdf: gpd.GeoDataFrame, weights: str | np.ndarray | None, premorph:
         column = "_premorph_weight"
         source = gdf.copy()
         source[column] = np.ones(len(gdf)) if weights is None else np.asarray(weights, dtype=float)
-    morph = create_flow_cartogram(source, column, options=morph_options)
+    morph = create_flow_cartogram(source, column, options=morph_options, validate=False)
     geoms = np.asarray(morph.to_geodataframe(include_errors=False, include_density=False).geometry, dtype=object)
     invalid = ~shapely.is_valid(geoms)
     if invalid.any():
@@ -108,6 +109,7 @@ def create_voronoi_cartogram(
     group_by: str | None = None,
     boundary: str | Any = "union",
     premorph: bool | Any = None,
+    validate: bool = True,
 ) -> VoronoiCartogram:
     """Run Lloyd relaxation (or FFT flow) on GeoDataFrame centroids.
 
@@ -182,6 +184,10 @@ def create_voronoi_cartogram(
         ``RasterBackend.generator_anchor``).  The flow-cartogram result is
         stored in ``result.premorph``; its ``to_geodataframe()`` has the
         columns of *gdf*.  ``None`` or ``False`` (default): no morph.
+    validate : bool, default True
+        Check the input first (:func:`carto_flow.geo_utils.validate_geometries`): invalid, empty or null geometries and weights that are not finite or are
+        negative raise a ValueError that names the rows; overlapping polygons give a warning.
+
 
     Returns
     -------
@@ -238,6 +244,9 @@ def create_voronoi_cartogram(
     ... )
     """
     from carto_flow.geo_utils.adjacency import find_adjacent_pairs
+
+    if validate:
+        check_input(gdf, weights, coverage=True, zero="ok")
 
     if backend is None:
         backend = RasterBackend()

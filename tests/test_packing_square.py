@@ -135,3 +135,16 @@ def test_squares_keep_the_spacing_on_the_world_data():
     )
     gap, half = square_gap(result.layout_result)
     assert gap >= 0.04 * half
+
+
+def test_demers_preset_is_the_square_packing_layout():
+    from carto_flow.symbol_cartogram import demers_cartogram
+
+    gdf = cluster()
+    result = demers_cartogram(gdf, "v", show_progress=False)
+    assert result.layout_result.layout_type == "packing"
+    assert isinstance(result.layout_result.canonical_symbol, SquareSymbol)
+    gap, half = square_gap(result.layout_result)
+    assert gap >= 0.04 * half
+    area = shapely.area(np.asarray(result.symbols.geometry.values, dtype=object))
+    assert area / gdf["v"].to_numpy() == pytest.approx(area[0] / gdf["v"].iloc[0], rel=1e-6)

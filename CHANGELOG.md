@@ -152,6 +152,12 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,
+  which put each square in a lattice cell: with the default `size_normalization="max"` the squares covered 15 % of the
+  geometry area and none of the neighboring squares touched. It now uses `CirclePackingLayout(shape="square")` with
+  `size_normalization="total"` (new parameter), so the total square area equals the geometry area and 76 % of the
+  neighboring pairs on the census snapshot touch or nearly touch. The grid version is still available as
+  `create_symbol_cartogram(gdf, size, layout="grid", styling=Styling(symbol="square"))`.
 - **`CentroidLayout` keeps the requested `spacing`.** The cleanup passes after the attraction cycles are capped, so overlaps
   from the last attraction step could remain: on the census snapshot with `spacing=0.05` 34 of 49 circles were closer than
   the spacing, some touching. A final pass now runs until no overlap is left. Symbols move 3 to 10 % farther from their

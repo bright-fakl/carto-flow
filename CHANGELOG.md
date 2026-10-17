@@ -338,6 +338,15 @@ Releases before 2.0.0 have no changelog entry; see the
   centered, to a whole number of cells of the larger spacing. On the 3,108 counties on a square grid of 128 the number of
   invalid output polygons after 200 iterations falls from 1,350 to 70; states, districts and counties at other grids have
   fewer invalid polygons in most cases and converge as before. The grid of a square run is up to one cell larger than before.
+- **The stall rule requires an improvement that follows from the step, so it no longer ends runs on fine grids that
+  converge.** A step moves the fastest point `dt` cells, so on a finer grid the error falls more slowly per iteration,
+  and the fixed required improvement per window (2 %) stopped runs that were making steady progress: Arizona's 15
+  counties stalled at 50 iterations at grids 512 and 1024 although they converge in 384 and 758 iterations, the 3,108
+  counties stalled at their start error (929 % mean) at 1024, and the 49 states stalled at 2048 at 168 % mean. A window
+  now has to lower the error by `stall_min_efficiency` (default 0.05) times the distance the boundaries moved in the
+  window divided by the area-weighted size of the regions, so the requirement falls with the cell size, `dt` and the
+  adaptive step, and rises for small regions. The counties at 1024 now reach a 4.2 % mean error (median 0.1 %) in 700
+  iterations. The option `stall_min_improvement` of the unreleased stall rule is replaced by `stall_min_efficiency`.
 - **`cmap={category: color}` works in the flow, Voronoi and non-contiguous plots.** The dictionary was passed to matplotlib as a colormap and raised `TypeError: unhashable type: 'dict'`; the categories that are not in it take the `tab10` colors.
 - **Data-driven edges of the symbol plots are visible without an `edgecolor`, and the scalar channels take a scale.** The edge color defaulted to the boundary color of the style, a faint color made for separating symbols, or to `"none"` in `"classic"`, so a data-driven `linewidth` or a `hatch` could not be seen. A style has a new `"stroke"` channel (the color of an edge that carries data; `"#3b4650"` in `"default"`, `"#c9d1d9"` in `"dark"`, black in `"classic"`) which `plot_symbols` uses when `linewidth` is a column or `hatch` is set and no `edgecolor` is given; the hatch warning is raised only for an explicit `edgecolor="none"`.
 - **`legend_kwargs={"label": ...}` of the symbol plots sets the label of the colorbar** (it was ignored in favor of the column name).

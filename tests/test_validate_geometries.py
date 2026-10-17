@@ -70,6 +70,16 @@ def test_zero_value_can_be_allowed():
     assert validate_geometries(gdf, "v", zero="ok").ok
 
 
+def test_geographic_crs_is_a_warning():
+    gdf = grid().set_crs(4326)
+    report = validate_geometries(gdf)
+    assert report.ok
+    (issue,) = report.warnings
+    assert issue.kind == "crs"
+    assert "EPSG:4326" in issue.message
+    assert validate_geometries(gdf.to_crs(5070)).issues == ()
+
+
 def test_missing_column_is_an_error():
     with pytest.raises(ValueError, match="not found"):
         validate_geometries(grid(), "nope").raise_for_errors()

@@ -13,7 +13,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 - **`validate_geometries` checks the input of a cartogram.** `carto_flow.geo_utils.validate_geometries(gdf, values, coverage=...)`
   returns a `GeometryReport` with errors (null, empty and invalid geometries, with the reason from
-  `shapely.explain_validity`; values that are not finite or are negative), warnings (polygons that overlap or
+  `shapely.explain_validity`; values that are not finite or are negative), warnings (coordinates in longitude and latitude; polygons that overlap or
   whose shared edges do not match) and information (repeated consecutive vertices). Every issue names the rows by index
   label. `create_flow_cartogram`, `CartogramWorkflow`, `create_voronoi_cartogram` and `create_noncontiguous_cartogram`
   run it first and take `validate=False` to skip it.

@@ -186,7 +186,7 @@ def create_voronoi_cartogram(
         columns of *gdf*.  ``None`` or ``False`` (default): no morph.
     validate : bool, default True
         Check the input first (:func:`carto_flow.geo_utils.validate_geometries`): invalid, empty or null geometries and weights that are not finite or are
-        negative raise a ValueError that names the rows; overlapping polygons give a warning.
+        negative raise a ValueError that names the rows; overlapping polygons and geographic coordinates give a warning.
 
 
     Returns

@@ -73,7 +73,7 @@ def create_noncontiguous_cartogram(
         its own centroid, so that every part stays on its own land and the gaps between the parts grow in proportion
         to the parts.
     validate : bool, default True
-        Check the input first (:func:`carto_flow.geo_utils.validate_geometries`): invalid, empty or null geometries raise a ValueError that names the rows.
+        Check the input first (:func:`carto_flow.geo_utils.validate_geometries`): invalid, empty or null geometries raise a ValueError that names the rows; geographic coordinates give a warning.
 
     Returns
 

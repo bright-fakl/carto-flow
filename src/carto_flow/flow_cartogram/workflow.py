@@ -128,7 +128,7 @@ class CartogramWorkflow:
     validate : bool, default=True
         Whether to check the input first (see :func:`~carto_flow.geo_utils.validate_geometries`): invalid, empty or
         null geometries and values that are not finite or are negative raise a ValueError that names the rows;
-        overlapping polygons give a warning.
+        overlapping polygons and geographic coordinates give a warning.
 
     Examples
     --------

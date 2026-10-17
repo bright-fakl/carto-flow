@@ -73,7 +73,7 @@ class GeometryIssue:
     Attributes
     ----------
     kind : str
-        ``"invalid"``, ``"empty"``, ``"values"``, ``"repeated_vertices"`` or ``"coverage"``.
+        ``"invalid"``, ``"empty"``, ``"values"``, ``"repeated_vertices"``, ``"coverage"`` or ``"crs"``.
     severity : {"error", "warning", "info"}
         An error stops the cartogram; a warning is issued and the run goes on; information is only in the report.
     rows : tuple
@@ -149,7 +149,7 @@ def validate_geometries(
 
     Errors: null or empty geometries, invalid geometries (with the reason from
     :func:`shapely.explain_validity`), and values that are not finite, negative or (with ``zero="error"``) zero.
-    Warnings: with ``coverage=True``, polygons that overlap or whose shared edges do not match
+    Warnings: coordinates in a geographic CRS (longitude and latitude), and, with ``coverage=True``, polygons that overlap or whose shared edges do not match
     (:func:`shapely.coverage_invalid_edges`). Information: repeated consecutive vertices, which do not affect a cartogram.
 
     Parameters
@@ -214,6 +214,18 @@ def validate_geometries(
                 issues.append(
                     _issue("values", "error", labels[bad].tolist(), f"Value is {what}", "Fix or drop these rows.")
                 )
+
+    crs = getattr(gdf, "crs", None)
+    if crs is not None and crs.is_geographic:
+        issues.append(
+            GeometryIssue(
+                "crs",
+                "warning",
+                (),
+                f"The coordinates are longitude and latitude ({crs.to_string()}), so areas are in square degrees and "
+                "distorted. Project the data first, for example with gdf.to_crs(...) to an equal-area projection.",
+            )
+        )
 
     ok = present & ~invalid
     if ok.any():

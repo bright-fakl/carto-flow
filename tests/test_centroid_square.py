@@ -110,3 +110,21 @@ def test_square_layout_with_groups():
 def test_invalid_shape_raises():
     with pytest.raises(ValueError, match="shape"):
         CentroidLayout(shape="hexagon")
+
+
+@pytest.mark.parametrize("shape", ["circle", "square"])
+@pytest.mark.parametrize("spacing", [0.0, 0.05, 0.2])
+def test_layout_keeps_the_requested_spacing(shape, spacing):
+    result = create_symbol_cartogram(
+        cluster(n=60), "v", layout=CentroidLayout(shape=shape, spacing=spacing), show_progress=False
+    )
+    layout = result.layout_result
+    pos = np.array([t.position for t in layout.transforms])
+    half = layout.sizes
+    if shape == "circle":
+        distance = np.hypot(pos[:, None, 0] - pos[None, :, 0], pos[:, None, 1] - pos[None, :, 1])
+    else:
+        distance = np.maximum(np.abs(pos[:, None, 0] - pos[None, :, 0]), np.abs(pos[:, None, 1] - pos[None, :, 1]))
+    np.fill_diagonal(distance, np.inf)
+    gap = (distance - half[:, None] - half[None, :]).min()
+    assert gap >= (spacing - 0.01) * half.mean()

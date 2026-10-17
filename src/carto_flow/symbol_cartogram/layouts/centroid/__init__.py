@@ -14,8 +14,8 @@ from ..layout_result import LayoutResult, Transform
 
 __all__ = ["CentroidLayout", "CentroidLayoutOptions", "CentroidMetrics"]
 
-SQUARE_FINAL_ITERATIONS = 500
-"""Upper bound of the passes that settle square overlaps after the last attraction cycle."""
+FINAL_ITERATIONS = 500
+"""Upper bound of the passes that settle overlaps after the last attraction cycle."""
 
 
 @dataclass
@@ -207,20 +207,19 @@ class CentroidLayout(Layout):
                     )
                     total_cleanup_iters += cleanup_info.get("iterations", 0)
 
-                if square:
-                    # Squares separate along one axis per pair, which needs more passes than circles to settle
-                    # after the last attraction step; run until no overlap is left.
-                    positions, cleanup_info = resolve_overlaps(
-                        positions=positions,
-                        radii=sizes,
-                        spacing=self._options.spacing,
-                        max_iterations=SQUARE_FINAL_ITERATIONS,
-                        overlap_tolerance=self._options.overlap_tolerance,
-                        global_step_fraction=0.0,
-                        local_step_fraction=1.0,
-                        shape="square",
-                    )
-                    total_cleanup_iters += cleanup_info.get("iterations", 0)
+                # The cleanup passes above are capped, so overlaps from the last attraction step can remain
+                # (squares separate along one axis per pair and need the most passes); run until none is left.
+                positions, cleanup_info = resolve_overlaps(
+                    positions=positions,
+                    radii=sizes,
+                    spacing=self._options.spacing,
+                    max_iterations=FINAL_ITERATIONS,
+                    overlap_tolerance=self._options.overlap_tolerance,
+                    global_step_fraction=0.0,
+                    local_step_fraction=1.0,
+                    shape=self._options.shape,
+                )
+                total_cleanup_iters += cleanup_info.get("iterations", 0)
 
                 info["cleanup_iterations"] = total_cleanup_iters
                 info["cleanup_max_overlap"] = cleanup_info.get("final_max_overlap", 0.0)

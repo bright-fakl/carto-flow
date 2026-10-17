@@ -147,6 +147,10 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`CentroidLayout` keeps the requested `spacing`.** The cleanup passes after the attraction cycles are capped, so overlaps
+  from the last attraction step could remain: on the census snapshot with `spacing=0.05` 34 of 49 circles were closer than
+  the spacing, some touching. A final pass now runs until no overlap is left. Symbols move 3 to 10 % farther from their
+  centroids on average (more at larger spacing).
 - **Invalid input raises a `ValueError` that names the rows.** A self-intersecting polygon, a null or empty geometry or a
   NaN value in the data column used to fail late, for example with a `GEOSException` from inside the morph; the flow,
   Voronoi and non-contiguous cartograms now stop before the run. Repair invalid polygons with `shapely.make_valid` or

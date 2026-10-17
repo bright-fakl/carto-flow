@@ -9,7 +9,7 @@ import carto_flow.data as data
 from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, MorphStatus, create_flow_cartogram
 from carto_flow.flow_cartogram.anisotropy import DirectionalTensor
 from carto_flow.flow_cartogram.recompute import score_rose, should_recompute
-from carto_flow.flow_cartogram.stall import MIN_CYCLE_LENGTH, StallMonitor, cycle_length
+from carto_flow.flow_cartogram.stall import MIN_CYCLE_LENGTH, StallMonitor, cycle_length, region_size
 
 
 @pytest.fixture(scope="module")
@@ -152,10 +152,13 @@ class TestWorkflowContinuation:
         )
 
 
-def _run_monitor(monitor, mean, mx):
-    """Feed per-iteration ratios; return the 1-based iteration at which the monitor stalls, or None."""
+def _run_monitor(monitor, mean, mx, moved=0.1):
+    """Feed per-iteration ratios; return the 1-based iteration at which the monitor stalls, or None.
+
+    With ``moved`` 0.1 a cycle of 10 iterations moves 1, so the efficiency is the improvement per cycle.
+    """
     for i, (m, x) in enumerate(zip(mean, mx, strict=True)):
-        if monitor.update(i, m, x):
+        if monitor.update(i, m, x, moved):
             return i + 1
     return None
 
@@ -286,10 +289,10 @@ class TestStallPatience:
         with pytest.raises(ValueError, match="stall_patience"):
             MorphOptions(stall_patience=value)
 
-    @pytest.mark.parametrize("value", [-0.1, 1.0, "x"])
-    def test_invalid_min_improvement_is_rejected(self, value):
-        with pytest.raises(ValueError, match="stall_min_improvement"):
-            MorphOptions(stall_min_improvement=value)
+    @pytest.mark.parametrize("value", [-0.1, True, "x"])
+    def test_invalid_min_efficiency_is_rejected(self, value):
+        with pytest.raises(ValueError, match="stall_min_efficiency"):
+            MorphOptions(stall_min_efficiency=value)
 
 
 class TestRecomputeOnRise:
@@ -439,3 +442,44 @@ class TestBestAndLast:
         shown, total = anim._fig.axes[0].get_title().split("|")
         assert int(shown) == run.best_iteration
         assert int(total) == run.niterations
+
+
+class TestRequiredImprovementFollowsTheStep:
+    """The improvement a cycle has to make is the efficiency times the distance moved relative to the region size."""
+
+    @staticmethod
+    def _slow_trace():
+        # the ratio falls 1 % per cycle of 10 iterations
+        return np.array([50.0 * 0.99 ** (step // 10) for step in range(400)])
+
+    def test_region_size_is_the_area_weighted_root(self):
+        assert region_size(np.array([4.0, 4.0])) == pytest.approx(2.0)
+        assert region_size(np.array([1.0, 3.0])) == pytest.approx(np.sqrt((1 + 9) / 4))
+
+    def test_steady_slow_progress_stalls_when_much_is_moved_and_not_when_little(self):
+        trace = self._slow_trace()
+        assert _run_monitor(StallMonitor(4, 0.05, 10), trace, trace, moved=0.1) is not None  # 5 % required per cycle
+        assert _run_monitor(StallMonitor(4, 0.05, 10), trace, trace, moved=0.01) is None  # 0.5 % required per cycle
+
+    def test_zero_efficiency_never_stalls_on_decreasing_minima(self):
+        trace = self._slow_trace()
+        assert _run_monitor(StallMonitor(4, 0.0, 10), trace, trace) is None
+
+    def test_distance_is_proportional_to_the_cell_size(self, states, monkeypatch):
+        from carto_flow.flow_cartogram import algorithm
+
+        first = {}
+
+        class Spy(StallMonitor):
+            def update(self, step, mean_ratio, max_ratio, moved):
+                first.setdefault(self.cycle, moved)
+                return super().update(step, mean_ratio, max_ratio, moved)
+
+        monkeypatch.setattr(algorithm, "StallMonitor", Spy)
+        moved = {}
+        for grid in (128, 512):
+            first.clear()
+            options = MorphOptions(grid=grid, area_scale=1e-6, n_iter=1, show_progress=False, adaptive_dt=False)
+            create_flow_cartogram(states, "Population", options=options)
+            moved[grid] = next(iter(first.values()))
+        assert moved[128] / moved[512] == pytest.approx(4.0, rel=0.05)

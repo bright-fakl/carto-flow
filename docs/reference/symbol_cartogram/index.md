@@ -28,7 +28,7 @@ graph TD
 | Sub-module | Description |
 |------------|-------------|
 | **[API](api.md)** | Main functions: `create_symbol_cartogram`, `create_layout` |
-| **[Layouts](layout.md)** | Layout algorithms: `CirclePackingLayout`, `FlowDensityLayout`, `GridBasedLayout`, `MosaicLayout`, etc. |
+| **[Layouts](layout.md)** | Layout algorithms: `PackingLayout`, `FlowDensityLayout`, `GridBasedLayout`, `MosaicLayout`, etc. |
 | **[LayoutResult](layout_result.md)** | Immutable layout output with transforms |
 | **[Result](result.md)** | `SymbolCartogram` result container |
 | **[Styling](styling.md)** | Symbol styling configuration |
@@ -102,12 +102,12 @@ result = create_symbol_cartogram(
 ```python
 from carto_flow.symbol_cartogram import (
     create_symbol_cartogram,
-    CirclePackingLayout,
-    CirclePackingLayoutOptions,
+    PackingLayout,
+    PackingLayoutOptions,
     Styling,
 )
 
-layout = CirclePackingLayout(CirclePackingLayoutOptions(
+layout = PackingLayout(PackingLayoutOptions(
     spacing=0.15,
     max_iterations=2000,
 ))
@@ -147,7 +147,7 @@ The full set is `centroid_cartogram`, `dorling_cartogram`, `geographic_cartogram
 ### Tiled and Grouped Layouts
 
 ```python
-from carto_flow.symbol_cartogram import create_symbol_cartogram, CirclePackingLayout
+from carto_flow.symbol_cartogram import create_symbol_cartogram, PackingLayout
 
 # tile_count: each region gets an integer number of symbols
 result = create_symbol_cartogram(gdf, tile_count="seats", layout="grid")
@@ -156,7 +156,7 @@ result.plot()
 # group_by: group symbols by region (layouts that honor it: centroid,
 # flow_density, mosaic, packing)
 result = create_symbol_cartogram(
-    gdf, size="population", group_by="region", layout=CirclePackingLayout(group_weight=0.5)
+    gdf, size="population", group_by="region", layout=PackingLayout(group_weight=0.5)
 )
 gdf_regions = result.to_geodataframe(level="group")  # one row per region, union geometry
 ```

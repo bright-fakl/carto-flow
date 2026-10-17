@@ -40,11 +40,11 @@ class TestSymbolCartogramCoverage:
 
     def test_result_properties(self):
         """Test various properties of SymbolCartogramResult."""
-        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram
         from carto_flow.symbol_cartogram.status import SymbolCartogramStatus
 
         gdf = make_test_gdf()
-        layout = CirclePackingLayout(max_iterations=50)
+        layout = PackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",

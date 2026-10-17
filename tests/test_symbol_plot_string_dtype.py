@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import pytest
 from shapely.geometry import box
 
-from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
+from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram
 
 
 def make_test_gdf(n: int = 5) -> gpd.GeoDataFrame:
@@ -25,9 +25,7 @@ def _cartogram(dtype):
     gdf = make_test_gdf()
     gdf["cat"] = ["a", "b", "a", "c", "b"]
     gdf["cat"] = gdf["cat"].astype(dtype)
-    result = create_symbol_cartogram(
-        gdf, "population", layout=CirclePackingLayout(max_iterations=50), show_progress=False
-    )
+    result = create_symbol_cartogram(gdf, "population", layout=PackingLayout(max_iterations=50), show_progress=False)
     return result, gdf
 
 

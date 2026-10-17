@@ -15,10 +15,10 @@ from .grid import GridBasedLayout, GridBasedLayoutOptions, GridMetrics
 from .layout_result import AlgorithmMetrics, LayoutResult, SimulationHistory, Transform
 from .mosaic import HungarianOptions, MosaicLayout, MosaicLayoutOptions, MosaicMetrics
 from .packing import (
-    CirclePackingAdvancedOptions,
-    CirclePackingLayout,
-    CirclePackingLayoutOptions,
+    PackingAdvancedOptions,
     PackingHistory,
+    PackingLayout,
+    PackingLayoutOptions,
     PackingMetrics,
 )
 
@@ -27,9 +27,6 @@ __all__ = [
     "CentroidLayout",
     "CentroidLayoutOptions",
     "CentroidMetrics",
-    "CirclePackingAdvancedOptions",
-    "CirclePackingLayout",
-    "CirclePackingLayoutOptions",
     "FlowDensityHistory",
     "FlowDensityLayout",
     "FlowDensityLayoutOptions",
@@ -44,7 +41,10 @@ __all__ = [
     "MosaicLayout",
     "MosaicLayoutOptions",
     "MosaicMetrics",
+    "PackingAdvancedOptions",
     "PackingHistory",
+    "PackingLayout",
+    "PackingLayoutOptions",
     "PackingMetrics",
     "SimulationHistory",
     "Transform",
@@ -61,5 +61,11 @@ register_layout("centroid", CentroidLayout)
 register_layout("flow_density", FlowDensityLayout)
 register_layout("grid", GridBasedLayout)
 register_layout("mosaic", MosaicLayout)
-register_layout("packing", CirclePackingLayout)
-register_layout("topology", CirclePackingLayout)  # backward-compat alias
+register_layout("packing", PackingLayout)
+register_layout("topology", PackingLayout)  # backward-compat alias
+
+
+def __getattr__(name: str):
+    from .packing import _deprecated_name
+
+    return _deprecated_name(name, globals())

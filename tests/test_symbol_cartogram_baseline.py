@@ -45,10 +45,10 @@ class TestCurrentAPIContract:
 
     def test_basic_proportional_cartogram(self):
         """Basic proportional cartogram returns valid result."""
-        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
-        layout = CirclePackingLayout(max_iterations=50)
+        layout = PackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -69,10 +69,10 @@ class TestCurrentAPIContract:
 
     def test_uniform_size_mode(self):
         """Uniform sizing (no value_column) creates equal-sized symbols."""
-        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
-        layout = CirclePackingLayout(max_iterations=50)
+        layout = PackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             layout=layout,
@@ -105,13 +105,13 @@ class TestCurrentAPIContract:
     def test_topology_preserving_simulator(self):
         """Topology-preserving simulator runs successfully."""
         from carto_flow.symbol_cartogram import (
-            CirclePackingLayout,
-            CirclePackingLayoutOptions,
+            PackingLayout,
+            PackingLayoutOptions,
             create_symbol_cartogram,
         )
 
         gdf = make_grid_gdf(rows=2, cols=3)
-        layout = CirclePackingLayout(CirclePackingLayoutOptions(max_iterations=30))
+        layout = PackingLayout(PackingLayoutOptions(max_iterations=30))
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -150,11 +150,11 @@ class TestCurrentAPIContract:
 
     def test_null_values_skipped(self):
         """Null values are skipped with warning."""
-        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf(n=5)
         gdf.loc[gdf.index[0], "population"] = np.nan
-        layout = CirclePackingLayout(max_iterations=50)
+        layout = PackingLayout(max_iterations=50)
         with pytest.warns(UserWarning, match="Skipping 1 rows"):
             result = create_symbol_cartogram(
                 gdf,
@@ -184,10 +184,10 @@ class TestCurrentAPIContract:
 
     def test_save_history(self):
         """History is saved when requested."""
-        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePackingLayout(max_iterations=20)
+        layout = PackingLayout(max_iterations=20)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -201,12 +201,12 @@ class TestCurrentAPIContract:
         assert len(result.layout_result.history.positions) > 0
 
     def test_preset_classmethods(self):
-        """CirclePackingLayout preset classmethods return configured instances."""
-        from carto_flow.symbol_cartogram import CirclePackingLayout
+        """PackingLayout preset classmethods return configured instances."""
+        from carto_flow.symbol_cartogram import PackingLayout
 
         for name in ("centroid", "dorling", "geographic", "dorling_grouped", "geographic_grouped"):
-            layout = getattr(CirclePackingLayout, name)()
-            assert isinstance(layout, CirclePackingLayout)
+            layout = getattr(PackingLayout, name)()
+            assert isinstance(layout, PackingLayout)
 
     def test_preset_functions_importable(self):
         """Named cartogram functions are importable from the top-level package."""
@@ -233,11 +233,11 @@ class TestCurrentAPIContract:
 
     def test_result_to_geodataframe(self):
         """to_geodataframe preserves original columns."""
-        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram
+        from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram
 
         gdf = make_test_gdf()
         gdf["region_name"] = [f"Region_{i}" for i in range(len(gdf))]
-        layout = CirclePackingLayout(max_iterations=50)
+        layout = PackingLayout(max_iterations=50)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -312,13 +312,13 @@ class TestVisualization:
         matplotlib.use("Agg")
         from carto_flow.symbol_cartogram import (
             AdjacencyPlotResult,
-            CirclePackingLayout,
+            PackingLayout,
             create_symbol_cartogram,
             plot_adjacency,
         )
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePackingLayout(max_iterations=10)
+        layout = PackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -334,10 +334,10 @@ class TestVisualization:
         import matplotlib
 
         matplotlib.use("Agg")
-        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram, plot_adjacency
+        from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram, plot_adjacency
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePackingLayout(max_iterations=10)
+        layout = PackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",
@@ -378,10 +378,10 @@ class TestVisualization:
         import matplotlib
 
         matplotlib.use("Agg")
-        from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram, plot_tiling
+        from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram, plot_tiling
 
         gdf = make_grid_gdf(rows=2, cols=2)
-        layout = CirclePackingLayout(max_iterations=10)
+        layout = PackingLayout(max_iterations=10)
         result = create_symbol_cartogram(
             gdf,
             "population",

@@ -16,10 +16,10 @@ from shapely.geometry import box
 from carto_flow.symbol_cartogram import create_layout
 from carto_flow.symbol_cartogram.layouts import (
     CentroidLayout,
-    CirclePackingLayout,
     FlowDensityLayout,
     GridBasedLayout,
     MosaicLayout,
+    PackingLayout,
     check_group_by_support,
     get_layout,
     group_by_layouts,
@@ -50,7 +50,7 @@ class TestSupportFlags:
 
     @pytest.mark.parametrize(
         "cls",
-        [CentroidLayout, CirclePackingLayout, FlowDensityLayout, MosaicLayout],
+        [CentroidLayout, PackingLayout, FlowDensityLayout, MosaicLayout],
     )
     def test_supporting_layouts_declare_support(self, cls):
         assert cls.supports_group_by is True
@@ -118,7 +118,7 @@ class TestCheckDoesNotFire:
             grouped_gdf(),
             "value",
             group_by="grp",
-            layout=CirclePackingLayout(max_iterations=10, group_weight=0.5),
+            layout=PackingLayout(max_iterations=10, group_weight=0.5),
             show_progress=False,
         )
         assert result.group_ids is not None
@@ -134,7 +134,7 @@ class TestInertGroupingWarning:
                 grouped_gdf(),
                 "value",
                 group_by="grp",
-                layout=CirclePackingLayout(max_iterations=5),
+                layout=PackingLayout(max_iterations=5),
                 show_progress=False,
             )
 
@@ -155,7 +155,7 @@ class TestInertGroupingWarning:
                 grouped_gdf(),
                 "value",
                 group_by="grp",
-                layout=CirclePackingLayout(max_iterations=5, group_weight=0.5),
+                layout=PackingLayout(max_iterations=5, group_weight=0.5),
                 show_progress=False,
             )
 
@@ -172,7 +172,7 @@ class TestInertGroupingWarning:
 
     @pytest.mark.parametrize(
         "layout",
-        [CirclePackingLayout(max_iterations=5), FlowDensityLayout(max_iterations=5, grid_size=64)],
+        [PackingLayout(max_iterations=5), FlowDensityLayout(max_iterations=5, grid_size=64)],
     )
     def test_no_warning_without_group_by(self, layout):
         with warnings.catch_warnings():

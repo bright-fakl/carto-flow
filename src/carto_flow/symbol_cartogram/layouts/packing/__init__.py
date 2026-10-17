@@ -1,8 +1,9 @@
-"""Two-stage circle packing layout: CirclePackingLayout and CirclePackingLayoutOptions."""
+"""Two-stage circle packing layout: PackingLayout and PackingLayoutOptions."""
 
 from __future__ import annotations
 
 import dataclasses
+import warnings
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -16,17 +17,40 @@ from ..data_prep import LayoutData
 from ..layout_result import LayoutResult
 
 __all__ = [
-    "CirclePackingAdvancedOptions",
-    "CirclePackingLayout",
-    "CirclePackingLayoutOptions",
+    "PackingAdvancedOptions",
     "PackingHistory",
+    "PackingLayout",
+    "PackingLayoutOptions",
     "PackingMetrics",
 ]
+
+_DEPRECATED_NAMES = {
+    "CirclePackingLayout": "PackingLayout",
+    "CirclePackingLayoutOptions": "PackingLayoutOptions",
+    "CirclePackingAdvancedOptions": "PackingAdvancedOptions",
+}
+
+
+def _deprecated_name(name: str, namespace: dict):
+    """Return the class that replaces a deprecated ``CirclePacking*`` name, warning about the old name."""
+    new = _DEPRECATED_NAMES.get(name)
+    if new is None:
+        raise AttributeError(f"module {namespace['__name__']!r} has no attribute {name!r}")
+    warnings.warn(
+        f"{name} is deprecated and will be removed in the next major release; use {new}.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return namespace[new]
+
+
+def __getattr__(name: str):
+    return _deprecated_name(name, globals())
 
 
 @dataclass
 class PackingHistory:
-    """Per-iteration diagnostics for CirclePackingLayout."""
+    """Per-iteration diagnostics for PackingLayout."""
 
     drift: NDArray[np.floating]
     jitter: NDArray[np.floating]
@@ -36,15 +60,15 @@ class PackingHistory:
 
 @dataclass
 class PackingMetrics:
-    """Final scalar metrics for CirclePackingLayout."""
+    """Final scalar metrics for PackingLayout."""
 
     final_drift: float
     final_jitter: float
 
 
 @dataclass
-class CirclePackingAdvancedOptions:
-    """Low-level algorithm tuning for CirclePackingLayout.
+class PackingAdvancedOptions:
+    """Low-level algorithm tuning for PackingLayout.
 
     These parameters rarely need changing. The defaults are calibrated for
     typical cartogram inputs. Override only when you have a specific reason.
@@ -133,8 +157,8 @@ class CirclePackingAdvancedOptions:
 
 
 @dataclass
-class CirclePackingLayoutOptions:
-    """Options for CirclePackingLayout (two-stage with contact reaction).
+class PackingLayoutOptions:
+    """Options for PackingLayout (two-stage with contact reaction).
 
     Two-stage approach:
 
@@ -196,8 +220,8 @@ class CirclePackingLayoutOptions:
     contact_transfer_ratio : float
         Balance between dissipating (0) and transferring (1) compressive
         forces at contact points. Default: 0.5
-    advanced : CirclePackingAdvancedOptions
-        Low-level algorithm tuning. See :class:`CirclePackingAdvancedOptions`.
+    advanced : PackingAdvancedOptions
+        Low-level algorithm tuning. See :class:`PackingAdvancedOptions`.
 
     """
 
@@ -226,7 +250,7 @@ class CirclePackingLayoutOptions:
     overlap_tolerance: float = 1e-4
 
     # Advanced tuning
-    advanced: CirclePackingAdvancedOptions = field(default_factory=CirclePackingAdvancedOptions)
+    advanced: PackingAdvancedOptions = field(default_factory=PackingAdvancedOptions)
 
     def validate(self) -> None:
         """Validate options."""
@@ -262,7 +286,7 @@ class CirclePackingLayoutOptions:
         self.advanced.validate()
 
 
-class CirclePackingLayout(Layout):
+class PackingLayout(Layout):
     """Layout using two-stage circle packing simulation.
 
     Two-stage approach:
@@ -271,11 +295,11 @@ class CirclePackingLayout(Layout):
 
     Parameters
     ----------
-    options : CirclePackingLayoutOptions, optional
-        Full options object. Defaults to CirclePackingLayoutOptions().
+    options : PackingLayoutOptions, optional
+        Full options object. Defaults to PackingLayoutOptions().
     **kwargs
         Individual option overrides (core options only; use
-        ``advanced=CirclePackingAdvancedOptions(...)`` for advanced tuning).
+        ``advanced=PackingAdvancedOptions(...)`` for advanced tuning).
 
     """
 
@@ -287,7 +311,7 @@ class CirclePackingLayout(Layout):
     # ------------------------------------------------------------------
 
     @classmethod
-    def centroid(cls, *, spacing: float = 0.05, expansion: float = 0.0) -> CirclePackingLayout:
+    def centroid(cls, *, spacing: float = 0.05, expansion: float = 0.0) -> PackingLayout:
         """Stage 1 only: place at geographic centroids then separate overlaps.
 
         No Stage 2 compaction (``max_iterations=0``). ``expansion=0`` (default)
@@ -312,7 +336,7 @@ class CirclePackingLayout(Layout):
         compactness: float = 0.8,
         topology_weight: float = 0.0,
         neighbor_weight: float = 0.0,
-    ) -> CirclePackingLayout:
+    ) -> PackingLayout:
         """Compact circles pulled toward the global centroid — classic Dorling style.
 
         No origin attraction. Enable ``topology_weight`` / ``neighbor_weight``
@@ -334,7 +358,7 @@ class CirclePackingLayout(Layout):
         origin_weight: float = 0.5,
         topology_weight: float = 0.5,
         neighbor_weight: float = 0.5,
-    ) -> CirclePackingLayout:
+    ) -> PackingLayout:
         """Geography-preserving — symbols stay close to original positions.
 
         No global compaction. Reduce ``topology_weight`` / ``neighbor_weight``
@@ -357,7 +381,7 @@ class CirclePackingLayout(Layout):
         group_weight: float = 0.5,
         topology_weight: float = 0.5,
         neighbor_weight: float = 0.5,
-    ) -> CirclePackingLayout:
+    ) -> PackingLayout:
         """Grouped Dorling — circles pack toward group centroids.
 
         Intended with ``collapse_group=1.0`` so symbols start coincident within
@@ -383,7 +407,7 @@ class CirclePackingLayout(Layout):
         group_weight: float = 0.3,
         topology_weight: float = 0.5,
         neighbor_weight: float = 0.5,
-    ) -> CirclePackingLayout:
+    ) -> PackingLayout:
         """Grouped geography-preserving — symbols stay near geographic positions.
 
         Origin tracks the group starting centroid (geographic or collapsed)
@@ -401,9 +425,9 @@ class CirclePackingLayout(Layout):
 
     # ------------------------------------------------------------------
 
-    def __init__(self, options: CirclePackingLayoutOptions | None = None, /, **kwargs) -> None:
+    def __init__(self, options: PackingLayoutOptions | None = None, /, **kwargs) -> None:
         if options is None:
-            options = CirclePackingLayoutOptions()
+            options = PackingLayoutOptions()
         self._options = _apply_kwargs_to_options(options, kwargs)
         self._options.validate()
 
@@ -412,8 +436,8 @@ class CirclePackingLayout(Layout):
         if self._options.group_weight > 0:
             return None
         return (
-            "group_by was given to CirclePackingLayout but group_weight is 0.0, so the grouping "
-            "does not affect placement. Set group_weight (e.g. CirclePackingLayout(group_weight=0.5), "
+            "group_by was given to PackingLayout but group_weight is 0.0, so the grouping "
+            "does not affect placement. Set group_weight (e.g. PackingLayout(group_weight=0.5), "
             "optionally with collapse_group in create_layout) to group symbols."
         )
 

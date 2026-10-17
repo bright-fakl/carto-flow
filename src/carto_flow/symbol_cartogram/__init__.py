@@ -14,7 +14,7 @@ Layout-Styling Separation
 -------------------------
 Layout
     Abstract base for layout algorithms.
-CirclePackingLayout
+PackingLayout
     Layout from circle packing simulation.
 GridBasedLayout
     Layout from grid-based assignment.
@@ -33,8 +33,8 @@ Configuration
 -------------
 GridBasedLayoutOptions
     Options for grid-based placement.
-CirclePackingLayoutOptions
-    Options for CirclePackingLayout.
+PackingLayoutOptions
+    Options for PackingLayout.
 CentroidLayoutOptions
     Options for centroid-based placement.
 SymbolShape
@@ -126,9 +126,6 @@ from .layouts import (
     CentroidLayout,
     CentroidLayoutOptions,
     CentroidMetrics,
-    CirclePackingAdvancedOptions,
-    CirclePackingLayout,
-    CirclePackingLayoutOptions,
     FlowDensityLayout,
     FlowDensityLayoutOptions,
     GridBasedLayout,
@@ -141,6 +138,9 @@ from .layouts import (
     MosaicLayout,
     MosaicLayoutOptions,
     MosaicMetrics,
+    PackingAdvancedOptions,
+    PackingLayout,
+    PackingLayoutOptions,
     SimulationHistory,
     Transform,
     compute_symbol_sizes,
@@ -214,9 +214,6 @@ __all__ = [
     "CentroidLayout",
     "CentroidLayoutOptions",
     "CentroidMetrics",
-    "CirclePackingAdvancedOptions",
-    "CirclePackingLayout",
-    "CirclePackingLayoutOptions",
     "CircleSymbol",
     "ComparisonPlotResult",
     "DisplacementPlotResult",
@@ -240,7 +237,10 @@ __all__ = [
     "MosaicLayout",
     "MosaicLayoutOptions",
     "MosaicMetrics",
+    "PackingAdvancedOptions",
     "PackingHistory",
+    "PackingLayout",
+    "PackingLayoutOptions",
     "PackingMetrics",
     "PrototilePlotResult",
     "QuadrilateralTiling",
@@ -294,3 +294,9 @@ __all__ = [
     "resolve_tiling",
     "tile_map_cartogram",
 ]
+
+
+def __getattr__(name: str):
+    from .layouts.packing import _deprecated_name
+
+    return _deprecated_name(name, globals())

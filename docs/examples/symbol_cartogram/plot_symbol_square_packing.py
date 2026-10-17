@@ -21,14 +21,14 @@ us_states = examples.load_us_census(population=True)
 on_circles = smb.create_symbol_cartogram(
     us_states,
     "Population",
-    layout=smb.CirclePackingLayout(spacing=0.0),
+    layout=smb.PackingLayout(spacing=0.0),
     styling=smb.Styling(symbol="square"),
     show_progress=False,
 )
 packed = smb.create_symbol_cartogram(
     us_states,
     "Population",
-    layout=smb.CirclePackingLayout(shape="square", spacing=0.0),
+    layout=smb.PackingLayout(shape="square", spacing=0.0),
     styling=smb.Styling(symbol="square"),
     show_progress=False,
 )

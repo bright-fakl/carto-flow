@@ -10,7 +10,7 @@ from typing import Any, ClassVar, Literal
 import numpy as np
 from numpy.typing import NDArray
 
-from ..symbols import CircleSymbol
+from ..symbols import CircleSymbol, Symbol
 from .data_prep import LayoutData
 from .layout_result import LayoutResult, Transform
 
@@ -252,6 +252,7 @@ def _build_force_layout_result(
     layout_type: str,
     metrics: Any | None = None,
     sim_history: Any | None = None,
+    canonical_symbol: Symbol | None = None,
 ) -> LayoutResult:
     """Build LayoutResult from force-based simulation output.
 
@@ -272,6 +273,8 @@ def _build_force_layout_result(
         Typed final metrics for the layout.
     sim_history : Any, optional
         Typed per-iteration history for the layout.
+    canonical_symbol : Symbol, optional
+        Symbol the sizes refer to (the half-extent of its unit polygon scaled by the size). Default: a circle.
 
     Returns
     -------
@@ -304,7 +307,7 @@ def _build_force_layout_result(
             sim_history = SimulationHistory(positions=history)
 
     return LayoutResult(
-        canonical_symbol=CircleSymbol(),
+        canonical_symbol=canonical_symbol if canonical_symbol is not None else CircleSymbol(),
         transforms=transforms,
         base_size=base_size,
         positions=data.geometry_positions if data.geometry_positions is not None else data.positions,

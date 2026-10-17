@@ -11,6 +11,11 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`CirclePackingLayout(shape="square")` packs squares.** The packing simulator treats the symbols as axis-aligned squares with
+  the area of the circles: the distance of a pair is the larger axis offset, and overlaps and contacts are resolved
+  along that axis, so squares touch along flat edges and slide along each other. The topology, neighbor and compaction forces
+  are those of the circle layout. On the census snapshot the squares keep 0.62 of the neighboring pairs close (circles: 0.63).
+  The default `shape="circle"` gives the same positions as before.
 - **`CentroidLayout(shape="square")` places squares that sit flush.** The layout separates axis-aligned squares with the
   area of the circles (along the axis with the smaller penetration), and its canonical symbol is a square, so squares drawn
   on it leave no gaps and no overlaps. With `spacing=0` the edges touch. The default is `shape="circle"`; a gallery example
@@ -147,6 +152,12 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,
+  which put each square in a lattice cell: with the default `size_normalization="max"` the squares covered 15 % of the
+  geometry area and none of the neighboring squares touched. It now uses `CirclePackingLayout(shape="square")` with
+  `size_normalization="total"` (new parameter), so the total square area equals the geometry area and 76 % of the
+  neighboring pairs on the census snapshot touch or nearly touch. The grid version is still available as
+  `create_symbol_cartogram(gdf, size, layout="grid", styling=Styling(symbol="square"))`.
 - **`CentroidLayout` keeps the requested `spacing`.** The cleanup passes after the attraction cycles are capped, so overlaps
   from the last attraction step could remain: on the census snapshot with `spacing=0.05` 34 of 49 circles were closer than
   the spacing, some touching. A final pass now runs until no overlap is left. Symbols move 3 to 10 % farther from their

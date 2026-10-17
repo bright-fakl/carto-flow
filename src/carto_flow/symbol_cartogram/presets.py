@@ -24,10 +24,13 @@ The four main cartogram styles differ on two axes:
 ``centroid_cartogram`` is a special case: Stage 1 only (no compaction), no
 pull in either direction.
 
+Squares
+-------
+demers_cartogram
+    Proportional squares that touch their neighbors (Demers style): the square packing layout.
+
 Grid-based
 ----------
-demers_cartogram
-    Proportional squares on a grid (Demers style).
 tile_map_cartogram
     Uniform hexagons on a grid (tile map).
 """
@@ -334,9 +337,13 @@ def demers_cartogram(
     size: str | None = None,
     *,
     spacing: float = 0.05,
+    size_normalization: Literal["max", "total"] = "total",
     show_progress: bool = True,
 ) -> SymbolCartogram:
-    """Demers-style cartogram: proportional squares on a grid.
+    """Demers-style cartogram: proportional squares that touch their neighbors.
+
+    The squares have an area proportional to the value, do not overlap, and stay next to the
+    squares of their neighboring regions (square packing layout with the default forces).
 
     Parameters
     ----------
@@ -345,7 +352,11 @@ def demers_cartogram(
     size : str, optional
         Column for proportional sizing. Uniform size when omitted.
     spacing : float
-        Gap between squares as fraction of cell size. Default: 0.05
+        Minimum gap between squares as fraction of the average half-side. Default: 0.05
+    size_normalization : {"max", "total"}
+        ``"total"`` (total square area equals total geometry area) or
+        ``"max"`` (largest square has the mean geometry area, so coverage is
+        ``mean(value) / max(value)``). Default: ``"total"``
     show_progress : bool
         Display progress bar. Default: True
 
@@ -353,8 +364,9 @@ def demers_cartogram(
     return create_symbol_cartogram(
         gdf,
         size,
-        layout=GridBasedLayout(GridBasedLayoutOptions(tiling="square", spacing=spacing)),
+        layout=CirclePackingLayout(shape="square", spacing=spacing),
         styling=Styling(symbol="square"),
+        size_normalization=size_normalization,
         show_progress=show_progress,
     )
 

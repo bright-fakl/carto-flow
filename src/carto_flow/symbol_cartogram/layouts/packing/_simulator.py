@@ -1,4 +1,4 @@
-"""Two-stage circle packing simulator."""
+"""Two-stage packing simulator for circles and axis-aligned squares."""
 
 from __future__ import annotations
 
@@ -9,6 +9,9 @@ from numpy.typing import NDArray
 from tqdm import tqdm
 
 _MAX_EXPANSION_FACTOR = 2.0
+
+SQUARE_CLEANUP_FACTOR = 4
+"""Multiple of the Gauss-Seidel passes of the final cleanup that squares get."""
 
 
 def _distance_in_radii(distance: NDArray[np.floating], radii: NDArray[np.floating]) -> NDArray[np.float64]:
@@ -154,7 +157,7 @@ class TopologyPreservingSimulator:
     positions : NDArray[np.floating]
         Initial symbol positions, shape (n, 2).
     radii : NDArray[np.floating]
-        Symbol radii, shape (n,).
+        Symbol radii, shape (n,); the half-sides for ``shape="square"``.
     original_positions : NDArray[np.floating] | None
         Original centroid positions for topology reference.
     adjacency : NDArray[np.floating] | None
@@ -212,6 +215,10 @@ class TopologyPreservingSimulator:
         EMA window for displacement convergence tracking. Default: 50
     adaptive_ema : bool
         Whether EMA uses adaptive warmup (alpha starts at 1/k). Default: True
+    shape : {"circle", "square"}
+        Shape of the symbols. For ``"square"`` the distance of a pair is the larger axis offset, and overlaps and
+        contacts are resolved along that axis, so that squares touch along flat edges and slide along each other.
+        Default: "circle"
 
     Notes
     -----
@@ -251,8 +258,10 @@ class TopologyPreservingSimulator:
         step_smoothing_window: int = 20,
         convergence_window: int = 50,
         adaptive_ema: bool = True,
+        shape: str = "circle",
     ):
         self.n = len(positions)
+        self.square = shape == "square"
 
         # Handle None original_positions
         if original_positions is None:
@@ -362,6 +371,28 @@ class TopologyPreservingSimulator:
         )
         self._disp_stats: ExponentialMovingStats | None = None
 
+    def _gap_distance(self, diff: NDArray[np.floating], euclidean: NDArray[np.floating]) -> NDArray[np.floating]:
+        """Distance of pairs that is compared with the sum of the radii: the Euclidean distance *euclidean* of the
+        offsets *diff* for circles, the larger axis offset for squares."""
+        return np.abs(diff).max(axis=1) if self.square else euclidean
+
+    def _unit_directions(self, diff: NDArray[np.floating], euclidean: NDArray[np.floating]) -> NDArray[np.floating]:
+        """Directions along which pairs separate and touch: the line between the centers for circles, the axis of the
+        larger offset for squares. The offsets must not be zero."""
+        if not self.square:
+            return diff / euclidean[:, None]
+        rows = np.arange(len(diff))
+        axis = np.abs(diff).argmax(axis=1)
+        out = np.zeros_like(diff)
+        out[rows, axis] = np.sign(diff[rows, axis])
+        return out
+
+    def _random_directions(self, k: int) -> NDArray[np.floating]:
+        """Directions for pairs with coincident centers."""
+        dirs = self._rng.standard_normal((k, 2))
+        dirs /= np.linalg.norm(dirs, axis=1, keepdims=True)
+        return self._unit_directions(dirs, np.ones(k)) if self.square else dirs
+
     def _weighted_centroid(self) -> NDArray[np.floating]:
         """Compute area-weighted centroid."""
         return _area_weighted_centroid(self.positions, self.radii)
@@ -369,7 +400,7 @@ class TopologyPreservingSimulator:
     def _count_overlaps(self) -> int:
         """Count number of overlapping circle pairs."""
         diff = self.positions[self.all_pairs_j] - self.positions[self.all_pairs_i]
-        dist = np.linalg.norm(diff, axis=1)
+        dist = self._gap_distance(diff, np.linalg.norm(diff, axis=1))
         min_dist = self.all_radii_sum + self.spacing
         return int(np.sum(dist < min_dist))
 
@@ -381,7 +412,7 @@ class TopologyPreservingSimulator:
         for _ in range(max_iter):
             # Compute pairwise differences using precomputed indices
             diff = self.positions[self.all_pairs_j] - self.positions[self.all_pairs_i]  # (m, 2)
-            dist = np.linalg.norm(diff, axis=1)  # (m,)
+            dist = self._gap_distance(diff, np.linalg.norm(diff, axis=1))  # (m,)
 
             # Compute min distances and overlaps using precomputed radii_sum
             min_dist = self.all_radii_sum + self.spacing
@@ -412,14 +443,11 @@ class TopologyPreservingSimulator:
 
             # For pairs with valid distance, use computed direction
             if np.any(valid_dist):
-                directions[valid_dist] = diff_overlap[valid_dist] / dist_overlap[valid_dist, None]
+                directions[valid_dist] = self._unit_directions(diff_overlap[valid_dist], dist_overlap[valid_dist])
 
             # For coincident pairs, use random directions
             if np.any(~valid_dist):
-                n_coincident = np.sum(~valid_dist)
-                random_dirs = self._rng.standard_normal((n_coincident, 2))
-                random_dirs /= np.linalg.norm(random_dirs, axis=1, keepdims=True)
-                directions[~valid_dist] = random_dirs
+                directions[~valid_dist] = self._random_directions(int(np.sum(~valid_dist)))
 
             # Compute shifts
             shifts = 0.5 * overlap_vals[:, None] * directions  # (k, 2)
@@ -440,7 +468,7 @@ class TopologyPreservingSimulator:
         Returns 1.0 if no overlaps exist.
         """
         diff = self.positions[self.all_pairs_j] - self.positions[self.all_pairs_i]
-        d = np.linalg.norm(diff, axis=1)
+        d = self._gap_distance(diff, np.linalg.norm(diff, axis=1))
         d_min = self.all_radii_sum + self.spacing
 
         valid = (d > 1e-10) & (d < d_min)
@@ -469,7 +497,7 @@ class TopologyPreservingSimulator:
 
         """
         diff = self.positions[self.all_pairs_j] - self.positions[self.all_pairs_i]
-        d = np.linalg.norm(diff, axis=1)
+        d = self._gap_distance(diff, np.linalg.norm(diff, axis=1))
         d_min = self.all_radii_sum + self.spacing
         overlap = d_min - d
 
@@ -488,13 +516,10 @@ class TopologyPreservingSimulator:
         directions = np.zeros((len(idx), 2))
 
         if np.any(valid_dist):
-            directions[valid_dist] = diff_overlap[valid_dist] / d_overlap[valid_dist, None]
+            directions[valid_dist] = self._unit_directions(diff_overlap[valid_dist], d_overlap[valid_dist])
 
         if np.any(~valid_dist):
-            n_coincident = int(np.sum(~valid_dist))
-            random_dirs = self._rng.standard_normal((n_coincident, 2))
-            random_dirs /= np.linalg.norm(random_dirs, axis=1, keepdims=True)
-            directions[~valid_dist] = random_dirs
+            directions[~valid_dist] = self._random_directions(int(np.sum(~valid_dist)))
 
         shifts = step_fraction * 0.5 * overlap_vals[:, None] * directions
 
@@ -537,7 +562,7 @@ class TopologyPreservingSimulator:
             Maximum overlap seen at the start of this pass (before corrections).
         """
         diff = self.positions[self.all_pairs_j] - self.positions[self.all_pairs_i]
-        d = np.linalg.norm(diff, axis=1)
+        d = self._gap_distance(diff, np.linalg.norm(diff, axis=1))
         d_min = self.all_radii_sum + self.spacing
         overlap = d_min - d
 
@@ -553,16 +578,20 @@ class TopologyPreservingSimulator:
             i, j = int(self.all_pairs_i[k]), int(self.all_pairs_j[k])
             # Recompute live distance — positions may have changed earlier in this pass
             delta = self.positions[j] - self.positions[i]
-            dist = float(np.linalg.norm(delta))
+            dist = float(np.abs(delta).max()) if self.square else float(np.linalg.norm(delta))
             d_min_k = float(self.radii[i] + self.radii[j] + self.spacing)
             ov = d_min_k - dist
             if ov <= 0:
                 continue
             if dist > 1e-10:
-                direction = delta / dist
+                if self.square:
+                    direction = np.zeros(2)
+                    axis = int(np.abs(delta).argmax())
+                    direction[axis] = np.sign(delta[axis])
+                else:
+                    direction = delta / dist
             else:
-                direction = self._rng.standard_normal(2)
-                direction /= np.linalg.norm(direction)
+                direction = self._random_directions(1)[0]
             shift = self.local_step_fraction * ov * direction
             self.positions[i] -= shift
             self.positions[j] += shift
@@ -628,7 +657,7 @@ class TopologyPreservingSimulator:
             valid = self.topo_valid & (d > 1e-10)
             if np.any(valid):
                 # Compute gap (same definition as neighbor force: distance - sum of radii - spacing)
-                gap = d[valid] - self.radii_sum[valid] - self.spacing
+                gap = self._gap_distance(v, d)[valid] - self.radii_sum[valid] - self.spacing
 
                 # Smooth decay weight: w=1 for gap<=0, w=0 for gap>topology_gate_distance, smooth decay in between
                 w = np.clip(1 - gap / self.topology_gate_distance, 0, 1) ** 2  # (k,)
@@ -656,7 +685,7 @@ class TopologyPreservingSimulator:
 
             # Compute target distance and gap
             target = self.radii_sum + self.spacing
-            gap = d - target
+            gap = self._gap_distance(dx, d) - target
 
             # Positive gap mask (pull together) - also handles d <= 1e-10 since gap would be negative
             gap_mask = gap > 0
@@ -804,7 +833,7 @@ class TopologyPreservingSimulator:
             tol = self.contact_tolerance * r_sum
 
             # Contact mask
-            contact_mask = valid & (d < r_sum + tol)
+            contact_mask = valid & (self._gap_distance(dx, d) < r_sum + tol)
             if not np.any(contact_mask):
                 continue
 
@@ -814,7 +843,7 @@ class TopologyPreservingSimulator:
             d_contact = d[idx]  # (k,)
 
             # Unit directions
-            n_ij = dx_contact / d_contact[:, None]  # (k, 2)
+            n_ij = self._unit_directions(dx_contact, d_contact)  # (k, 2)
             n_ji = -n_ij  # Direction from j to i
 
             # Compute compressive components
@@ -1103,9 +1132,11 @@ class TopologyPreservingSimulator:
         # push circles to the constraint boundary; Jacobi may leave small
         # residuals at convergence. GS here enforces the hard non-overlap
         # constraint cleanly and costs one pass rather than slowing every step.
+        # Squares separate along one axis per pair and need more passes to settle than circles; a full step instead
+        # would let the dense clusters expand and rearrange.
         tol = self.overlap_tolerance * self.avg_radius
         cleanup_iters = 0
-        for _cleanup_iters in range(self.expansion_max_iterations):
+        for _cleanup_iters in range(self.expansion_max_iterations * (SQUARE_CLEANUP_FACTOR if self.square else 1)):
             max_overlap = self._separate_overlapping_pairs_sequential()
             if max_overlap < tol:
                 break

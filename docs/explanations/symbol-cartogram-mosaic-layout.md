@@ -434,7 +434,7 @@ Most values split a region somewhere. The default 2.0 is one of the few that doe
 input tested, and it is the better choice on every multi-tile and `group_by` input under both
 morph settings. It is the worse choice in one case: one tile per region with `morph=False`, on
 both hexagon and square tilings, where a lower weight gives better adjacency and truer directions
-between neighbors. That is the configuration `tile_map_cartogram` and `demers_cartogram` produce,
+between neighbors. That is the configuration `tile_map_cartogram` produces,
 so it is the one case where lowering `interior_bonus` is worth trying.
 
 The mechanism behind both halves: the bonus rewards tiles whose neighbors are also in the pool,

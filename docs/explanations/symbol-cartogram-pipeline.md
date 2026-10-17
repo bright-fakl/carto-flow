@@ -162,7 +162,7 @@ Five concrete implementations are registered under string keys and can be select
 | `"flow_density"` | `FlowDensityLayout` | Gaussian density-field flow advection; covers full domain without background sink |
 | `"grid"` | `GridBasedLayout` | Hungarian assignment to a regular tile grid |
 | `"mosaic"` | `MosaicLayout` | Exact integer tile assignment with optional flow-morphing pre-step |
-| `"centroid"` | `CentroidLayout` | Symbol at centroid; optional local overlap removal |
+| `"centroid"` | `CentroidLayout` | Symbol at centroid; optional local overlap removal; `shape="square"` separates axis-aligned squares so that their edges can touch |
 
 `"topology"` is a registered alias of `"packing"`.
 

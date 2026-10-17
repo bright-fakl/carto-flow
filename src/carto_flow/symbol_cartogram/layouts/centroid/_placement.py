@@ -1,8 +1,8 @@
-"""Circle overlap resolution for centroid-based layout."""
+"""Circle and square overlap resolution for centroid-based layout."""
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -54,10 +54,11 @@ def compact_initial_positions(
     return positions
 
 
-def resolve_circle_overlaps(
+def resolve_overlaps(
     positions: NDArray[np.floating],
     radii: NDArray[np.floating],
     *,
+    shape: Literal["circle", "square"] = "circle",
     spacing: float = 0.05,
     max_iterations: int = 20,
     overlap_tolerance: float = 1e-4,
@@ -66,7 +67,7 @@ def resolve_circle_overlaps(
     max_expansion_factor: float = 2.0,
     rng: np.random.Generator | None = None,
 ) -> tuple[NDArray[np.floating], dict[str, Any]]:
-    """Resolve circle overlaps via global expansion + local separation.
+    """Resolve circle or square overlaps via global expansion + local separation.
 
     Alternates partial global expansion from the weighted centroid with
     partial local pairwise separation until all overlaps are resolved.
@@ -77,9 +78,12 @@ def resolve_circle_overlaps(
     Parameters
     ----------
     positions : (n, 2) array
-        Circle center positions.
+        Symbol center positions.
     radii : (n,) array
-        Circle radii.
+        Circle radii, or square half-sides when ``shape="square"``.
+    shape : {"circle", "square"}
+        ``"circle"`` separates along the line between the centers; ``"square"`` treats the symbols as axis-aligned
+        squares and separates along the axis with the smaller penetration, so that edges can touch. Default: "circle"
     spacing : float
         Minimum gap as fraction of average radius. Default: 0.05
     max_iterations : int
@@ -109,7 +113,7 @@ def resolve_circle_overlaps(
     --------
     >>> positions = np.array([[0, 0], [0.5, 0], [1, 0]])
     >>> radii = np.array([0.4, 0.4, 0.4])
-    >>> resolved, info = resolve_circle_overlaps(positions, radii, spacing=0.1)
+    >>> resolved, info = resolve_overlaps(positions, radii, spacing=0.1)
     >>> info["iterations"]
     3
 
@@ -148,6 +152,31 @@ def resolve_circle_overlaps(
     i_idx, j_idx = np.triu_indices(n, k=1)
     all_radii_sum = radii_norm[i_idx] + radii_norm[j_idx]
 
+    square = shape == "square"
+
+    def pair_distance(diff: NDArray[np.floating]) -> NDArray[np.floating]:
+        """Center distance of pairs: Euclidean for circles, Chebyshev (the larger axis offset) for squares."""
+        return np.abs(diff).max(axis=1) if square else np.linalg.norm(diff, axis=1)
+
+    def unit_directions(diff: NDArray[np.floating], d: NDArray[np.floating]) -> NDArray[np.floating]:
+        """Directions along which pairs separate: the line between circle centers, the dominant axis of squares."""
+        if not square:
+            return diff / d[:, None]
+        rows = np.arange(len(diff))
+        axis = np.abs(diff).argmax(axis=1)
+        out = np.zeros_like(diff)
+        out[rows, axis] = np.sign(diff[rows, axis])
+        return out
+
+    def random_directions(k: int) -> NDArray[np.floating]:
+        """Directions for coincident pairs."""
+        if not square:
+            dirs = rng.standard_normal((k, 2))
+            return dirs / np.linalg.norm(dirs, axis=1, keepdims=True)
+        out = np.zeros((k, 2))
+        out[np.arange(k), rng.integers(0, 2, k)] = rng.choice([-1.0, 1.0], k)
+        return out
+
     def weighted_centroid() -> NDArray[np.floating]:
         """Compute area-weighted centroid.
 
@@ -163,7 +192,7 @@ def resolve_circle_overlaps(
     def global_expansion_factor() -> float:
         """Compute the exact global expansion factor to resolve all overlaps."""
         diff = positions_norm[j_idx] - positions_norm[i_idx]
-        d = np.linalg.norm(diff, axis=1)
+        d = pair_distance(diff)
         d_min = all_radii_sum + spacing_norm
 
         valid = (d > 1e-10) & (d < d_min)
@@ -176,7 +205,7 @@ def resolve_circle_overlaps(
     def separate_overlapping_pairs_partial(step_fraction: float = 0.5) -> float:
         """Single pass pushing overlapping circles apart with partial steps."""
         diff = positions_norm[j_idx] - positions_norm[i_idx]
-        d = np.linalg.norm(diff, axis=1)
+        d = pair_distance(diff)
         d_min = all_radii_sum + spacing_norm
         overlap = d_min - d
 
@@ -195,13 +224,10 @@ def resolve_circle_overlaps(
         directions = np.zeros((len(idx), 2))
 
         if np.any(valid_dist):
-            directions[valid_dist] = diff_overlap[valid_dist] / d_overlap[valid_dist, None]
+            directions[valid_dist] = unit_directions(diff_overlap[valid_dist], d_overlap[valid_dist])
 
         if np.any(~valid_dist):
-            n_coincident = int(np.sum(~valid_dist))
-            random_dirs = rng.standard_normal((n_coincident, 2))
-            random_dirs /= np.linalg.norm(random_dirs, axis=1, keepdims=True)
-            directions[~valid_dist] = random_dirs
+            directions[~valid_dist] = random_directions(int(np.sum(~valid_dist)))
 
         shifts = step_fraction * 0.5 * overlap_vals[:, None] * directions
 

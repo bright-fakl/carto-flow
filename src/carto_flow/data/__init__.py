@@ -280,7 +280,7 @@ _CENSUS_KEY_INSTRUCTIONS = (
 
 def _census_variables(level: str, population: bool, poverty: bool, race: bool) -> dict[str, str]:
     """Map of raw ACS variable code -> friendly column name for the requested groups."""
-    name_col = "State Name" if level == "state" else "District Name"
+    name_col = {"state": "State Name", "congressional_district": "District Name", "county": "County Name"}[level]
     variables: dict[str, str] = {"NAME": name_col}
     if population:
         variables |= {"B01003_001E": "Population"}
@@ -328,6 +328,8 @@ def _load_us_census_bundled(
     base_cols = ["STATE", "State Abbreviation", "State Name", "geometry"]
     if level == "congressional_district":
         base_cols.insert(1, "CONGRESSIONAL_DISTRICT")
+    elif level == "county":
+        base_cols.insert(1, "COUNTY")
     gdf = gdf[[*rename.values(), *base_cols]].copy()
 
     if simplify is not None:
@@ -368,6 +370,8 @@ def _load_us_census_live(
     try:
         if level == "state":
             gdf = ced.download("acs/acs5", vintage, list(variables.keys()), state="*", with_geometry=True)
+        elif level == "county":
+            gdf = ced.download("acs/acs5", vintage, list(variables.keys()), state="*", county="*", with_geometry=True)
         else:
             gdf = ced.download(
                 "acs/acs5",
@@ -388,6 +392,9 @@ def _load_us_census_live(
     if level == "congressional_district":
         gdf["State Name"] = gdf["STATE"].map(censusdis.states.NAMES_FROM_IDS)
         base_cols += ["CONGRESSIONAL_DISTRICT", "State Name"]
+    elif level == "county":
+        gdf["State Name"] = gdf["STATE"].map(censusdis.states.NAMES_FROM_IDS)
+        base_cols += ["COUNTY", "State Name"]
     gdf = gdf[[*variables.values(), *base_cols]].copy()
 
     if simplify is not None:
@@ -407,7 +414,7 @@ def _finalize_census_gdf(
     contiguous_only: bool,
 ) -> "geopandas.GeoDataFrame":
     """Shared post-processing so the bundled and live paths return identical columns."""
-    if level == "state":
+    if level in ("state", "county"):
         if contiguous_only:
             gdf = gdf[~gdf["State Name"].isin(["Alaska", "Hawaii", "Puerto Rico"])]
     else:
@@ -495,6 +502,8 @@ def load_us_census(
         - ``"state"`` — one row per US state. Adds column ``State Name``.
         - ``"congressional_district"`` — one row per congressional district.
           Adds columns ``District Name`` and ``State Name``.
+        - ``"county"`` — one row per county or county equivalent (3,108 with
+          ``contiguous_only``). Adds columns ``County Name`` and ``State Name``.
     simplify : float or None, default None
         Simplification tolerance in meters (units of ESRI:102008).
         ``None`` (default) keeps the source resolution: the bundled 1000 m
@@ -507,12 +516,12 @@ def load_us_census(
         ACS 5-year vintage year. 2020 uses the bundled snapshot (at the
         bundled resolution); any other vintage triggers a live download.
     contiguous_only : bool, default True
-        Exclude Alaska, Hawaii, Puerto Rico, and DC.
+        Exclude Alaska, Hawaii and Puerto Rico (and DC at the congressional-district level).
 
     Returns
     -------
     geopandas.GeoDataFrame
-        Dataset in ESRI:102008 (Albers equal-area, meters). Both levels include
+        Dataset in ESRI:102008 (Albers equal-area, meters). All levels include
         ``State Abbreviation``, ``Region``, and ``Division`` columns.
 
     Raises
@@ -531,9 +540,12 @@ def load_us_census(
 
     >>> gdf_dist = load_us_census(level="congressional_district", population=True)
     >>> print(gdf_dist["District Name"].head())
+
+    >>> gdf_county = load_us_census(level="county", population=True)
+    >>> print(gdf_county["County Name"].head())
     """
-    if level not in ("state", "congressional_district"):
-        raise ValueError(f"level must be 'state' or 'congressional_district', got {level!r}")
+    if level not in ("state", "congressional_district", "county"):
+        raise ValueError(f"level must be 'state', 'congressional_district' or 'county', got {level!r}")
 
     use_bundled = vintage == _BUNDLED_VINTAGE and (simplify is None or simplify >= _BUNDLED_SIMPLIFY_TOLERANCE)
 

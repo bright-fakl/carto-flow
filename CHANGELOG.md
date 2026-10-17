@@ -11,6 +11,9 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`load_us_census(level="county")` loads the 3,108 contiguous counties** (3,221 with `contiguous_only=False`) from a bundled ACS 2020
+  snapshot, with the same population, race and poverty columns as the other levels plus `County Name`. The snapshot is
+  coverage-simplified at 1000 m and densified to 5 km segments like the state and district levels.
 - **`PackingLayout(shape="square")` packs squares.** The packing simulator treats the symbols as axis-aligned squares with
   the area of the circles: the distance of a pair is the larger axis offset, and overlaps and contacts are resolved
   along that axis, so squares touch along flat edges and slide along each other. The topology, neighbor and compaction forces

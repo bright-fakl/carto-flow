@@ -31,7 +31,7 @@ def test_load_us_census_without_censusdis(monkeypatch):
     monkeypatch.setitem(sys.modules, "censusdis", None)
     monkeypatch.setitem(sys.modules, "censusdis.data", None)
 
-    for level in ("state", "congressional_district"):
+    for level in ("state", "congressional_district", "county"):
         for population, race, poverty in (
             (True, False, False),
             (False, True, False),
@@ -144,7 +144,7 @@ def test_load_sample_cities():
         pytest.fail(f"Unexpected error: {e}")
 
 
-@pytest.mark.parametrize("level", ["state", "congressional_district"])
+@pytest.mark.parametrize("level", ["state", "congressional_district", "county"])
 def test_load_us_census_race_groups_do_not_exceed_total(level):
     """The four race/ethnicity groups are disjoint, so they sum to at most Total Race."""
     import carto_flow.data
@@ -166,3 +166,18 @@ def test_load_us_census_hispanic_or_latino_is_total():
     states = gdf.drop(index="Puerto Rico")
     share = states["Hispanic or Latino"].sum() / states["Total Race"].sum()
     assert share == pytest.approx(0.18, abs=0.01)
+
+
+def test_load_us_census_county_level():
+    import carto_flow.data
+
+    gdf = carto_flow.data.load_us_census(race=True, poverty=True, level="county")
+    assert len(gdf) == 3108
+    assert gdf["COUNTY"].notna().all()
+    assert {"County Name", "State Name", "State Abbreviation", "Region", "Division", "Population"} <= set(gdf.columns)
+    assert (gdf["Population"] > 0).all()
+    assert not gdf["State Abbreviation"].isin(["AK", "HI", "PR"]).any()
+    assert "DC" in set(gdf["State Abbreviation"])
+    assert gdf.crs.to_string() == "ESRI:102008"
+    assert gdf.loc[gdf["County Name"].str.startswith("Maricopa"), "Population"].iloc[0] > 4_000_000
+    assert len(carto_flow.data.load_us_census(level="county", contiguous_only=False)) == 3221

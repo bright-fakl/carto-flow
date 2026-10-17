@@ -21,6 +21,7 @@ Output
 ------
 - ``src/carto_flow/data/us_census_2020_state.parquet``
 - ``src/carto_flow/data/us_census_2020_congressional_district.parquet``
+- ``src/carto_flow/data/us_census_2020_county.parquet``
 
 Both files include every geography the loader can subset later (all states,
 territories, and DC; all congressional districts, including placeholder
@@ -83,6 +84,8 @@ def _build_level(level: str) -> None:
             congressional_district="*",
             with_geometry=True,
         )
+    elif level == "county":
+        gdf = ced.download("acs/acs5", VINTAGE, variable_codes, state="*", county="*", with_geometry=True)
     else:
         raise ValueError(level)
 
@@ -112,6 +115,8 @@ def _build_level(level: str) -> None:
     keep_cols = [*variable_codes, "STATE", "State Abbreviation", "State Name", "geometry"]
     if level == "congressional_district":
         keep_cols.insert(-3, "CONGRESSIONAL_DISTRICT")
+    elif level == "county":
+        keep_cols.insert(-3, "COUNTY")
     gdf = gdf[keep_cols]
 
     out_path = DATA_DIR / f"us_census_2020_{level}.parquet"
@@ -123,7 +128,7 @@ def _build_level(level: str) -> None:
 
 def main() -> None:
     start = time.perf_counter()
-    for level in ("state", "congressional_district"):
+    for level in ("state", "congressional_district", "county"):
         _build_level(level)
     print(f"Done in {time.perf_counter() - start:.1f}s")
 

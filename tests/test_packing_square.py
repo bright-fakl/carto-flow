@@ -123,3 +123,15 @@ def test_overlapping_squares_separate_along_one_axis():
     offset = np.abs(sim.positions[1] - sim.positions[0])
     assert offset.max() >= sim.radii.sum() - 1e-3 * sim.avg_radius
     assert offset.min() == pytest.approx(y_before)
+
+
+def test_squares_keep_the_spacing_on_the_world_data():
+    from carto_flow.data import load_world
+
+    world = load_world().to_crs(8857)
+    world = world[world["pop_est"] > 0]
+    result = create_symbol_cartogram(
+        world, "pop_est", layout=CirclePackingLayout(shape="square", spacing=0.05), show_progress=False
+    )
+    gap, half = square_gap(result.layout_result)
+    assert gap >= 0.04 * half

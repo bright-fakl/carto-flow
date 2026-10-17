@@ -10,6 +10,9 @@ from tqdm import tqdm
 
 _MAX_EXPANSION_FACTOR = 2.0
 
+SQUARE_CLEANUP_FACTOR = 4
+"""Multiple of the Gauss-Seidel passes of the final cleanup that squares get."""
+
 
 def _distance_in_radii(distance: NDArray[np.floating], radii: NDArray[np.floating]) -> NDArray[np.float64]:
     """Express a distance as a multiple of each symbol's radius.
@@ -1129,9 +1132,11 @@ class TopologyPreservingSimulator:
         # push circles to the constraint boundary; Jacobi may leave small
         # residuals at convergence. GS here enforces the hard non-overlap
         # constraint cleanly and costs one pass rather than slowing every step.
+        # Squares separate along one axis per pair and need more passes to settle than circles; a full step instead
+        # would let the dense clusters expand and rearrange.
         tol = self.overlap_tolerance * self.avg_radius
         cleanup_iters = 0
-        for _cleanup_iters in range(self.expansion_max_iterations):
+        for _cleanup_iters in range(self.expansion_max_iterations * (SQUARE_CLEANUP_FACTOR if self.square else 1)):
             max_overlap = self._separate_overlapping_pairs_sequential()
             if max_overlap < tol:
                 break

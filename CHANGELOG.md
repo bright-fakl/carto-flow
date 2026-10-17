@@ -11,7 +11,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
-- **`CirclePackingLayout(shape="square")` packs squares.** The packing simulator treats the symbols as axis-aligned squares with
+- **`PackingLayout(shape="square")` packs squares.** The packing simulator treats the symbols as axis-aligned squares with
   the area of the circles: the distance of a pair is the larger axis offset, and overlaps and contacts are resolved
   along that axis, so squares touch along flat edges and slide along each other. The topology, neighbor and compaction forces
   are those of the circle layout. On the census snapshot the squares keep 0.62 of the neighboring pairs close (circles: 0.63).
@@ -154,7 +154,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 - **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,
   which put each square in a lattice cell: with the default `size_normalization="max"` the squares covered 15 % of the
-  geometry area and none of the neighboring squares touched. It now uses `CirclePackingLayout(shape="square")` with
+  geometry area and none of the neighboring squares touched. It now uses `PackingLayout(shape="square")` with
   `size_normalization="total"` (new parameter), so the total square area equals the geometry area and 76 % of the
   neighboring pairs on the census snapshot touch or nearly touch. The grid version is still available as
   `create_symbol_cartogram(gdf, size, layout="grid", styling=Styling(symbol="square"))`.
@@ -361,6 +361,13 @@ Releases before 2.0.0 have no changelog entry; see the
   boundary:** when a rebuilt ring was self-intersecting, `make_valid` returned a
   geometry collection and only items of type `Polygon` were kept.
   ([#111](https://github.com/bright-fakl/carto-flow/pull/111))
+
+### Deprecated
+
+- **`CirclePackingLayout`, `CirclePackingLayoutOptions` and `CirclePackingAdvancedOptions`** are now `PackingLayout`,
+  `PackingLayoutOptions` and `PackingAdvancedOptions`, because the layout packs squares as well as circles. The old names
+  still work, emit a `DeprecationWarning` and will be removed in the next major release. The layout keys `"packing"` and
+  `"topology"` are unchanged.
 
 ## [2.0.0] - 2026-09-24
 

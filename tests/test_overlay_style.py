@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import to_hex
 
 from carto_flow import Channel, PlotStyle, set_style
-from carto_flow.symbol_cartogram import CirclePackingLayout, create_symbol_cartogram, plot_displacement
+from carto_flow.symbol_cartogram import PackingLayout, create_symbol_cartogram, plot_displacement
 from carto_flow.voronoi_cartogram import RasterBackend, VoronoiOptions, create_voronoi_cartogram
 from carto_flow.voronoi_cartogram.visualization import plot_convergence
 from carto_flow.voronoi_cartogram.visualization import plot_displacement as voronoi_displacement
@@ -41,9 +41,7 @@ def voronoi(gdf):
 
 @pytest.fixture(scope="module")
 def symbols(gdf):
-    return create_symbol_cartogram(
-        gdf, "population", layout=CirclePackingLayout(max_iterations=20), show_progress=False
-    )
+    return create_symbol_cartogram(gdf, "population", layout=PackingLayout(max_iterations=20), show_progress=False)
 
 
 def test_pick():

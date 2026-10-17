@@ -20,7 +20,7 @@ symbol_carto = smb.create_symbol_cartogram(
     # provide a column for proportional sizing of the symbols
     "Population",
     # use a force-based circle packing layout
-    layout=smb.CirclePackingLayout(),
+    layout=smb.PackingLayout(),
     # size the circles such that their total area
     # matches the total area of the original geometries
     size_normalization="total",

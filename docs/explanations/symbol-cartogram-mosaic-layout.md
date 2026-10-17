@@ -378,7 +378,7 @@ size and `tiles_gdf` unchanged. Which tile a region gets does not depend on the 
 between symbols. The gap appears only in output drawn through `transforms`. To change the
 layout itself, change `tile_size` or the cost weights.
 
-`CirclePackingLayout` treats `spacing` differently because it has no lattice: there the gap is
+`PackingLayout` treats `spacing` differently because it has no lattice: there the gap is
 a target separation in the force simulation and does move symbols.
 
 ### `extra_tile_rings`

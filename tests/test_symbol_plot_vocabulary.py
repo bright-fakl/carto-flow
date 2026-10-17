@@ -13,9 +13,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from carto_flow.symbol_cartogram import (
-    CirclePackingLayout,
     GridBasedLayout,
     IsohedralTiling,
+    PackingLayout,
     SquareTiling,
     Styling,
     create_symbol_cartogram,
@@ -43,9 +43,7 @@ def gdf():
 
 @pytest.fixture(scope="module")
 def packed(gdf):
-    return create_symbol_cartogram(
-        gdf, "population", layout=CirclePackingLayout(max_iterations=10), show_progress=False
-    )
+    return create_symbol_cartogram(gdf, "population", layout=PackingLayout(max_iterations=10), show_progress=False)
 
 
 @pytest.fixture(scope="module")

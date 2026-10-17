@@ -13,8 +13,8 @@ from matplotlib.colors import to_hex, to_rgba
 
 from carto_flow import Channel, Palettes, PlotStyle, set_style
 from carto_flow.symbol_cartogram import (
-    CirclePackingLayout,
     GridBasedLayout,
+    PackingLayout,
     create_symbol_cartogram,
     plot_adjacency,
     plot_adjacency_heatmap,
@@ -48,9 +48,7 @@ def gdf():
 
 @pytest.fixture(scope="module")
 def result(gdf):
-    return create_symbol_cartogram(
-        gdf, "population", layout=CirclePackingLayout(max_iterations=20), show_progress=False
-    )
+    return create_symbol_cartogram(gdf, "population", layout=PackingLayout(max_iterations=20), show_progress=False)
 
 
 @pytest.fixture(scope="module")

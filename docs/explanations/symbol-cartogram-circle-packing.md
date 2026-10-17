@@ -2,9 +2,9 @@
 
 ## Overview
 
-The circle packing layout (`CirclePackingLayout`, string key `"topology"`) uses a two-stage force-based simulator — `TopologyPreservingSimulator` — to place proportionally-sized circles while preserving the topological relationships between neighboring regions. The simulator uses position-based dynamics with explicit contact reaction constraints, enabling circles to slide along each other at contact points.
+The circle packing layout (`PackingLayout`, string key `"topology"`) uses a two-stage force-based simulator — `TopologyPreservingSimulator` — to place proportionally-sized circles while preserving the topological relationships between neighboring regions. The simulator uses position-based dynamics with explicit contact reaction constraints, enabling circles to slide along each other at contact points.
 
-Source: [layouts/packing/\_\_init\_\_.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/packing/__init__.py) (`CirclePackingLayout`), [layouts/packing/\_simulator.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/packing/_simulator.py) (`TopologyPreservingSimulator`)
+Source: [layouts/packing/\_\_init\_\_.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/packing/__init__.py) (`PackingLayout`), [layouts/packing/\_simulator.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/symbol_cartogram/layouts/packing/_simulator.py) (`TopologyPreservingSimulator`)
 
 ## Algorithm Architecture
 
@@ -423,15 +423,15 @@ The system converges when the smoothed fraction of negative drift rates falls be
 
 ## Usage Example
 
-The simulator is internal. Reach it through `CirclePackingLayout`, which builds the
+The simulator is internal. Reach it through `PackingLayout`, which builds the
 adjacency matrix from the input geometries, scales the data into the simulator's working
 frame and maps the result back:
 
 ```python
 import carto_flow.symbol_cartogram as sym
 
-layout = sym.CirclePackingLayout(
-    sym.CirclePackingLayoutOptions(
+layout = sym.PackingLayout(
+    sym.PackingLayoutOptions(
         spacing=0.05,
         compactness=0.5,
         topology_weight=0.3,
@@ -440,7 +440,7 @@ layout = sym.CirclePackingLayout(
         expansion=1.0,
         max_iterations=500,
         convergence_tolerance=0.025,
-        advanced=sym.CirclePackingAdvancedOptions(
+        advanced=sym.PackingAdvancedOptions(
             topology_gate_distance=2.5,   # gate topology forces at 2.5 * (r_i + r_j)
             contact_tolerance=0.02,       # contact detection tolerance
             contact_elasticity=0.0,       # neutral compression behavior
@@ -458,7 +458,7 @@ print(f"Final drift: {layout_result.metrics.algorithm.final_drift}")
 ```
 
 `contact_transfer_ratio` (cancel vs transfer of compressive forces at contacts) and
-`max_step` sit on `CirclePackingLayoutOptions` itself rather than on `advanced`.
+`max_step` sit on `PackingLayoutOptions` itself rather than on `advanced`.
 
 ## Return Value
 

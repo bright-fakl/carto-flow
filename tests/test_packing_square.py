@@ -7,7 +7,7 @@ import shapely
 from shapely.geometry import box
 
 from carto_flow.symbol_cartogram import Styling, create_symbol_cartogram
-from carto_flow.symbol_cartogram.layouts.packing import CirclePackingLayout
+from carto_flow.symbol_cartogram.layouts.packing import PackingLayout
 from carto_flow.symbol_cartogram.layouts.packing._simulator import TopologyPreservingSimulator
 from carto_flow.symbol_cartogram.symbols import CircleSymbol, SquareSymbol
 
@@ -30,7 +30,7 @@ def run(shape, **kwargs):
     return create_symbol_cartogram(
         cluster(),
         "v",
-        layout=CirclePackingLayout(shape=shape, **kwargs),
+        layout=PackingLayout(shape=shape, **kwargs),
         styling=Styling(symbol=shape),
         show_progress=False,
     )
@@ -73,7 +73,7 @@ def test_square_packing_with_groups_and_attraction():
         gdf,
         "v",
         group_by="g",
-        layout=CirclePackingLayout(shape="square", spacing=0.0, group_weight=0.5, compactness=0.5),
+        layout=PackingLayout(shape="square", spacing=0.0, group_weight=0.5, compactness=0.5),
         show_progress=False,
     )
     gap, half = square_gap(result.layout_result)
@@ -81,8 +81,8 @@ def test_square_packing_with_groups_and_attraction():
 
 
 def test_default_shape_is_circle():
-    default = create_symbol_cartogram(cluster(), "v", layout=CirclePackingLayout(), show_progress=False)
-    explicit = create_symbol_cartogram(cluster(), "v", layout=CirclePackingLayout(shape="circle"), show_progress=False)
+    default = create_symbol_cartogram(cluster(), "v", layout=PackingLayout(), show_progress=False)
+    explicit = create_symbol_cartogram(cluster(), "v", layout=PackingLayout(shape="circle"), show_progress=False)
     assert np.array_equal(
         [t.position for t in default.layout_result.transforms], [t.position for t in explicit.layout_result.transforms]
     )
@@ -90,7 +90,7 @@ def test_default_shape_is_circle():
 
 def test_invalid_shape_raises():
     with pytest.raises(ValueError, match="shape"):
-        CirclePackingLayout(shape="hexagon")
+        PackingLayout(shape="hexagon")
 
 
 def make_simulator(positions, half, shape):
@@ -131,7 +131,7 @@ def test_squares_keep_the_spacing_on_the_world_data():
     world = load_world().to_crs(8857)
     world = world[world["pop_est"] > 0]
     result = create_symbol_cartogram(
-        world, "pop_est", layout=CirclePackingLayout(shape="square", spacing=0.05), show_progress=False
+        world, "pop_est", layout=PackingLayout(shape="square", spacing=0.05), show_progress=False
     )
     gap, half = square_gap(result.layout_result)
     assert gap >= 0.04 * half
@@ -148,3 +148,28 @@ def test_demers_preset_is_the_square_packing_layout():
     assert gap >= 0.04 * half
     area = shapely.area(np.asarray(result.symbols.geometry.values, dtype=object))
     assert area / gdf["v"].to_numpy() == pytest.approx(area[0] / gdf["v"].iloc[0], rel=1e-6)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("CirclePackingLayout", "PackingLayout"),
+        ("CirclePackingLayoutOptions", "PackingLayoutOptions"),
+        ("CirclePackingAdvancedOptions", "PackingAdvancedOptions"),
+    ],
+)
+@pytest.mark.parametrize("module", ["carto_flow.symbol_cartogram", "carto_flow.symbol_cartogram.layouts"])
+def test_circle_packing_names_are_deprecated_aliases(module, old, new):
+    import importlib
+
+    mod = importlib.import_module(module)
+    with pytest.warns(DeprecationWarning, match=f"{old} is deprecated"):
+        cls = getattr(mod, old)
+    assert cls is getattr(mod, new)
+
+
+def test_unknown_attribute_still_raises():
+    import carto_flow.symbol_cartogram as sym
+
+    with pytest.raises(AttributeError):
+        _ = sym.NoSuchThing

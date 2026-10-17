@@ -158,7 +158,7 @@ Five concrete implementations are registered under string keys and can be select
 
 | String key | Class | Description |
 |-----------|-------|-------------|
-| `"packing"` | `CirclePackingLayout` | Two-stage force-based simulation with contact constraints; good topology preservation. The default. `shape="square"` packs axis-aligned squares that touch along flat edges. |
+| `"packing"` | `PackingLayout` | Two-stage force-based simulation with contact constraints; good topology preservation. The default. `shape="square"` packs axis-aligned squares that touch along flat edges. |
 | `"flow_density"` | `FlowDensityLayout` | Gaussian density-field flow advection; covers full domain without background sink |
 | `"grid"` | `GridBasedLayout` | Hungarian assignment to a regular tile grid |
 | `"mosaic"` | `MosaicLayout` | Exact integer tile assignment with optional flow-morphing pre-step |

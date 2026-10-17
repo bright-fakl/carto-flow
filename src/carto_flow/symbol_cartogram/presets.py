@@ -42,7 +42,7 @@ from typing import TYPE_CHECKING, Literal
 import geopandas as gpd
 
 from .api import create_symbol_cartogram
-from .layouts import CirclePackingLayout, GridBasedLayout, GridBasedLayoutOptions
+from .layouts import GridBasedLayout, GridBasedLayoutOptions, PackingLayout
 from .result import SymbolCartogram
 from .styling import Styling
 
@@ -85,7 +85,7 @@ def centroid_cartogram(
     return create_symbol_cartogram(
         gdf,
         size,
-        layout=CirclePackingLayout.centroid(spacing=spacing, expansion=expansion),
+        layout=PackingLayout.centroid(spacing=spacing, expansion=expansion),
         size_normalization=size_normalization,
         show_progress=show_progress,
     )
@@ -133,7 +133,7 @@ def dorling_cartogram(
     return create_symbol_cartogram(
         gdf,
         size,
-        layout=CirclePackingLayout.dorling(
+        layout=PackingLayout.dorling(
             spacing=spacing,
             compactness=compactness,
             topology_weight=topology_weight,
@@ -185,7 +185,7 @@ def geographic_cartogram(
     return create_symbol_cartogram(
         gdf,
         size,
-        layout=CirclePackingLayout.geographic(
+        layout=PackingLayout.geographic(
             spacing=spacing,
             origin_weight=origin_weight,
             topology_weight=topology_weight,
@@ -248,7 +248,7 @@ def dorling_grouped_cartogram(
     return create_symbol_cartogram(
         gdf,
         size,
-        layout=CirclePackingLayout.dorling_grouped(
+        layout=PackingLayout.dorling_grouped(
             spacing=spacing,
             compactness=compactness,
             group_weight=group_weight,
@@ -317,7 +317,7 @@ def geographic_grouped_cartogram(
     return create_symbol_cartogram(
         gdf,
         size,
-        layout=CirclePackingLayout.geographic_grouped(
+        layout=PackingLayout.geographic_grouped(
             spacing=spacing,
             origin_weight=origin_weight,
             group_weight=group_weight,
@@ -364,7 +364,7 @@ def demers_cartogram(
     return create_symbol_cartogram(
         gdf,
         size,
-        layout=CirclePackingLayout(shape="square", spacing=spacing),
+        layout=PackingLayout(shape="square", spacing=spacing),
         styling=Styling(symbol="square"),
         size_normalization=size_normalization,
         show_progress=show_progress,

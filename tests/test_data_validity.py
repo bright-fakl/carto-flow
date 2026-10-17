@@ -33,6 +33,9 @@ def _load(name):
         "census_district": lambda: data.load_us_census(level="congressional_district"),
         "census_district_all": lambda: data.load_us_census(level="congressional_district", contiguous_only=False),
         "census_district_simplified": lambda: data.load_us_census(level="congressional_district", simplify=2000),
+        "census_county": lambda: data.load_us_census(level="county"),
+        "census_county_all": lambda: data.load_us_census(level="county", contiguous_only=False),
+        "census_county_simplified": lambda: data.load_us_census(level="county", simplify=2000),
     }
     return loaders[name]()
 
@@ -47,6 +50,9 @@ DATASETS = [
     "census_district",
     "census_district_all",
     "census_district_simplified",
+    "census_county",
+    "census_county_all",
+    "census_county_simplified",
 ]
 
 

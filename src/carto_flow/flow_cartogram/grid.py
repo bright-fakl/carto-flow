@@ -269,17 +269,12 @@ class Grid:
 
         # Handle square requirement
         if square:
-            # Adjust bounds to make dx == dy
-            avg_spacing = (dx + dy) / 2
-            if w > h:
-                # Adjust height to match width at average spacing
-                new_h = avg_spacing * sy
-                ymin = ymax - new_h
-            else:
-                # Adjust width to match height at average spacing
-                new_w = avg_spacing * sx
-                xmin = xmax - new_w
-            dx = dy = avg_spacing
+            # Grow the domain, centered, to sx x sy cells of the larger spacing, so that the cell size
+            # equals (xmax - xmin) / sx and (ymax - ymin) / sy in both directions.
+            dx = dy = max(dx, dy)
+            cx, cy = (xmin + xmax) / 2, (ymin + ymax) / 2
+            xmin, xmax = cx - sx * dx / 2, cx + sx * dx / 2
+            ymin, ymax = cy - sy * dy / 2, cy + sy * dy / 2
 
         # Store computed parameters
         self._xmin = xmin

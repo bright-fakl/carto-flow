@@ -77,6 +77,38 @@ class TestGrid:
         assert grid.y_edges.shape == (11,)
 
 
+class TestSquareGrid:
+    """A square grid has one cell size, equal to the spacing of its coordinates, in both directions."""
+
+    @pytest.mark.parametrize("bounds", [(0, 0, 10, 5), (0, 0, 5, 10), (-3.7, 2.2, 91.3, 40.1), (0, 0, 7, 7)])
+    @pytest.mark.parametrize("size", [20, 64, 127, 256])
+    @pytest.mark.parametrize("margin", [0.0, 0.5])
+    def test_cell_size_matches_coordinate_spacing(self, bounds, size, margin):
+        grid = Grid(bounds, size=size, margin=margin, square=True)
+
+        xmin, ymin, xmax, ymax = grid.bounds
+        assert grid.dx == pytest.approx(grid.dy)
+        assert (xmax - xmin) / grid.sx == pytest.approx(grid.dx, rel=1e-12)
+        assert (ymax - ymin) / grid.sy == pytest.approx(grid.dy, rel=1e-12)
+        assert np.diff(grid.x_coords) == pytest.approx(grid.dx, rel=1e-9)
+        assert np.diff(grid.y_coords) == pytest.approx(grid.dy, rel=1e-9)
+
+    @pytest.mark.parametrize("bounds", [(0, 0, 10, 5), (0, 0, 5, 10), (-3.7, 2.2, 91.3, 40.1)])
+    def test_domain_covers_the_bounds_with_margin(self, bounds):
+        grid = Grid(bounds, size=100, margin=0.5, square=True)
+
+        xmin, ymin, xmax, ymax = grid.bounds
+        w, h = bounds[2] - bounds[0], bounds[3] - bounds[1]
+        assert xmin <= bounds[0] - 0.5 * w + 1e-9 and xmax >= bounds[2] + 0.5 * w - 1e-9
+        assert ymin <= bounds[1] - 0.5 * h + 1e-9 and ymax >= bounds[3] + 0.5 * h - 1e-9
+
+    def test_multilevel_grids_are_consistent(self):
+        for grid in build_multilevel_grids((0, 0, 100, 80), N=64, n_levels=3, margin=0.5, square=True):
+            xmin, ymin, xmax, ymax = grid.bounds
+            assert (xmax - xmin) / grid.sx == pytest.approx(grid.dx, rel=1e-12)
+            assert (ymax - ymin) / grid.sy == pytest.approx(grid.dy, rel=1e-12)
+
+
 class TestBuildMultilevelGrids:
     """Test cases for build_multilevel_grids function."""
 

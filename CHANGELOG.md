@@ -11,6 +11,12 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`validate_geometries` checks the input of a cartogram.** `carto_flow.geo_utils.validate_geometries(gdf, values, coverage=...)`
+  returns a `GeometryReport` with errors (null, empty and invalid geometries, with the reason from
+  `shapely.explain_validity`; values that are not finite or are negative), warnings (coordinates in longitude and latitude; polygons that overlap or
+  whose shared edges do not match) and information (repeated consecutive vertices). Every issue names the rows by index
+  label. `create_flow_cartogram`, `CartogramWorkflow`, `create_voronoi_cartogram` and `create_noncontiguous_cartogram`
+  run it first and take `validate=False` to skip it.
 - **`PlotStyle` sets the look of the flow plots and animations in one place.** The surface
   and text colors, the boundary, one palette per data role (sequential, diverging,
   categorical), the color scale and the colorbar are fields of a frozen `PlotStyle`, with
@@ -137,6 +143,10 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **Invalid input raises a `ValueError` that names the rows.** A self-intersecting polygon, a null or empty geometry or a
+  NaN value in the data column used to fail late, for example with a `GEOSException` from inside the morph; the flow,
+  Voronoi and non-contiguous cartograms now stop before the run. Repair invalid polygons with `shapely.make_valid` or
+  `carto_flow.geo_utils.repair_polygons`, or pass `validate=False`.
 - **The flow plots and animations have a new default look.** A tinted surface, a boundary
   slightly darker than the surface, a truncated `YlGnBu` for continuous data, `RdYlBu_r`
   for errors, a logarithmic colorbar for positive data that spans more than one decade,

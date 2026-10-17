@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 from shapely import affinity
 
+from ..geo_utils.validity import check_input
 from .result import NoncontiguousCartogram
 
 if TYPE_CHECKING:
@@ -33,6 +34,7 @@ def create_noncontiguous_cartogram(
     reference_region: Hashable | None = None,
     max_scale: float | None = 1.0,
     multipart: Literal["group", "parts"] = "group",
+    validate: bool = True,
 ) -> NoncontiguousCartogram:
     """Scale every region about its own center so that its area is proportional to its value.
 
@@ -70,6 +72,9 @@ def create_noncontiguous_cartogram(
         a smaller copy of itself and its parts keep their distances in proportion; ``"parts"`` scales each part about
         its own centroid, so that every part stays on its own land and the gaps between the parts grow in proportion
         to the parts.
+    validate : bool, default True
+        Check the input first (:func:`carto_flow.geo_utils.validate_geometries`): invalid, empty or null
+        geometries raise a ValueError that names the rows; geographic coordinates give a warning.
 
     Returns
     -------
@@ -95,6 +100,8 @@ def create_noncontiguous_cartogram(
     >>> cartogram = create_noncontiguous_cartogram(states, "Population")
     >>> cartogram.plot()
     """
+    if validate:
+        check_input(gdf)
     if multipart not in ("group", "parts"):
         raise ValueError(f"multipart must be 'group' or 'parts', got {multipart!r}")
     if max_scale is not None and not max_scale > 0:

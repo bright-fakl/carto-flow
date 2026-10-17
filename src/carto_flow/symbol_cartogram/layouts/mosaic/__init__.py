@@ -574,7 +574,7 @@ class MosaicLayout(Layout):
 
             morph_opts = opts.morph_options or MorphOptions(n_iter=100, show_progress=show_progress)
             source = gpd.GeoDataFrame({"count": counts.astype(np.float64)}, geometry=list(geometries))
-            flow_result = create_flow_cartogram(source, "count", options=morph_opts)
+            flow_result = create_flow_cartogram(source, "count", options=morph_opts, validate=False)
             best = flow_result.best
             morphed = best.geometry if best is not None else None
             if morphed is None:  # pragma: no cover - morph always stores a snapshot

@@ -518,3 +518,34 @@ class TestInlineLinks:
         page = mod.render_markdown("| a | b |\n|---|---|\n| [x](../y/index.html) | 1 |\n\ntext [z](https://e.org)")
 
         assert page.count("<a href=") == 2
+
+
+class TestMarkdownBlocks:
+    def test_bold_renders_outside_code_spans(self, mod):
+        html = mod._render_inline("a **bold** and `**code**` and 2 * 3 * 4")
+
+        assert "<strong>bold</strong>" in html
+        assert "<code>**code**</code>" in html
+        assert html.count("<strong>") == 1
+
+    def test_numbered_list(self, mod):
+        page = mod.render_markdown("1. one\n2. two **b**\n3. three")
+
+        assert page == "<ol><li>one</li><li>two <strong>b</strong></li><li>three</li></ol>"
+
+    def test_nested_list_and_continuation(self, mod):
+        page = mod.render_markdown("- a\n  continued\n  - sub 1\n  - sub 2\n- b")
+
+        assert page == "<ul><li>a continued<ul><li>sub 1</li><li>sub 2</li></ul></li><li>b</li></ul>"
+
+    def test_numbered_list_with_nested_bullets(self, mod):
+        page = mod.render_markdown("1. one\n   - x\n2. two")
+
+        assert page == "<ol><li>one<ul><li>x</li></ul></li><li>two</li></ol>"
+
+    def test_fenced_code_block_is_escaped_and_not_parsed(self, mod):
+        page = mod.render_markdown("before\n\n```python\nx = 1 < 2\n- not a list\n**not bold**\n```\n\nafter")
+
+        assert "<pre><code>x = 1 &lt; 2\n- not a list\n**not bold**</code></pre>" in page
+        assert "<ul>" not in page and "<strong>" not in page
+        assert page.startswith("<p>before</p>") and page.endswith("<p>after</p>")

@@ -137,7 +137,9 @@ STYLE = """
   .status.done { color: #4a7a4a; }
   th { background: rgba(0,0,0,0.05); }
   code { background: rgba(0,0,0,0.06); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
-  ul { padding-left: 1.4rem; }
+  ul, ol { padding-left: 1.4rem; }
+  pre { background: rgba(0,0,0,0.06); padding: 0.6rem 0.8rem; border-radius: 6px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
   dl.meta-list { margin: 1rem 0; }
   dl.meta-list dt { font-weight: 600; float: left; clear: left; width: 8rem; color: #555; }
   dl.meta-list dd { margin-left: 8rem; margin-bottom: 0.35rem; }
@@ -301,7 +303,7 @@ investigation workspace is easy to miss.
    One line per PNG that needs a caption; PNGs without one use their
    filename.
 
-4. Write the rest of `summary.md` freely (headings, tables, bullet lists,
+4. Write the rest of `summary.md` freely (headings, tables, bullet, numbered and nested lists, fenced code blocks, **bold**,
    paragraphs, inline code, `[text](url)` links - relative links to other pages are `../<directory>/index.html`) - it is rendered below the description.
 
 ## Rebuilding
@@ -480,8 +482,9 @@ def _page_shell(title: str, body: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Tiny Markdown -> HTML converter (headings, paragraphs, pipe tables,
-# bullet lists, inline code, links). Deliberately minimal - not a general parser.
+# Tiny Markdown -> HTML converter (headings, paragraphs, pipe tables, bullet,
+# numbered and nested lists, fenced code blocks, bold, inline code, links).
+# Deliberately minimal - not a general parser.
 # ---------------------------------------------------------------------------
 
 
@@ -506,6 +509,7 @@ def _render_inline(text: str) -> str:
     text = _LINK.sub(
         lambda m: f'<a href="{m.group(2)}">{m.group(1)}</a>' if _safe_href(m.group(2)) else m.group(0), text
     )
+    text = re.sub(r"\*\*(?=\S)(.+?)(?<=\S)\*\*", r"<strong>\1</strong>", text)
     return re.sub(r"\x00(\d+)\x00", lambda m: f"<code>{spans[int(m.group(1))]}</code>", text)
 
 
@@ -521,6 +525,35 @@ def _render_table(lines: list[str]) -> str:
         out.append("<tr>" + "".join(f"<td>{_render_inline(c)}</td>" for c in row) + "</tr>")
     out.append("</table>")
     return "\n".join(out)
+
+
+_LIST_ITEM = re.compile(r"^(\s*)([-*]|\d+\.)\s+(.*)$")
+
+
+def _render_list(lines: list[str]) -> str:
+    """Render consecutive list lines. Indentation nests; an indented line without a marker continues the item."""
+    items: list[list] = []  # [indent, ordered, text]
+    for line in lines:
+        match = _LIST_ITEM.match(line)
+        if match:
+            items.append([len(match.group(1).expandtabs(4)), match.group(2)[0].isdigit(), match.group(3).strip()])
+        else:
+            items[-1][2] += " " + line.strip()
+
+    def build(pos: int, indent: int) -> tuple[str, int]:
+        tag = "ol" if items[pos][1] else "ul"
+        out = [f"<{tag}>"]
+        while pos < len(items) and items[pos][0] >= indent:
+            if items[pos][0] > indent:
+                inner, pos = build(pos, items[pos][0])
+                out[-1] = out[-1][: -len("</li>")] + inner + "</li>" if out[-1].endswith("</li>") else out[-1] + inner
+                continue
+            out.append(f"<li>{_render_inline(items[pos][2])}</li>")
+            pos += 1
+        out.append(f"</{tag}>")
+        return "".join(out), pos
+
+    return build(0, items[0][0])[0]
 
 
 def render_markdown(text: str) -> str:
@@ -556,18 +589,32 @@ def render_markdown(text: str) -> str:
             html_parts.append(_render_table(table_lines))
             continue
 
-        if re.match(r"^[-*]\s+", stripped):
-            items = []
-            while i < n and re.match(r"^[-*]\s+", lines[i].strip()):
-                items.append(re.sub(r"^[-*]\s+", "", lines[i].strip()))
+        if stripped.startswith("```"):
+            i += 1
+            code_lines = []
+            while i < n and not lines[i].strip().startswith("```"):
+                code_lines.append(lines[i])
                 i += 1
-            html_parts.append("<ul>" + "".join(f"<li>{_render_inline(item)}</li>" for item in items) + "</ul>")
+            i += 1
+            html_parts.append("<pre><code>" + html.escape("\n".join(code_lines)) + "</code></pre>")
+            continue
+
+        if _LIST_ITEM.match(line):
+            list_lines = []
+            while i < n and lines[i].strip() and (_LIST_ITEM.match(lines[i]) or lines[i].startswith((" ", "\t"))):
+                list_lines.append(lines[i])
+                i += 1
+            html_parts.append(_render_list(list_lines))
             continue
 
         # Paragraph: gather consecutive non-blank, non-special lines.
         para_lines = [stripped]
         i += 1
-        while i < n and lines[i].strip() and not re.match(r"^(#{1,6}\s|\||[-*]\s|figure:\s*\S)", lines[i].strip()):
+        while (
+            i < n
+            and lines[i].strip()
+            and not re.match(r"^(#{1,6}\s|\||```|[-*]\s|\d+\.\s|figure:\s*\S)", lines[i].strip())
+        ):
             para_lines.append(lines[i].strip())
             i += 1
         html_parts.append(f"<p>{_render_inline(' '.join(para_lines))}</p>")

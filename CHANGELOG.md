@@ -262,6 +262,11 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Deprecated
 
+- **`CirclePackingLayout`, `CirclePackingLayoutOptions` and `CirclePackingAdvancedOptions`** are now `PackingLayout`,
+  `PackingLayoutOptions` and `PackingAdvancedOptions`, because the layout packs squares as well as circles. The old names
+  still work, emit a `DeprecationWarning` and will be removed in the next major release. The layout keys `"packing"` and
+  `"topology"` are unchanged.
+
 - **Old parameter names of the plot, animate and preview functions of the four cartogram types.** Each
   concept now has one name, shared by all plot functions (the old names of every module are listed). The old names still work and
   warn, and will be removed in the next major release:
@@ -322,6 +327,14 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Fixed
 
+- **Square flow grids have a cell size that matches their coordinates.** With `grid_square=True` (the default of
+  `LadderSpec`, so every multiresolution run), the cell size was set to the average of the two directions while the
+  domain kept its own extent in the longer one, so the nodes of the grid were spaced slightly differently from the cell size
+  used to locate a vertex (0.4 % on the county example below, a third of a cell at the far edge). A vertex could be
+  placed in the wrong cell and interpolate with a weight outside 0 to 1, which made the displacement jump at cell boundaries where the velocity changes fast and folded polygons. The domain now grows,
+  centered, to a whole number of cells of the larger spacing. On the 3,108 counties on a square grid of 128 the number of
+  invalid output polygons after 200 iterations falls from 1,350 to 70; states, districts and counties at other grids have
+  fewer invalid polygons in most cases and converge as before. The grid of a square run is up to one cell larger than before.
 - **`cmap={category: color}` works in the flow, Voronoi and non-contiguous plots.** The dictionary was passed to matplotlib as a colormap and raised `TypeError: unhashable type: 'dict'`; the categories that are not in it take the `tab10` colors.
 - **Data-driven edges of the symbol plots are visible without an `edgecolor`, and the scalar channels take a scale.** The edge color defaulted to the boundary color of the style, a faint color made for separating symbols, or to `"none"` in `"classic"`, so a data-driven `linewidth` or a `hatch` could not be seen. A style has a new `"stroke"` channel (the color of an edge that carries data; `"#3b4650"` in `"default"`, `"#c9d1d9"` in `"dark"`, black in `"classic"`) which `plot_symbols` uses when `linewidth` is a column or `hatch` is set and no `edgecolor` is given; the hatch warning is raised only for an explicit `edgecolor="none"`.
 - **`legend_kwargs={"label": ...}` of the symbol plots sets the label of the colorbar** (it was ignored in favor of the column name).
@@ -361,13 +374,6 @@ Releases before 2.0.0 have no changelog entry; see the
   boundary:** when a rebuilt ring was self-intersecting, `make_valid` returned a
   geometry collection and only items of type `Polygon` were kept.
   ([#111](https://github.com/bright-fakl/carto-flow/pull/111))
-
-### Deprecated
-
-- **`CirclePackingLayout`, `CirclePackingLayoutOptions` and `CirclePackingAdvancedOptions`** are now `PackingLayout`,
-  `PackingLayoutOptions` and `PackingAdvancedOptions`, because the layout packs squares as well as circles. The old names
-  still work, emit a `DeprecationWarning` and will be removed in the next major release. The layout keys `"packing"` and
-  `"topology"` are unchanged.
 
 ## [2.0.0] - 2026-09-24
 

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
-from ...symbols import CircleSymbol
+from ...symbols import CircleSymbol, SquareSymbol
 from ..base import Layout, _apply_kwargs_to_options
 from ..data_prep import LayoutData
 from ..layout_result import LayoutResult, Transform
 
 __all__ = ["CentroidLayout", "CentroidLayoutOptions", "CentroidMetrics"]
+
+FINAL_ITERATIONS = 500
+"""Upper bound of the passes that settle overlaps after the last attraction cycle."""
 
 
 @dataclass
@@ -30,6 +34,11 @@ class CentroidLayoutOptions:
 
     Parameters
     ----------
+    shape : {"circle", "square"}
+        Shape the symbols are separated as. ``"circle"`` (default) separates along the line between the centers.
+        ``"square"`` separates axis-aligned squares with the same area as the circles, so that their edges can touch
+        (with ``spacing=0`` they sit flush); the layout's canonical symbol is then a square, and drawing squares on it
+        leaves no gaps and no overlaps.
     spacing : float
         Gap between symbols as fraction of average symbol size. Default: 0.05
     remove_overlap : bool
@@ -57,6 +66,7 @@ class CentroidLayoutOptions:
 
     """
 
+    shape: Literal["circle", "square"] = "circle"
     spacing: float = 0.05
     remove_overlap: bool = True
     max_iterations: int = 20
@@ -67,6 +77,8 @@ class CentroidLayoutOptions:
 
     def validate(self) -> None:
         """Validate options."""
+        if self.shape not in ("circle", "square"):
+            raise ValueError(f"shape must be 'circle' or 'square', got {self.shape!r}")
         if not 0 <= self.spacing <= 1:
             raise ValueError("spacing must be between 0 and 1")
         if self.max_iterations < 1:
@@ -87,7 +99,7 @@ class CentroidLayout(Layout):
     Places symbols at the centroids of the original geometries, with optional
     local overlap removal.
 
-    Returns LayoutResult with CircleSymbol as canonical symbol.
+    Returns LayoutResult with CircleSymbol as canonical symbol, or SquareSymbol with ``shape="square"``.
 
     Parameters
     ----------
@@ -101,6 +113,7 @@ class CentroidLayout(Layout):
     >>> layout = CentroidLayout()  # Default: remove overlap
     >>> layout = CentroidLayout(remove_overlap=False)  # Just centroids
     >>> layout = CentroidLayout(spacing=0.1)  # Larger gaps
+    >>> layout = CentroidLayout(shape="square", spacing=0.0)  # Squares that sit flush
 
     """
 
@@ -131,12 +144,16 @@ class CentroidLayout(Layout):
             Immutable layout result with CircleSymbol as canonical.
 
         """
-        from ._placement import resolve_circle_overlaps
+        from ._placement import resolve_overlaps
 
         # Tiles from tile_count expansion start coincident at the geometry centroid.
         # Coincident starts settle 3-5r from centroid after primary separation,
         # much closer than a pre-spread arrangement would produce.
         positions = data.positions.copy()
+
+        # Squares of the same area as the circles: the half-side is sqrt(pi)/2 times the radius
+        square = self._options.shape == "square"
+        sizes = data.sizes * (np.sqrt(np.pi) / 2) if square else data.sizes
 
         # group_ids is already N-level from data_prep
         n_group_ids = data.group_ids
@@ -150,13 +167,14 @@ class CentroidLayout(Layout):
             # Local-only separation (global_step_fraction=0.0) is Jacobi iteration and can
             # oscillate non-convergently for dense clusters. The attraction cycles counteract
             # any drift from global expansion.
-            positions, info = resolve_circle_overlaps(
+            positions, info = resolve_overlaps(
                 positions=positions,
-                radii=data.sizes,
+                radii=sizes,
                 spacing=self._options.spacing,
                 max_iterations=self._options.max_iterations,
                 overlap_tolerance=self._options.overlap_tolerance,
                 global_step_fraction=0.5,
+                shape=self._options.shape,
             )
 
             use_origin = self._options.origin_attraction > 0
@@ -178,15 +196,30 @@ class CentroidLayout(Layout):
                     # Local-only separation for cleanup: attraction introduces only small,
                     # bounded overlaps so global expansion is not needed and would compound
                     # across cycles, causing unbounded drift.
-                    positions, cleanup_info = resolve_circle_overlaps(
+                    positions, cleanup_info = resolve_overlaps(
                         positions=positions,
-                        radii=data.sizes,
+                        radii=sizes,
                         spacing=self._options.spacing,
                         max_iterations=20,
                         overlap_tolerance=self._options.overlap_tolerance,
                         global_step_fraction=0.0,
+                        shape=self._options.shape,
                     )
                     total_cleanup_iters += cleanup_info.get("iterations", 0)
+
+                # The cleanup passes above are capped, so overlaps from the last attraction step can remain
+                # (squares separate along one axis per pair and need the most passes); run until none is left.
+                positions, cleanup_info = resolve_overlaps(
+                    positions=positions,
+                    radii=sizes,
+                    spacing=self._options.spacing,
+                    max_iterations=FINAL_ITERATIONS,
+                    overlap_tolerance=self._options.overlap_tolerance,
+                    global_step_fraction=0.0,
+                    local_step_fraction=1.0,
+                    shape=self._options.shape,
+                )
+                total_cleanup_iters += cleanup_info.get("iterations", 0)
 
                 info["cleanup_iterations"] = total_cleanup_iters
                 info["cleanup_max_overlap"] = cleanup_info.get("final_max_overlap", 0.0)
@@ -194,13 +227,13 @@ class CentroidLayout(Layout):
             info = {"iterations": 0, "final_max_overlap": 0.0}
 
         # Compute base_size as average size
-        base_size = float(np.mean(data.sizes))
+        base_size = float(np.mean(sizes))
 
         # Create transforms
         transforms = [
             Transform(
                 position=(float(positions[i, 0]), float(positions[i, 1])),
-                scale=float(data.sizes[i] / base_size) if base_size > 0 else 1.0,
+                scale=float(sizes[i] / base_size) if base_size > 0 else 1.0,
             )
             for i in range(len(positions))
         ]
@@ -223,11 +256,11 @@ class CentroidLayout(Layout):
         )
 
         return LayoutResult(
-            canonical_symbol=CircleSymbol(),
+            canonical_symbol=SquareSymbol() if square else CircleSymbol(),
             transforms=transforms,
             base_size=base_size,
             positions=data.geometry_positions if data.geometry_positions is not None else data.positions,
-            sizes=data.sizes,
+            sizes=sizes,
             adjacency=data.adjacency,
             bounds=data.bounds,
             crs=crs,

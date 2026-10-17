@@ -11,6 +11,10 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`CentroidLayout(shape="square")` places squares that sit flush.** The layout separates axis-aligned squares with the
+  area of the circles (along the axis with the smaller penetration), and its canonical symbol is a square, so squares drawn
+  on it leave no gaps and no overlaps. With `spacing=0` the edges touch. The default is `shape="circle"`; a gallery example
+  compares the two.
 - **`validate_geometries` checks the input of a cartogram.** `carto_flow.geo_utils.validate_geometries(gdf, values, coverage=...)`
   returns a `GeometryReport` with errors (null, empty and invalid geometries, with the reason from
   `shapely.explain_validity`; values that are not finite or are negative), warnings (coordinates in longitude and latitude; polygons that overlap or
@@ -143,6 +147,10 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **`CentroidLayout` keeps the requested `spacing`.** The cleanup passes after the attraction cycles are capped, so overlaps
+  from the last attraction step could remain: on the census snapshot with `spacing=0.05` 34 of 49 circles were closer than
+  the spacing, some touching. A final pass now runs until no overlap is left. Symbols move 3 to 10 % farther from their
+  centroids on average (more at larger spacing).
 - **Invalid input raises a `ValueError` that names the rows.** A self-intersecting polygon, a null or empty geometry or a
   NaN value in the data column used to fail late, for example with a `GEOSException` from inside the morph; the flow,
   Voronoi and non-contiguous cartograms now stop before the run. Repair invalid polygons with `shapely.make_valid` or

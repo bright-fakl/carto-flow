@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
 from ...options import ForceMode
+from ...symbols import CircleSymbol, SquareSymbol
 from ..base import Layout, _apply_kwargs_to_options, _build_force_layout_result
 from ..data_prep import LayoutData
 from ..layout_result import LayoutResult
@@ -153,6 +156,11 @@ class CirclePackingLayoutOptions:
         = partial expansion with GS handling residuals. Default: 1.0
     convergence_tolerance : float
         Convergence threshold for mean relative displacement. Default: 0.025
+    shape : {"circle", "square"}
+        Shape the symbols are packed as. ``"square"`` packs axis-aligned squares with the area of the circles: the
+        distance of a pair is the larger axis offset, overlaps and contacts are resolved along that axis, and squares
+        touch along flat edges and slide along each other. The layout's canonical symbol is then a square.
+        Default: "circle"
     spacing : float
         Minimum gap between symbols as fraction of average radius. Default: 0.05
     compactness : float
@@ -199,6 +207,7 @@ class CirclePackingLayoutOptions:
     convergence_tolerance: float = 0.025
 
     # Geometry
+    shape: Literal["circle", "square"] = "circle"
     spacing: float = 0.05
 
     # Stage 2: force weights
@@ -222,6 +231,8 @@ class CirclePackingLayoutOptions:
     def validate(self) -> None:
         """Validate options."""
         errors = []
+        if self.shape not in ("circle", "square"):
+            errors.append(f"shape must be 'circle' or 'square', got {self.shape!r}")
         if self.max_iterations < 0:
             errors.append("max_iterations must be non-negative (0 = Stage 1 only)")
         if not 0 <= self.expansion <= 1:
@@ -421,7 +432,7 @@ class CirclePackingLayout(Layout):
         Returns
         -------
         LayoutResult
-            Immutable layout result with CircleSymbol as canonical.
+            Immutable layout result with CircleSymbol as canonical, or SquareSymbol with ``shape="square"``.
 
         """
         from ._simulator import TopologyPreservingSimulator
@@ -435,10 +446,14 @@ class CirclePackingLayout(Layout):
         # configuration (group centroid when collapsed, geography otherwise).
         original_positions = data.positions
 
+        # Squares of the same area as the circles: the half-side is sqrt(pi)/2 times the radius
+        square = self._options.shape == "square"
+        sizes = data.sizes * (np.sqrt(np.pi) / 2) if square else data.sizes
+
         sim = TopologyPreservingSimulator(
             positions=data.positions,
             original_positions=original_positions,
-            radii=data.sizes,
+            radii=sizes,
             adjacency=data.adjacency,
             spacing=self._options.spacing,
             compactness=self._options.compactness,
@@ -463,6 +478,7 @@ class CirclePackingLayout(Layout):
             step_smoothing_window=adv.step_smoothing_window,
             convergence_window=adv.convergence_window,
             adaptive_ema=adv.adaptive_ema,
+            shape=self._options.shape,
         )
         positions, info, history = sim.run(
             max_iterations=self._options.max_iterations,
@@ -493,5 +509,12 @@ class CirclePackingLayout(Layout):
             ),
         )
         return _build_force_layout_result(
-            positions, info, history, data, "packing", metrics=metrics, sim_history=sim_history
+            positions,
+            info,
+            history,
+            dataclasses.replace(data, sizes=sizes) if square else data,
+            "packing",
+            metrics=metrics,
+            sim_history=sim_history,
+            canonical_symbol=SquareSymbol() if square else CircleSymbol(),
         )

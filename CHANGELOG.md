@@ -11,6 +11,11 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`CirclePackingLayout(shape="square")` packs squares.** The packing simulator treats the symbols as axis-aligned squares with
+  the area of the circles: the distance of a pair is the larger axis offset, and overlaps and contacts are resolved
+  along that axis, so squares touch along flat edges and slide along each other. The topology, neighbor and compaction forces
+  are those of the circle layout. On the census snapshot the squares keep 0.62 of the neighboring pairs close (circles: 0.63).
+  The default `shape="circle"` gives the same positions as before.
 - **`CentroidLayout(shape="square")` places squares that sit flush.** The layout separates axis-aligned squares with the
   area of the circles (along the axis with the smaller penetration), and its canonical symbol is a square, so squares drawn
   on it leave no gaps and no overlaps. With `spacing=0` the edges touch. The default is `shape="circle"`; a gallery example

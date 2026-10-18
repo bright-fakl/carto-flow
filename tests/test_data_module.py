@@ -230,3 +230,30 @@ def test_load_us_census_rejects_a_bad_max_segment_length(value):
 
     with pytest.raises(ValueError, match="max_segment_length"):
         data.load_us_census(max_segment_length=value)
+
+
+@pytest.mark.parametrize("loader_name", ["load_world", "load_us_states"])
+def test_geographic_loaders_densify_in_degrees(loader_name):
+    import numpy as np
+
+    import carto_flow.data as data
+
+    loader = getattr(data, loader_name)
+    base = loader()
+    fine = loader(max_segment_length=0.1)
+    assert base.crs.to_string() == "EPSG:4326"
+    assert _longest_segment(base) > 0.5
+    assert _longest_segment(fine) <= 0.1 + 1e-9
+    assert len(fine) == len(base) and list(fine.columns) == list(base.columns)
+    assert fine.geometry.is_valid.all()
+    assert np.isclose(fine.geometry.union_all().area, base.geometry.union_all().area, rtol=1e-9)
+    assert loader(max_segment_length=1000).geometry.geom_equals_exact(base.geometry, 0).all()
+
+
+@pytest.mark.parametrize("loader_name", ["load_world", "load_us_states"])
+@pytest.mark.parametrize("value", [0, -1, True, "x"])
+def test_geographic_loaders_reject_a_bad_max_segment_length(loader_name, value):
+    import carto_flow.data as data
+
+    with pytest.raises(ValueError, match="max_segment_length"):
+        getattr(data, loader_name)(max_segment_length=value)

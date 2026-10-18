@@ -187,12 +187,39 @@ def _check_optional_dependency(package_name: str, purpose: str) -> None:
         ) from None
 
 
-def load_world() -> "geopandas.GeoDataFrame":
+def _densified(gdf: "geopandas.GeoDataFrame", max_segment_length: float | None) -> "geopandas.GeoDataFrame":
+    """Insert vertices so that no segment exceeds ``max_segment_length`` (in the units of the CRS); None keeps ``gdf``."""
+    if max_segment_length is None:
+        return gdf
+    from carto_flow.geo_utils import densify_coverage
+
+    return densify_coverage(gdf, max_segment_length=max_segment_length)
+
+
+def _check_max_segment_length(max_segment_length: float | None) -> None:
+    if max_segment_length is not None and not (
+        isinstance(max_segment_length, int | float)
+        and not isinstance(max_segment_length, bool)
+        and max_segment_length > 0
+    ):
+        raise ValueError(f"max_segment_length must be a positive number or None, got {max_segment_length!r}")
+
+
+def load_world(max_segment_length: float | None = None) -> "geopandas.GeoDataFrame":
     """
     Load a world countries dataset with population estimates.
 
     This dataset includes country boundaries and population estimates from
     Natural Earth (public domain data).
+
+    Parameters
+    ----------
+    max_segment_length : float or None, default None
+        Insert vertices so that no straight segment exceeds this length in degrees (the dataset is in
+        EPSG:4326), with identical vertices on both sides of a shared border; see
+        :func:`carto_flow.geo_utils.densify_coverage`. ``None`` keeps the source, whose segments are at most 1
+        degree. Densifying in degrees before projecting follows the graticule, so borders along parallels
+        curve correctly in the projection; a degree is about 111 km. Flow cartograms need a projected CRS.
 
     Returns
     -------
@@ -214,16 +241,26 @@ def load_world() -> "geopandas.GeoDataFrame":
     """
     import geopandas as gpd
 
+    _check_max_segment_length(max_segment_length)
     path = files("carto_flow.data").joinpath("world.parquet")
-    return gpd.read_parquet(path)
+    return _densified(gpd.read_parquet(path), max_segment_length)
 
 
-def load_us_states() -> "geopandas.GeoDataFrame":
+def load_us_states(max_segment_length: float | None = None) -> "geopandas.GeoDataFrame":
     """
     Load a US states dataset with population and area information.
 
     This dataset includes state boundaries, population estimates, and area
     information from the US Census Bureau.
+
+    Parameters
+    ----------
+    max_segment_length : float or None, default None
+        Insert vertices so that no straight segment exceeds this length in degrees (the dataset is in
+        EPSG:4326), with identical vertices on both sides of a shared border; see
+        :func:`carto_flow.geo_utils.densify_coverage`. ``None`` keeps the source, whose segments are at most 6
+        degrees. Densifying in degrees before projecting follows the graticule, so borders along parallels
+        curve correctly in the projection; a degree is about 111 km. Flow cartograms need a projected CRS.
 
     Returns
     -------
@@ -239,8 +276,9 @@ def load_us_states() -> "geopandas.GeoDataFrame":
     """
     import geopandas as gpd
 
+    _check_max_segment_length(max_segment_length)
     path = files("carto_flow.data").joinpath("us_states.parquet")
-    return gpd.read_parquet(path)
+    return _densified(gpd.read_parquet(path), max_segment_length)
 
 
 def load_sample_cities() -> "geopandas.GeoDataFrame":
@@ -571,12 +609,7 @@ def load_us_census(
     else:
         gdf = _load_us_census_live(level, vintage, population, poverty, race, simplify)
 
-    gdf = _finalize_census_gdf(gdf, level, population, poverty, race, contiguous_only)
-    if max_segment_length is not None:
-        from carto_flow.geo_utils import densify_coverage
-
-        gdf = densify_coverage(gdf, max_segment_length=max_segment_length)
-    return gdf
+    return _densified(_finalize_census_gdf(gdf, level, population, poverty, race, contiguous_only), max_segment_length)
 
 
 def load_us_state_population() -> "pandas.DataFrame":

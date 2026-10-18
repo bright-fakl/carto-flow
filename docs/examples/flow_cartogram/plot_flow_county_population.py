@@ -15,6 +15,11 @@ and refines until the small counties are resolved.
 # Load data
 # ---------
 # The bundled county snapshot has the ACS 2020 population and poverty counts.
+# The morph moves vertices, and a county that grows tenfold in length stretches
+# its 5 km segments to 50 km. The straight edges between such sparse vertices cross
+# where a county is narrow, which leaves invalid polygons and raises the error of the
+# coarse levels. ``max_segment_length`` densifies the boundaries to 1 km;
+# ``create_flow_cartogram`` warns with a suggested length if the input is too sparse.
 
 import warnings
 
@@ -24,23 +29,11 @@ import numpy as np
 import carto_flow.data as examples
 import carto_flow.flow_cartogram as flow
 from carto_flow import get_style
-from carto_flow.geo_utils import densify_coverage
 
-counties = examples.load_us_census(level="county", population=True, poverty=True)
+counties = examples.load_us_census(level="county", population=True, poverty=True, max_segment_length=1000)
 print(
     f"{len(counties)} counties, population from {counties['Population'].min():,.0f} to {counties['Population'].max():,.0f}"
 )
-
-# %%
-# Densify the boundaries
-# ----------------------
-# The morph moves vertices, and a county that grows tenfold in length stretches
-# its 5 km segments to 50 km. The straight edges between such sparse vertices cross
-# where a county is narrow, which leaves invalid polygons and raises the error of the
-# coarse levels. Densify to 1 km first; ``create_flow_cartogram`` warns with a
-# suggested length if the input is too sparse.
-
-counties = densify_coverage(counties, max_segment_length=1000)
 
 # %%
 # Compute the cartogram

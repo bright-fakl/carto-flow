@@ -181,3 +181,52 @@ def test_load_us_census_county_level():
     assert gdf.crs.to_string() == "ESRI:102008"
     assert gdf.loc[gdf["County Name"].str.startswith("Maricopa"), "Population"].iloc[0] > 4_000_000
     assert len(carto_flow.data.load_us_census(level="county", contiguous_only=False)) == 3221
+
+
+def _longest_segment(gdf):
+    import numpy as np
+    import shapely
+
+    return max(
+        np.hypot(*np.diff(np.asarray(ring.coords), axis=0).T).max()
+        for geom in gdf.geometry
+        for part in shapely.get_parts(geom)
+        for ring in (part.exterior, *part.interiors)
+    )
+
+
+@pytest.mark.parametrize("level", ["state", "congressional_district", "county"])
+def test_load_us_census_max_segment_length_densifies(level):
+    import shapely
+
+    import carto_flow.data as data
+
+    base = data.load_us_census(level=level)
+    fine = data.load_us_census(level=level, max_segment_length=1000)
+    assert _longest_segment(base) <= 5000
+    assert _longest_segment(fine) <= 1000
+    assert len(fine) == len(base)
+    assert list(fine.columns) == list(base.columns)
+    assert fine.crs == base.crs
+    assert sum(shapely.get_num_coordinates(g) for g in fine.geometry) > sum(
+        shapely.get_num_coordinates(g) for g in base.geometry
+    )
+    # the two sides of a shared boundary stay identical, so the coverage has no gaps or overlaps
+    assert fine.geometry.is_valid.all()
+    assert fine.geometry.union_all().area == pytest.approx(base.geometry.union_all().area, rel=1e-9)
+
+
+def test_load_us_census_max_segment_length_at_least_the_source_changes_nothing():
+    import carto_flow.data as data
+
+    base = data.load_us_census(level="county")
+    same = data.load_us_census(level="county", max_segment_length=5000)
+    assert same.geometry.geom_equals_exact(base.geometry, 0).all()
+
+
+@pytest.mark.parametrize("value", [0, -5, True, "x"])
+def test_load_us_census_rejects_a_bad_max_segment_length(value):
+    import carto_flow.data as data
+
+    with pytest.raises(ValueError, match="max_segment_length"):
+        data.load_us_census(max_segment_length=value)

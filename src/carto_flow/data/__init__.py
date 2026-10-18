@@ -450,6 +450,7 @@ def load_us_census(
     simplify: float | None = None,
     vintage: int = 2020,
     contiguous_only: bool = True,
+    max_segment_length: float | None = None,
 ) -> "geopandas.GeoDataFrame":
     """
     Load US boundaries with ACS demographic data from the US Census Bureau.
@@ -517,6 +518,14 @@ def load_us_census(
         bundled resolution); any other vintage triggers a live download.
     contiguous_only : bool, default True
         Exclude Alaska, Hawaii and Puerto Rico (and DC at the congressional-district level).
+    max_segment_length : float or None, default None
+        Insert vertices so that no straight segment exceeds this length in meters (see
+        :func:`carto_flow.geo_utils.densify_coverage`); the two sides of a shared boundary get identical vertices.
+        ``None`` keeps the segments of the source, at most 5 km. A value of 5000 or more changes nothing. Flow
+        cartograms of regions that change their size strongly, such as districts and counties, need shorter
+        segments: ``create_flow_cartogram`` warns and recommends a length when the input is too sparse, and
+        1000 m is a good value for counties. Shorter segments give more vertices (the counties have 194,000 at
+        5 km and 769,000 at 1 km).
 
     Returns
     -------
@@ -543,7 +552,15 @@ def load_us_census(
 
     >>> gdf_county = load_us_census(level="county", population=True)
     >>> print(gdf_county["County Name"].head())
+
+    >>> gdf_fine = load_us_census(level="county", max_segment_length=1000)
     """
+    if max_segment_length is not None and not (
+        isinstance(max_segment_length, int | float)
+        and not isinstance(max_segment_length, bool)
+        and max_segment_length > 0
+    ):
+        raise ValueError(f"max_segment_length must be a positive number or None, got {max_segment_length!r}")
     if level not in ("state", "congressional_district", "county"):
         raise ValueError(f"level must be 'state', 'congressional_district' or 'county', got {level!r}")
 
@@ -554,7 +571,12 @@ def load_us_census(
     else:
         gdf = _load_us_census_live(level, vintage, population, poverty, race, simplify)
 
-    return _finalize_census_gdf(gdf, level, population, poverty, race, contiguous_only)
+    gdf = _finalize_census_gdf(gdf, level, population, poverty, race, contiguous_only)
+    if max_segment_length is not None:
+        from carto_flow.geo_utils import densify_coverage
+
+        gdf = densify_coverage(gdf, max_segment_length=max_segment_length)
+    return gdf
 
 
 def load_us_state_population() -> "pandas.DataFrame":

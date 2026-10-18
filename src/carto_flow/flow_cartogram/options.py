@@ -307,8 +307,8 @@ class MorphOptions:
     of the max-error ratio ``max_error / max_tol`` (log2 errors, as in the convergence test) are
     recorded; a ratio below 1 means that component is satisfied. A component counts toward
     progress only while it is still violated (its window minimum is above 1) and its window
-    minimum is lower than that component's best over the earlier windows by at least the fraction
-    ``stall_min_improvement``. The window is progress if any component counts, so a max error that
+    minimum is lower than that component's best over the earlier windows by at least the improvement
+    required by ``stall_min_efficiency``. The window is progress if any component counts, so a max error that
     stays fixed while a still violated mean error falls is progress, whereas improvements of a
     satisfied component, or of a component that regressed above 1 without beating its earlier
     best, are not. A window in which neither component is violated does not count either.
@@ -322,11 +322,17 @@ class MorphOptions:
     If None, stall detection is disabled and the algorithm runs until convergence or ``n_iter``.
     """
 
-    stall_min_improvement: float = 0.02
-    """Relative improvement of a cycle minimum that counts as progress (see ``stall_patience``).
+    stall_min_efficiency: float = 0.05
+    """Improvement of a cycle minimum per unit of distance moved that counts as progress (see ``stall_patience``).
 
-    A violated component's window minimum must be below its best earlier minimum by at least this fraction of it, for
-    example 0.02 for 2%. Smaller decreases do not reset the stall count.
+    The expected improvement of an iteration follows from the step: the fastest point moves ``dt`` times the step
+    fraction of the adaptive step cells, and a region of linear size ``L`` changes its area, and with it its error, by a
+    fraction of order ``distance / L``. A cycle therefore has to lower a violated component's minimum below its best
+    earlier minimum by at least ``stall_min_efficiency`` times the distance moved in the cycle divided by ``L``, the
+    square root of the area-weighted mean target area. Smaller decreases do not reset the stall count. The required
+    improvement thus falls with the cell size (a finer grid moves less per iteration), with a smaller ``dt`` or
+    step fraction, and with larger regions, so that a run that makes steady progress is not ended as stalled. At 0.05
+    a cycle of 10 iterations at the default ``dt`` of 0.2 on regions of 8 cells has to improve by 1%.
     """
 
     def get_grid(self, bounds: tuple[float, float, float, float]) -> "Grid":
@@ -510,7 +516,7 @@ class MorphOptions:
             "prescale_coords",
             "adaptive_dt",
             "stall_patience",
-            "stall_min_improvement",
+            "stall_min_efficiency",
             "recompute_on_rise",
             "error_floor",
             "density_rasterization",
@@ -621,9 +627,9 @@ class MorphOptions:
         elif field_name == "recompute_on_rise":
             if value is not None and (not isinstance(value, int | float) or isinstance(value, bool) or value < 0):
                 return "recompute_on_rise must be a non-negative number or None"
-        elif field_name == "stall_min_improvement":
-            if not isinstance(value, int | float) or isinstance(value, bool) or not 0 <= value < 1:
-                return "stall_min_improvement must be a number in [0, 1)"
+        elif field_name == "stall_min_efficiency":
+            if not isinstance(value, int | float) or isinstance(value, bool) or value < 0:
+                return "stall_min_efficiency must be a non-negative number"
 
         # Outer-boundary distortion reduction options
         elif field_name == "adaptive_dt" and not isinstance(value, bool):

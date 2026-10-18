@@ -52,7 +52,7 @@ from .history import (
 )
 from .options import MorphOptions, MorphStatus
 from .recompute import score_rose, should_recompute
-from .stall import StallMonitor, cycle_length
+from .stall import StallMonitor, cycle_length, region_size
 from .stepsize import DEAD_BAND_FRACTION, StepController
 from .velocity import VelocityComputerFFTW
 
@@ -521,8 +521,10 @@ def morph_geometries(
     best_step = 0
     best_state: tuple | None = None
     stall_monitor = StallMonitor(
-        options.stall_patience, options.stall_min_improvement, cycle_length(options.recompute_every)
+        options.stall_patience, options.stall_min_efficiency, cycle_length(options.recompute_every)
     )
+    typical_size = region_size(target_areas)
+    step_moved = 0.0  # distance of the fastest point in the last iteration, relative to the size of the regions
     n_done = 0
     step_controller = StepController(
         cycle_length(options.recompute_every),
@@ -645,6 +647,7 @@ def morph_geometries(
             _t0 = _time.perf_counter()
         max_v = max(max_abs_velocity(vx, vy), 1e-8)
         dt_prime = options.dt * step_controller.current(step) * min(grid.dx, grid.dy) / max_v
+        step_moved = options.dt * step_controller.current(step) * min(grid.dx, grid.dy) / typical_size
         since_recompute += 1
 
         # 2a. Displace geometry coordinates using the velocity field
@@ -773,7 +776,7 @@ def morph_geometries(
                 probe_xy.copy() if probe_xy is not None else None,
                 probe_log_scaling.copy() if probe_log_scaling is not None else None,
             )
-        stalled = stall_monitor.update(step, mean_error / log2_mean_tol, max_error / log2_max_tol)
+        stalled = stall_monitor.update(step, mean_error / log2_mean_tol, max_error / log2_max_tol, step_moved)
         n_done = step + 1
 
         status = (

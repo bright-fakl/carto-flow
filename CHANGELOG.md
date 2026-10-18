@@ -11,6 +11,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`max_segment_length` densifies the boundaries of the geometry loaders at load time.** `load_us_census`, `load_world` and
+  `load_us_states` take `max_segment_length`: no straight segment of the result exceeds it, and the two sides of a shared
+  boundary get identical vertices. The unit is the one of the CRS: meters for the census data, degrees for the world and
+  US states datasets, which are in EPSG:4326. Densifying in degrees before projecting follows the graticule, so a border
+  along a parallel curves correctly (3.5 km off the chord on 6 degrees of the 49th parallel in EPSG:5070). The bundled
+  census geometries have segments of at most 5 km, which is too sparse for flow cartograms of districts and counties; 1000
+  is a good value for counties (194,000 vertices at 5 km, 769,000 at 1 km).
 - **A warning when the input segments are too long for the expected stretch.** A segment grows with the linear enlargement
   of its region, so on input with strongly enlarged regions the straight edges between sparse vertices cross where polygons
   are narrow, which leaves invalid output polygons and raises the error of the coarse levels of a ladder. `create_flow_cartogram`

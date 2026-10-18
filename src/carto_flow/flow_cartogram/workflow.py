@@ -42,7 +42,7 @@ from .errors import compute_error_metrics
 from .grid import Grid, LadderSpec, build_multilevel_grids
 from .history import CartogramSnapshot, History
 from .options import MorphOptions, MorphStatus
-from .resolution import auto_levels, auto_start, check_grid, check_resolution
+from .resolution import auto_levels, auto_start, check_grid, check_resolution, check_segments
 
 __all__ = ["CartogramWorkflow"]
 
@@ -303,6 +303,7 @@ class CartogramWorkflow:
                 getattr(spec, "margin", 0.5),
                 getattr(spec, "square", False),
             )
+            check_segments(latest.geometry, np.sum(original_areas) * values / np.sum(values), max(grid.dx, grid.dy), 5)
 
         result = morph_geometries(
             geometries=latest.geometry,  # type: ignore[union-attr]
@@ -410,6 +411,7 @@ class CartogramWorkflow:
             margin=margin,
             square=square,
         )
+        check_segments(self._original_gdf.geometry, targets, max(grids[-1].dx, grids[-1].dy), 4)
 
         # Normalize options
         if options is None:

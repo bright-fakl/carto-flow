@@ -11,6 +11,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **A warning when the input segments are too long for the expected stretch.** A segment grows with the linear enlargement
+  of its region, so on input with strongly enlarged regions the straight edges between sparse vertices cross where polygons
+  are narrow, which leaves invalid output polygons and raises the error of the coarse levels of a ladder. `create_flow_cartogram`
+  and `CartogramWorkflow` now estimate the enlargement of every region from the ratio of its target to its current area and warn
+  when more than 0.5 % of the segments are expected to exceed 4 cells of the finest grid, with the `max_segment_length` to
+  pass to `densify_coverage`. On the 3,108 counties a ladder from 256 cells reaches 1.5 % mean error instead of 4.2 % with
+  segments of 1 km instead of 5 km, and the invalid polygons fall from 321 to 144; the bundled states do not warn.
 - **`load_us_census(level="county")` loads the 3,108 contiguous counties** (3,221 with `contiguous_only=False`) from a bundled ACS 2020
   snapshot, with the same population, race and poverty columns as the other levels plus `County Name`. The snapshot is
   coverage-simplified at 1000 m and densified to 5 km segments like the state and district levels.

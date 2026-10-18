@@ -10,9 +10,11 @@ from carto_flow.flow_cartogram import LadderSpec, MorphOptions, create_flow_cart
 from carto_flow.flow_cartogram.resolution import (
     MAX_RESOLUTION,
     MAX_START,
+    SEGMENT_CELLS,
     auto_levels,
     auto_start,
     check_resolution,
+    check_segments,
     smallest_resolution,
 )
 
@@ -118,7 +120,7 @@ def test_morph_warns_for_a_too_coarse_explicit_resolution(districts):
         create_flow_cartogram(
             districts,
             "Population",
-            options=MorphOptions(grid=LadderSpec(min_resolution=64, levels=2), show_progress=False),
+            options=MorphOptions(grid=LadderSpec(min_resolution=64, levels=6), show_progress=False),
         )
 
 
@@ -157,3 +159,92 @@ def test_ladder_warns_once(districts):
             options=MorphOptions(grid=LadderSpec(min_resolution=64, levels=3), show_progress=False),
         )
     assert sum("Grid resolution" in str(r.message) for r in record) == 1
+
+
+class TestSegmentCheck:
+    """Segments that will outgrow the finest grid when their region is enlarged are reported with a densification."""
+
+    @staticmethod
+    def _squares(n_vertices_per_side, n=40):
+        """n unit squares in a row whose sides have the given number of segments."""
+        import shapely
+
+        geoms = []
+        for k in range(n):
+            t = np.linspace(0.0, 1.0, n_vertices_per_side + 1)
+            ring = (
+                [(k + x, 0.0) for x in t]
+                + [(k + 1.0, y) for y in t[1:]]
+                + [(k + x, 1.0) for x in t[::-1][1:]]
+                + [(k, y) for y in t[::-1][1:-1]]
+            )
+            geoms.append(shapely.Polygon(ring))
+        return geoms
+
+    def test_sparse_vertices_in_a_region_that_grows_warn_with_a_suggestion(self):
+        geoms = self._squares(1)
+        targets = np.full(len(geoms), 1.0)
+        targets[0] = 100.0  # one region grows tenfold in length
+        with pytest.warns(UserWarning, match=r"Vertex density.*max_segment_length=(\d|\.)+"):
+            check_segments(geoms, targets, cell=0.05)
+
+    def test_suggested_length_keeps_the_longest_expected_segment_within_the_limit(self):
+        geoms = self._squares(1)
+        targets = np.full(len(geoms), 1.0)
+        targets[0] = 100.0
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            check_segments(geoms, targets, cell=0.05)
+        suggestion = float(str(caught[0].message).split("max_segment_length=")[1].rstrip(")."))
+        assert suggestion * 10.0 == pytest.approx(SEGMENT_CELLS * 0.05, rel=0.02)
+
+    def test_dense_vertices_do_not_warn(self):
+        geoms = self._squares(100)
+        targets = np.full(len(geoms), 1.0)
+        targets[0] = 100.0
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            check_segments(geoms, targets, cell=0.05)
+
+    def test_regions_that_keep_their_size_do_not_warn(self):
+        geoms = self._squares(1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            check_segments(geoms, np.ones(len(geoms)), cell=0.5)
+
+    def test_shrinking_regions_are_not_stretched(self):
+        geoms = self._squares(1)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            check_segments(geoms, np.full(len(geoms), 0.01), cell=0.5)
+
+    def test_a_few_long_segments_among_many_do_not_warn(self):
+        geoms = self._squares(1)
+        dense = self._squares(200, n=1)[0]
+        targets = np.ones(len(geoms) + 1)
+        targets[0] = 100.0
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            check_segments([dense, *geoms[:1]], targets[:2], cell=0.05)
+
+    def test_bundled_states_do_not_warn_and_districts_do(self, states, districts):
+        for gdf, expect in ((states, False), (districts, True)):
+            values = gdf["Population"].to_numpy(float)
+            targets = gdf.area.sum() * values / values.sum()
+            minx, miny, maxx, maxy = gdf.total_bounds
+            cell = 2 * max(maxx - minx, maxy - miny) / 2048
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+                check_segments(gdf.geometry, targets, cell)
+            assert any("Vertex density" in str(w.message) for w in caught) is expect
+
+    def test_ladder_reports_the_input_once_before_the_levels(self, districts):
+        with pytest.warns(UserWarning, match="Vertex density") as caught:
+            create_flow_cartogram(
+                districts,
+                "Population",
+                options=MorphOptions(
+                    grid=LadderSpec(min_resolution=64, levels=6), area_scale=1e-6, n_iter=2, show_progress=False
+                ),
+            )
+        assert sum("Vertex density" in str(w.message) for w in caught) == 1

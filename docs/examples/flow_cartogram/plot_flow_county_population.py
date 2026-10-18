@@ -24,11 +24,23 @@ import numpy as np
 import carto_flow.data as examples
 import carto_flow.flow_cartogram as flow
 from carto_flow import get_style
+from carto_flow.geo_utils import densify_coverage
 
 counties = examples.load_us_census(level="county", population=True, poverty=True)
 print(
     f"{len(counties)} counties, population from {counties['Population'].min():,.0f} to {counties['Population'].max():,.0f}"
 )
+
+# %%
+# Densify the boundaries
+# ----------------------
+# The morph moves vertices, and a county that grows tenfold in length stretches
+# its 5 km segments to 50 km. The straight edges between such sparse vertices cross
+# where a county is narrow, which leaves invalid polygons and raises the error of the
+# coarse levels. Densify to 1 km first; ``create_flow_cartogram`` warns with a
+# suggested length if the input is too sparse.
+
+counties = densify_coverage(counties, max_segment_length=1000)
 
 # %%
 # Compute the cartogram
@@ -38,7 +50,7 @@ print(
 # number of iterations of the ladder; counties need more than the default.
 
 # The run warns that the smallest counties are below one cell of every grid, and
-# that some output polygons are not valid; both are expected here and handled
+# that a few output polygons are not valid; both are expected here and handled
 # below, so the warnings are not repeated.
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", message="Grid resolution")

@@ -303,7 +303,12 @@ class CartogramWorkflow:
                 getattr(spec, "margin", 0.5),
                 getattr(spec, "square", False),
             )
-            check_segments(latest.geometry, np.sum(original_areas) * values / np.sum(values), max(grid.dx, grid.dy), 5)
+            check_segments(
+                latest.geometry,  # type: ignore[union-attr]
+                np.sum(original_areas) * values / np.sum(values),
+                max(grid.dx, grid.dy),
+                5,
+            )
 
         result = morph_geometries(
             geometries=latest.geometry,  # type: ignore[union-attr]

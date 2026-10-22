@@ -86,12 +86,13 @@ class Cartogram:
     invalid_regions : tuple of int
         Indices of the regions whose returned geometry is not a valid polygon (a self-intersecting
         boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
-        the vertices of the input (with ``validity="windows"``: the vertices of the input and the inserted ones),
-        unless ``repair=True``.
+        the vertices of the input (with ``validity="windows"`` or ``"quadtree"``: the vertices of the input and the
+        inserted ones), unless ``repair=True``.
     vertex_lineage : VertexLineage or None
-        With ``validity="windows"``, the vertices that the morph inserted into the segments of the geometries
-        (``None`` otherwise). :meth:`lift_coordinates` lifts the coordinates of an earlier state to the vertices of
-        the returned geometries. Landmarks, probes and ``coords`` are separate point sets and are not affected.
+        With ``validity="windows"`` or ``"quadtree"``, the vertices that the morph inserted into the segments of the
+        geometries, and with ``"quadtree"`` the inserted vertices it removed again (``None`` otherwise).
+        :meth:`lift_coordinates` lifts the coordinates of an earlier state to the vertices of the returned geometries.
+        Landmarks, probes and ``coords`` are separate point sets and are not affected.
     landmark_area_scaling : np.ndarray or None
         Property. With landmarks, the area scaling of the flow along the path of every landmark vertex (the
         exponential of the integral of the divergence of the velocity field along the path) for the returned
@@ -179,20 +180,26 @@ class Cartogram:
         )
         return self.best
 
-    def lift_coordinates(self, coords: Any) -> np.ndarray:
+    def lift_coordinates(self, coords: Any, state: int | None = None) -> np.ndarray:
         """Lift the vertex coordinates of an earlier state to the vertices of the returned geometries.
 
-        With ``validity="windows"`` the morph inserts vertices into segments, so the returned geometries have more
-        vertices than the input, and a snapshot recorded in the middle of a run (``snapshot_every``) keeps the
-        vertices it had when it was recorded. This method gives the coordinates of such a state at the vertices of
-        the returned geometries: every vertex that was inserted later lies at fraction ``t`` (0.5) between the two
-        older vertices of the same ring that it split, so the lifted shape is the same polyline as the original.
+        With ``validity="windows"`` or ``"quadtree"`` the morph inserts vertices into segments, so the returned
+        geometries have more vertices than the input, and a snapshot recorded in the middle of a run
+        (``snapshot_every``) keeps the vertices it had when it was recorded. This method gives the coordinates of such
+        a state at the vertices of the returned geometries: every vertex that was inserted later lies between the two
+        older vertices of the same ring that it split, so the lifted shape is the same polyline as the original. With
+        ``"quadtree"`` the vertices that were removed later are dropped from the lifted state. The returned best
+        iterate is the end of the lineage: a snapshot recorded after it is not a state of the lineage and cannot be
+        lifted.
 
         Parameters
         ----------
         coords : array-like of shape (n, 2)
             Coordinates in the order of ``shapely.get_coordinates`` of the geometries of the input of this morph or
             of one of its snapshots. The number of rows must be that of such a state.
+        state : int, optional
+            Number of insertion and removal rounds that the state has seen (0 for the input). Only needed when the
+            number of rows is shared by two states of the run, which removals can cause.
 
         Returns
         -------
@@ -203,15 +210,17 @@ class Cartogram:
         Raises
         ------
         ValueError
-            If the number of rows is not that of a state of the run.
+            If the number of rows is not that of a state of the run, or is that of several states and ``state`` is not
+            given.
 
         Notes
         -----
-        Without ``validity="windows"`` no vertex is inserted and the coordinates are returned unchanged. A cartogram
+        Without ``validity="windows"`` or ``"quadtree"`` no vertex is inserted and the coordinates are returned
+        unchanged. A cartogram
         of a ladder level starts from the output of the level before: lift through the levels in turn.
         """
         coords = np.asarray(coords, dtype=float)
-        return coords if self.vertex_lineage is None else self.vertex_lineage.lift(coords)
+        return coords if self.vertex_lineage is None else self.vertex_lineage.lift(coords, state)
 
     def get_errors(self, iteration: int | None = None) -> Optional["MorphErrors"]:
         """Get error metrics for a specific iteration.

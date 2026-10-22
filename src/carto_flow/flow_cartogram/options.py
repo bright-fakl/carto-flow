@@ -352,13 +352,26 @@ class MorphOptions:
       covers all regions together, so overlaps between neighbors are repaired too. The returned (best) iterate is
       tested as well. Regions that remain invalid, such as zero-width features of the input, are listed in
       ``Cartogram.invalid_regions``.
+    - ``"quadtree"``: quadtree windows. At every recompute of the velocity field a graded quadtree is built from the
+      density and its leaves are triangulated. Vertices are inserted where the region boundaries cross an edge of
+      the triangulation, so that every segment lies inside one triangle. During the window only the nodes of the
+      mesh are advected through the field, and the vertices move with the piecewise-affine map of the triangles, so
+      segments cannot cross as long as no triangle inverts. A leaf whose triangles invert is repaired. The mesh is
+      kept for the following windows and rebuilt after a repair or when a triangle has been squeezed to a small
+      fraction of its area. At each rebuild, inserted vertices that lie on the chord of their neighbors are removed
+      if the chord crosses no other segment. No input vertex is moved or removed. The output has more vertices than
+      the input and than with ``"windows"``, and ``Cartogram.vertex_lineage`` records insertions and removals. It
+      takes more time than ``"windows"``. Prefer it for input whose segments are much longer than the grid cells,
+      where the crossing test of ``"windows"`` cannot catch the crossings. ``"windows"`` and ``"quadtree"`` cannot
+      be combined.
 
-    The check needs the velocity fields of a span (stored as float32, bounded by ``validity_memory_mb``) and one
-    copy of the coordinates. The snapshots of ``snapshot_every`` keep the vertices they had when recorded.
+    ``"windows"`` needs the velocity fields of a span (stored as float32, bounded by ``validity_memory_mb``) and one
+    copy of the coordinates; ``"quadtree"`` stores no field, only the mesh and 36 bytes per vertex. The snapshots of
+    ``snapshot_every`` keep the vertices they had when recorded.
     """
 
     validity_check_every: int = 10
-    """Windows between two crossing tests with ``validity="windows"``.
+    """Windows between two crossing tests with ``validity="windows"``; not used by ``"quadtree"``.
 
     A longer span costs fewer tests and stores more fields. A test after every window finds crossings that
     disappear by themselves in the next window and costs accuracy and time, so the default of 10 windows is
@@ -367,6 +380,8 @@ class MorphOptions:
 
     validity_memory_mb: float = 128.0
     """Size in MB of the stored velocity fields at which ``validity="windows"`` ends a span early.
+
+    Not used by ``"quadtree"``, which stores no fields.
 
     The memory of the check is bounded by this value plus one field, whatever ``recompute_every`` and
     ``validity_check_every`` are. A field is stored for every window of the span; on a grid of 2048 cells two
@@ -673,8 +688,8 @@ class MorphOptions:
                 return "stall_min_efficiency must be a non-negative number"
 
         elif field_name == "validity":
-            if value not in ("none", "windows"):
-                return 'validity must be "none" or "windows"'
+            if value not in ("none", "windows", "quadtree"):
+                return 'validity must be "none", "windows" or "quadtree"'
         elif field_name == "validity_check_every":
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
                 return "validity_check_every must be a positive integer"

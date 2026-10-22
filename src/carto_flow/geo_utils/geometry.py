@@ -719,6 +719,58 @@ class GeometryCoordinateInfo:
         """
         self._cached_areas = None
 
+    def set_vertices(self, coords: np.ndarray, ring_offsets: np.ndarray) -> None:
+        """
+        Replace the coordinates by a set with other ring sizes (polygonal geometries only).
+
+        The rings keep their order and their geometry: only the number of vertices of a ring changes. The
+        reconstruction metadata and the ragged offsets follow the new ring sizes, without a round trip through
+        shapely, and the cached values are invalidated.
+
+        Parameters
+        ----------
+        coords : np.ndarray
+            New coordinates, shape (n_points, 2), rings in the order of the old ones.
+        ring_offsets : np.ndarray
+            Start of every ring in ``coords`` and the total length, shape (n_rings + 1,).
+
+        Raises
+        ------
+        ValueError
+            If the geometries are not polygons or multipolygons, or the number of rings changed.
+        """
+        ring_offsets = np.asarray(ring_offsets)
+        sizes = [int(size) for size in np.diff(ring_offsets)]
+        pos = 0
+
+        def ring_sizes(n_holes: int) -> tuple[int, list[int]]:
+            nonlocal pos
+            chunk = sizes[pos : pos + 1 + n_holes]
+            pos += 1 + n_holes
+            return chunk[0], chunk[1:]
+
+        metadata: list[dict] = []
+        for meta in self.metadata:
+            if meta["type"] == "Polygon":
+                exterior, holes = ring_sizes(len(meta["hole_sizes"]))
+                metadata.append({"type": "Polygon", "exterior_size": exterior, "hole_sizes": holes})
+            elif meta["type"] == "MultiPolygon":
+                parts = []
+                for part in meta["polygon_metadata"]:
+                    exterior, holes = ring_sizes(len(part["hole_sizes"]))
+                    parts.append({"type": "Polygon", "exterior_size": exterior, "hole_sizes": holes})
+                metadata.append({"type": "MultiPolygon", "polygon_metadata": parts})
+            else:
+                raise ValueError(f"set_vertices supports polygons and multipolygons, not {meta['type']}")
+        if pos != len(sizes) or self.ragged_offsets is None:
+            raise ValueError("the number of rings does not match the geometries")
+        self.coords = coords
+        self.metadata = metadata
+        self.ragged_offsets = (ring_offsets.astype(self.ragged_offsets[0].dtype), *self.ragged_offsets[1:])
+        self._ring_info = None
+        self._polygon_indices = None
+        self.invalidate_cache()
+
     def get_statistics(self) -> dict[str, Any]:
         """
         Get statistics about the geometry collection.

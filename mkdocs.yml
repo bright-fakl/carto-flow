@@ -58,6 +58,7 @@ nav:
             - Density: reference/flow_cartogram/density.md
             - Velocity: reference/flow_cartogram/velocity.md
             - Displacement: reference/flow_cartogram/displacement.md
+            - Validity: reference/flow_cartogram/validity.md
             - Anisotropy: reference/flow_cartogram/anisotropy.md
         - Analysis:
             - History: reference/flow_cartogram/history.md

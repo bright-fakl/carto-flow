@@ -228,6 +228,25 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 
 ---
 
+## Output Validity
+
+Vertices move individually through the velocity field, so the straight segment between two vertices is not the image of the segment. Where a region is squeezed into a strip narrower than the vertex spacing, the segments of its boundary can cross and the output polygon is invalid. `MorphOptions(validity="windows")` prevents this with a crossing test and a local repair; the default `validity="none"` does not check.
+
+A window is the span of iterations between two recomputes of the velocity field (`recompute_every`). Inside a window the field is fixed, so every vertex moves independently of all others, and the path of a vertex through the window is known. A span of `validity_check_every` windows (default 10) is checked at its end:
+
+1. A crossing test finds the segments that cross another segment. It covers all regions together, so a region that overlaps a neighbor is found as well as a self-intersection. Segments that share an end point, touch, or are identical (the two sides of a shared boundary) do not count.
+2. Every crossing segment is split at the midpoint of its chord at the start of the span. The two regions of a shared boundary get identical new vertices, and the original vertices are neither moved nor removed.
+3. The new vertices are moved through the recorded steps of the span with the stored fields, so they end on the path the flow gives them and not on the chord.
+4. The new segments are tested again around the crossings, for at most 14 rounds.
+
+The run is also checked when it ends (converged, stalled or at `n_iter`), whatever the position in the span, and the returned best iterate is checked through its own recorded path. The fields of a span are stored as float32; the span ends early when they reach `validity_memory_mb` (default 128), so the memory does not depend on `recompute_every` or `validity_check_every`. A check every window finds crossings that the next window removes, and costs time and accuracy; longer spans work because the repair acts back on the whole span.
+
+The output then has more vertices than the input. `Cartogram.vertex_lineage` records every insertion: a new vertex lies at fraction 0.5 between two older vertices of the same ring, and `Cartogram.lift_coordinates` lifts the coordinates of the input, or of a snapshot recorded earlier in the run, to the vertex set of the returned geometries. Snapshots keep the vertices they had when they were recorded, so snapshots of one run can have different numbers of vertices; the animation with `interpolation="linear"` needs equal vertex sets, so lift the coordinates first. Landmarks, probes and displacement coordinates are separate point sets and are not affected. Each level of a ladder is a separate morph that starts from the output of the level before, with its own lineage.
+
+The test detects crossings of segments only. A region that remains invalid is listed in `Cartogram.invalid_regions`: a fold that the flow itself creates (splitting does not remove it), zero-width features of the input, or a hole that leaves its shell without crossing it. The number of inserted vertices is capped at 1 % of the input vertices (at least 5,000) over the run; when the cap is reached the checks end.
+
+---
+
 ## MorphOptions
 
 `MorphOptions` ([options.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/options.py)) is a validated dataclass that controls all algorithm parameters.
@@ -245,6 +264,9 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `max_tol` | 0.1 | Convergence threshold for max area error (fraction) |
 | `stall_patience` | 4 | Stall after N consecutive cycles (windows) without progress; `None` = disabled |
 | `stall_min_efficiency` | 0.05 | Relative improvement of a violated component's cycle minimum per unit of distance moved (relative to the region size) that counts as progress |
+| `validity` | `"none"` | `"windows"`: validated windows, a crossing test and repair that keep the output polygons from self-intersecting (see [Output Validity](#output-validity)); `"none"`: no check |
+| `validity_check_every` | 10 | Windows between two crossing tests with `validity="windows"` |
+| `validity_memory_mb` | 128 | Size of the stored velocity fields at which a span ends early with `validity="windows"` |
 | `grid` | 256 | Grid points on the longest axis (int or `(nx, ny)`); `GridSpec(size, margin, square)` for one grid with margin and squareness; `LadderSpec(min_resolution, levels, margin, square)` or `"auto"` for a ladder of resolutions; a prebuilt `Grid`; `None` = 100 |
 | `grid_size`, `grid_margin`, `grid_square` | `None` | Deprecated; `grid_size` is an alias of `grid`, and margin (0.5) and squareness (`False`) belong in a `GridSpec` or `LadderSpec` |
 | `Dx`, `Dy` | 1.0 | Anisotropy factors for the FFT solver |
@@ -277,7 +299,7 @@ All three converge on the bundled states and congressional districts. None conve
 
 **Iterative approximation.** The algorithm does not solve the equilibrium condition exactly in one step. Convergence is reached after many iterations, and the result depends on `dt`, `n_iter`, `mean_tol`, and `max_tol`. Tight tolerances may require many iterations; loose tolerances may leave visible residual errors.
 
-**Vertex density.** Because the algorithm displaces vertices rather than edges, a straight segment with no interior vertices cannot bend during the morph, and the straight edges between sparse vertices cross where a polygon is narrow once the flow has stretched them. Coverage-simplified input (e.g. `simplify_coverage` at a coarse tolerance) can leave segments many grid cells long, which stalls convergence. `morph_geometries` warns when the longest input segment exceeds 4 grid cells. A segment also grows with its region: the length of a segment scales with the square root of the ratio of the region's target area to its current area. A flow cartogram or a ladder (`create_flow_cartogram`, `CartogramWorkflow`) therefore warns up front when more than 0.5 % of the segments are expected to exceed 4 cells of the finest grid once their regions are enlarged, and the warning gives the `max_segment_length` that keeps the largest enlargement within 4 cells. Densify first with `carto_flow.geo_utils.densify_coverage` if you see either warning. The bundled states do not trigger it; the bundled districts and counties (densified to 5 km) do, and densifying them to 1 km (`load_us_census(max_segment_length=1000)`) lowers the number of invalid output polygons and the error of the coarse levels.
+**Vertex density.** Because the algorithm displaces vertices rather than edges, a straight segment with no interior vertices cannot bend during the morph, and the straight edges between sparse vertices cross where a polygon is narrow once the flow has stretched them. Coverage-simplified input (e.g. `simplify_coverage` at a coarse tolerance) can leave segments many grid cells long, which stalls convergence. `morph_geometries` warns when the longest input segment exceeds 4 grid cells. A segment also grows with its region: the length of a segment scales with the square root of the ratio of the region's target area to its current area. A flow cartogram or a ladder (`create_flow_cartogram`, `CartogramWorkflow`) therefore warns up front when more than 0.5 % of the segments are expected to exceed 4 cells of the finest grid once their regions are enlarged, and the warning gives the `max_segment_length` that keeps the largest enlargement within 4 cells. Densify first with `carto_flow.geo_utils.densify_coverage` if you see either warning; `validity="windows"` repairs the crossings that remain (see [Output Validity](#output-validity)). The bundled states do not trigger it; the bundled districts and counties (densified to 5 km) do, and densifying them to 1 km (`load_us_census(max_segment_length=1000)`) lowers the number of invalid output polygons and the error of the coarse levels.
 
 ---
 

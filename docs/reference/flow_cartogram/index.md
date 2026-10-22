@@ -38,6 +38,7 @@ graph TD
 | **[Density](density.md)** | Density field computation and density modulators |
 | **[Velocity](velocity.md)** | Velocity field computation using FFTW |
 | **[Displacement](displacement.md)** | Coordinate displacement with numba |
+| **[Validity](validity.md)** | Validated windows: crossing repair and the vertex lineage |
 | **[Anisotropy](anisotropy.md)** | Velocity modulator system (`BoundaryDecay`, `BoundaryNormalDecay`, `DirectionalTensor`, …) |
 
 ## Analysis

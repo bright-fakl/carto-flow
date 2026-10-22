@@ -25,6 +25,7 @@ carto-flow transforms geographic vector data into cartograms — maps where regi
 - Diffusion-based flow cartogram morphing with FFT-accelerated Poisson solver
 - Multi-resolution processing for large datasets
 - Validated windows (`validity="windows"`): flow cartogram output polygons that do not self-intersect
+- Quadtree windows (`validity="quadtree"`): the same guarantee from a piecewise-affine map, for input with long segments
 - Force-based symbol placement with overlap resolution and topology preservation
 - Isohedral tile support for custom symbol shapes, and tile-count maps (mosaic layout)
 - Voronoi cartograms with exact and raster backends and topology repair

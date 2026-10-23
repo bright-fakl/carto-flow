@@ -230,7 +230,7 @@ class Cartogram:
         coords = np.asarray(coords, dtype=float)
         return coords if self.vertex_lineage is None else self.vertex_lineage.lift(coords, state)
 
-    def lift_geometries(self, geometries: Any) -> np.ndarray:
+    def lift_geometries(self, geometries: Any, state: int | None = None) -> np.ndarray:
         """Lift geometries of an earlier state to the vertex set and ring structure of the returned geometries.
 
         The geometries are those of the input of this morph or of one of its snapshots, and have the number of
@@ -245,6 +245,9 @@ class Cartogram:
         geometries : array-like of shapely geometries
             The geometries of the input or of a snapshot (``snapshot.geometry``). The number of vertices must be that
             of a state of the run, as for :meth:`lift_coordinates`.
+        state : int, optional
+            Number of insertion and removal rounds that the state has seen (0 for the input), as for
+            :meth:`lift_coordinates`. Only needed when the number of vertices is shared by two states of the run.
 
         Returns
         -------
@@ -256,11 +259,13 @@ class Cartogram:
         ------
         ValueError
             If the number of geometries or of rings differs from the returned geometries, or the number of vertices is
-            not that of a state of the run.
+            not that of a state of the run (or is that of several states and ``state`` is not given).
 
         Notes
         -----
-        Without a vertex lineage the geometries are returned unchanged.
+        Without a vertex lineage the geometries are returned unchanged. With ``validity="quadtree"`` the vertices that
+        the morph removed later are dropped, and a snapshot recorded after the returned best iterate cannot be lifted
+        (the lineage ends at the best iterate).
         """
         geometries = np.asarray(geometries, dtype=object)
         if self.vertex_lineage is None:
@@ -273,7 +278,7 @@ class Cartogram:
             raise ValueError(f"{len(geometries)} geometries given; the cartogram has {len(final)}")
         if not np.array_equal(_ring_counts(geometries), _ring_counts(final)):
             raise ValueError("The geometries do not have the parts and rings of the returned geometries")
-        lifted = self.lift_coordinates(shapely.get_coordinates(geometries))
+        lifted = self.lift_coordinates(shapely.get_coordinates(geometries), state)
         return np.asarray(shapely.set_coordinates(final.copy(), lifted), dtype=object)
 
     def get_errors(self, iteration: int | None = None) -> Optional["MorphErrors"]:

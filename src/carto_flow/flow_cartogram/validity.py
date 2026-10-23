@@ -141,6 +141,26 @@ class VertexLineage:
         """Number of vertices after the last round."""
         return self._counts()[-1]
 
+    def state_at(self, n_vertices: int, iteration: int) -> int:
+        """
+        The state of a snapshot with ``n_vertices`` vertices that was recorded after ``iteration`` iterations.
+
+        The number of vertices identifies the state, unless removals gave two states the same number: then it is
+        the last of them whose rounds all ran at or before the iteration. The result is the argument ``state`` of
+        :meth:`lift`.
+
+        Raises
+        ------
+        ValueError
+            If no state of the run has that many vertices (at that iteration).
+        """
+        states = [s for s, count in enumerate(self._counts()) if count == n_vertices]
+        if len(states) > 1:
+            states = [s for s in states if all(r.iteration <= iteration for r in self.rounds[:s])][-1:]
+        if not states:
+            raise ValueError(f"{n_vertices} vertices is not a state of this run at iteration {iteration}")
+        return states[0]
+
     def lift(self, values: np.ndarray, state: int | None = None) -> np.ndarray:
         """
         Lift values at the vertices of an earlier state to the vertices after the last round.

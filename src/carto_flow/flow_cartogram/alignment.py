@@ -46,7 +46,7 @@ def _input_positions(chain: list[Cartogram], n_input: int, n_output: int, index:
     position = np.arange(n_input, dtype=float)
     for cartogram in chain:
         try:
-            position = cartogram.lift_coordinates(position)
+            position = cartogram.lift_coordinates(position, state=0)
         except ValueError as error:
             raise ValueError(
                 f"Source {index} is not a morph of the input shared by the other sources, or of its whole chain "

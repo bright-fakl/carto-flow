@@ -79,7 +79,9 @@ Releases before 2.0.0 have no changelog entry; see the
   without lineage) on the union of their vertex positions along the input rings, so that `animate_geometry_keyframes` can
   interpolate between them; every output keeps its shape, area and validity. `animate_geometry_keyframes` raises a
   `ValueError` that points to both when the precomputed animation of colored polygons gets keyframes with different numbers
-  of vertices (it raised a broadcast error).
+  of vertices (it raised a broadcast error). With `validity="quadtree"` the lineage ends at the returned best iterate:
+  `lift_geometries` takes the `state` like `lift_coordinates`, the animation with `interpolation="linear"` ends at the best
+  iterate, and `through="last"` raises a `ValueError` that names the first snapshot after it.
 - **`PlotStyle` sets the look of the flow plots and animations in one place.** The surface
   and text colors, the boundary, one palette per data role (sequential, diverging,
   categorical), the color scale and the colorbar are fields of a frozen `PlotStyle`, with

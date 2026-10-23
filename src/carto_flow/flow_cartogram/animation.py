@@ -808,12 +808,18 @@ def _snapshots_differ_in_vertices(cartogram: Any, snapshots: Any) -> bool:
 def _lift_snapshot(cartogram: Any, snapshot: Any) -> Any:
     """Geometry of the snapshot on the vertex set of the returned geometries of the cartogram."""
     try:
-        return cartogram.lift_geometries(snapshot.geometry)
+        options = getattr(cartogram, "options", None)
+        if getattr(options, "validity", None) == "quadtree" and snapshot.iteration > cartogram.best_iteration:
+            raise ValueError("the vertex lineage ends at the best iterate, which is before this snapshot")
+        geometry = np.asarray(snapshot.geometry, dtype=object)
+        state = cartogram.vertex_lineage.state_at(len(shapely.get_coordinates(geometry)), snapshot.iteration)
+        return cartogram.lift_geometries(geometry, state)
     except ValueError as error:
         raise ValueError(
             f"The snapshot of iteration {snapshot.iteration} cannot be lifted to the vertices of the returned "
             f"geometries ({error}); the animation with interpolation='linear' needs equal vertex sets. "
-            "Use interpolation='nearest'."
+            "Use interpolation='nearest'"
+            + (" or through='best'." if snapshot.iteration > cartogram.best_iteration else ".")
         ) from error
 
 
@@ -947,7 +953,8 @@ def animate_morph_history(
     With ``validity="windows"`` snapshots can have different numbers of vertices (``Cartogram.vertex_lineage``). The
     animation with ``interpolation="linear"`` then lifts every snapshot to the vertices of the returned geometries
     (:meth:`Cartogram.lift_geometries`); a snapshot that cannot be lifted raises a ``ValueError``.
-    ``interpolation="nearest"`` shows the snapshots as recorded.
+    ``interpolation="nearest"`` shows the snapshots as recorded. With ``validity="quadtree"`` the lineage ends at the
+    returned best iterate, so the snapshots recorded after it (``through="last"``) cannot be lifted.
 
     Examples
     --------

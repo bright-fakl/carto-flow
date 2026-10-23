@@ -55,6 +55,16 @@ Releases before 2.0.0 have no changelog entry; see the
   of an earlier snapshot, to the vertex set of the returned geometries. Regions that stay invalid (a fold of the flow itself,
   zero-width features, a hole that leaves its shell) are listed in `Cartogram.invalid_regions`. The default `validity="none"`
   changes nothing. The crossing test is public as `carto_flow.geo_utils.find_crossing_segments` and `find_crossing_pairs`.
+- **Animations of cartograms with inserted vertices.** With `validity="windows"` the snapshots of a run and the outputs of
+  different morphs have different vertices, which linear interpolation cannot handle. `animate_morph_history(...,
+  interpolation="linear")` now lifts every snapshot to the vertices of the returned geometries when the snapshots have
+  different numbers of vertices, and raises a `ValueError` that names a snapshot that cannot be lifted. `Cartogram.lift_geometries`
+  lifts the geometries of the input or of a snapshot to the vertex set and ring structure of the returned geometries.
+  `align_vertices(sources)` re-samples the outputs of two or more morphs of the same input (cartograms or workflows, with or
+  without lineage) on the union of their vertex positions along the input rings, so that `animate_geometry_keyframes` can
+  interpolate between them; every output keeps its shape, area and validity. `animate_geometry_keyframes` raises a
+  `ValueError` that points to both when the precomputed animation of colored polygons gets keyframes with different numbers
+  of vertices (it raised a broadcast error).
 - **`PlotStyle` sets the look of the flow plots and animations in one place.** The surface
   and text colors, the boundary, one palette per data role (sequential, diverging,
   categorical), the color scale and the colorbar are fields of a frozen `PlotStyle`, with

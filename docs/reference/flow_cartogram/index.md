@@ -55,6 +55,7 @@ graph TD
 |------------|-------------|
 | **[Visualization](visualization.md)** | Plotting utilities for results |
 | **[Animation](animation.md)** | Animation generation utilities |
+| **[Alignment](alignment.md)** | Common vertex sets for the outputs of several morphs |
 | **[Serialization](serialization.md)** | Export and save/load utilities |
 
 ## Workflow Patterns

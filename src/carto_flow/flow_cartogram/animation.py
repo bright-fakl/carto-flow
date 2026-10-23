@@ -35,6 +35,7 @@ from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
+import shapely
 from matplotlib.animation import FuncAnimation
 from matplotlib.colors import Normalize
 
@@ -126,7 +127,19 @@ def _interpolate_rings_to_path(rings_a: list[np.ndarray], rings_b: list[np.ndarr
     Performs pure numpy linear interpolation — no shapely object creation.
     Assumes rings_a and rings_b have the same structure (same ring count and
     vertex counts), which holds when both come from the same base geometry.
+
+    Raises
+    ------
+    ValueError
+        If the keyframes differ in the number of rings or vertices.
     """
+    if len(rings_a) != len(rings_b) or any(a.shape != b.shape for a, b in zip(rings_a, rings_b, strict=True)):
+        raise ValueError(
+            "Linear interpolation needs keyframes with the same vertices, but the keyframes have different "
+            "numbers of vertices or rings (a flow cartogram with validity='windows' inserts vertices). Give the "
+            "keyframes equal vertex sets with carto_flow.flow_cartogram.align_vertices, or lift the geometries of "
+            "one cartogram with Cartogram.lift_geometries; interpolation='nearest' needs neither."
+        )
     return _rings_to_mpl_path([a * (1.0 - t) + b * t for a, b in zip(rings_a, rings_b, strict=False)])
 
 
@@ -780,6 +793,30 @@ def _resolve_fill(facecolor: Any, label: str | None, sources: list, builtins: An
     return facecolor, label
 
 
+def _snapshots_differ_in_vertices(cartogram: Any, snapshots: Any) -> bool:
+    """Whether the cartogram has a vertex lineage and its snapshots have different numbers of vertices."""
+    if getattr(cartogram, "vertex_lineage", None) is None:
+        return False
+    counts = {
+        int(shapely.get_num_coordinates(np.asarray(s.geometry, dtype=object)).sum())
+        for s in snapshots
+        if getattr(s, "geometry", None) is not None
+    }
+    return len(counts) > 1
+
+
+def _lift_snapshot(cartogram: Any, snapshot: Any) -> Any:
+    """Geometry of the snapshot on the vertex set of the returned geometries of the cartogram."""
+    try:
+        return cartogram.lift_geometries(snapshot.geometry)
+    except ValueError as error:
+        raise ValueError(
+            f"The snapshot of iteration {snapshot.iteration} cannot be lifted to the vertices of the returned "
+            f"geometries ({error}); the animation with interpolation='linear' needs equal vertex sets. "
+            "Use interpolation='nearest'."
+        ) from error
+
+
 @deprecated_params(
     facecolor="color_by", legend="colorbar", legend_label="colorbar_label", legend_kwargs="colorbar_kwargs"
 )
@@ -907,6 +944,11 @@ def animate_morph_history(
     Color limits are computed globally across all snapshots to ensure
     consistent coloring throughout the animation.
 
+    With ``validity="windows"`` snapshots can have different numbers of vertices (``Cartogram.vertex_lineage``). The
+    animation with ``interpolation="linear"`` then lifts every snapshot to the vertices of the returned geometries
+    (:meth:`Cartogram.lift_geometries`); a snapshot that cannot be lifted raises a ``ValueError``.
+    ``interpolation="nearest"`` shows the snapshots as recorded.
+
     Examples
     --------
     >>> workflow = CartogramWorkflow(gdf, 'pop')
@@ -957,9 +999,11 @@ def animate_morph_history(
         "max_error_pct": [],
     }
 
+    lift = interpolation == "linear" and _snapshots_differ_in_vertices(cartogram, snapshots)
+
     for snap in snapshots:
         if hasattr(snap, "geometry") and snap.geometry is not None:
-            geometries.append(snap.geometry)
+            geometries.append(_lift_snapshot(cartogram, snap) if lift else snap.geometry)
             variables["iteration"].append(snap.iteration)
             # Extract errors from the MorphErrors object
             if snap.errors is not None:
@@ -1449,7 +1493,11 @@ def animate_geometry_keyframes(
     interpolation : str, default="linear"
         Interpolation method between keyframes:
         - "nearest": Jump between keyframes (no interpolation)
-        - "linear": Linearly interpolate geometry vertices between keyframes
+        - "linear": Linearly interpolate geometry vertices between keyframes. The keyframes need the same vertices:
+          the precomputed animation of polygons with colors raises a ``ValueError`` for keyframes with different
+          numbers of vertices, the other animations resample the rings by index, which misaligns the vertices. Cartograms of a flow morph with
+          ``validity="windows"`` have inserted vertices: see :func:`align_vertices` and
+          :meth:`Cartogram.lift_geometries`.
     position_mapper : callable, optional
         Function to control animation timing. Maps progress [0,1] to position
         in keyframe space [0, n_keyframes-1]. Use linear_over() factory:

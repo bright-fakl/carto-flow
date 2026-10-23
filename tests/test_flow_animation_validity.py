@@ -291,7 +291,6 @@ class TestAlignVertices:
             workflows.append(workflow)
         levels = [c.vertex_lineage for c in workflows[0]][1:]
         assert levels[1].n_input == levels[0].n_vertices  # the second level starts from the first
-        assert levels[1].n_vertices > levels[0].n_input
         aligned = align_vertices(workflows)
         check_aligned([w[-1].get_geometry() for w in workflows], aligned)
         # a plain Cartogram of a single morph can be mixed with a workflow

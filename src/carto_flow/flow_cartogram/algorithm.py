@@ -54,7 +54,8 @@ from .options import MorphOptions, MorphStatus
 from .recompute import score_rose, should_recompute
 from .stall import StallMonitor, cycle_length, region_size
 from .stepsize import DEAD_BAND_FRACTION, StepController
-from .validity import ValidatedWindows
+from .validity import ValidatedWindows, ValidityMethod
+from .validity_quadtree import QuadtreeWindows
 from .velocity import VelocityComputerFFTW
 
 __all__ = [
@@ -401,12 +402,12 @@ def morph_geometries(
     # Resolve grid using options
     grid = options.get_grid(options._calculate_bounds_from_geometries(geometries))
 
-    # Validated windows (validity="windows"; remove this and the calls of `windows` below to disable)
-    windows = (
-        ValidatedWindows(options.validity_check_every, options.validity_memory_mb, len(flat_geoms.coords))
-        if options.validity == "windows"
-        else None
-    )
+    # Validity method (validity="windows" or "quadtree"; remove this and the calls of `windows` below to disable)
+    windows: ValidityMethod | None = None
+    if options.validity == "windows":
+        windows = ValidatedWindows(options.validity_check_every, options.validity_memory_mb, len(flat_geoms.coords))
+    elif options.validity == "quadtree":
+        windows = QuadtreeWindows(len(flat_geoms.coords))
 
     # Warn if input geometries have segments too long for the grid to bend.
     # This algorithm moves vertices, not edges, so a straight segment with no
@@ -608,6 +609,8 @@ def morph_geometries(
             # 1b. Optional density modulation (e.g., border extension)
             if isinstance(options.density_mod, DensityModulator):
                 rho = options.density_mod(rho, grid, geom_mask, target_density)
+            if windows is not None:
+                windows.set_density(rho)
 
             # 1c. Compute baseline velocity field
             if _pt is not None:
@@ -666,18 +669,21 @@ def morph_geometries(
         if windows is not None:
             windows.record_step(dt_prime)
 
-        # 2a. Displace geometry coordinates using the velocity field
-        flat_geoms.coords = displace_coords_numba(
-            flat_geoms.coords,
-            grid.x_coords,
-            grid.y_coords,
-            vx,
-            vy,
-            dt_prime,
-            grid.dx,
-            grid.dy,
-            use_parallel=False,
-        )
+        # 2a. Displace geometry coordinates using the velocity field (quadtree windows: the map of the advected mesh)
+        if windows is not None and windows.displaces_geometry:
+            flat_geoms.coords = windows.displace(grid, vx, vy, dt_prime)
+        else:
+            flat_geoms.coords = displace_coords_numba(
+                flat_geoms.coords,
+                grid.x_coords,
+                grid.y_coords,
+                vx,
+                vy,
+                dt_prime,
+                grid.dx,
+                grid.dy,
+                use_parallel=False,
+            )
         flat_geoms.invalidate_cache()
 
         # 2b. Displace landmarks if provided (using same velocity field)
@@ -807,8 +813,8 @@ def morph_geometries(
             else MorphStatus.RUNNING
         )
 
-        # Validated windows: a run that ends here is checked and repaired, the best iterate too, whatever the
-        # position in the span. The repair changes the areas slightly.
+        # Validity method: a run that ends here is checked (validated windows: repaired, the best iterate too,
+        # whatever the position in the span; the repair changes the areas slightly).
         if windows is not None and (converged or stalled or (step + 1) == options.n_iter):
             best_state = windows.finish(flat_geoms, grid, best_state, step + 1)
             current_areas = flat_geoms.compute_areas(use_parallel=False)
@@ -858,6 +864,8 @@ def morph_geometries(
             b_probe_xy,
             b_probe_log,
         ) = best_state
+        if windows is not None:
+            windows.restore_best(flat_geoms, b_coords)
         flat_geoms.coords = b_coords
         flat_geoms.invalidate_cache()
         if windows is not None:

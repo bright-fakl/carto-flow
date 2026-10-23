@@ -22,7 +22,7 @@ from carto_flow.flow_cartogram import (
 )
 from carto_flow.flow_cartogram.animation import animate_geometry_keyframes, animate_morph_history
 from carto_flow.flow_cartogram.history import CartogramSnapshot, History
-from carto_flow.flow_cartogram.validity import InsertionRound, VertexLineage
+from carto_flow.flow_cartogram.validity import InsertionRound, RemovalRound, VertexLineage
 
 matplotlib.use("Agg")
 
@@ -184,11 +184,13 @@ class TestAnimateMorphHistory:
         snapshots = result.snapshots.snapshots
         broken = snapshots[1]
         original = result.lift_geometries
+        calls = []
 
-        def fail(geometries):
-            if geometries is broken.geometry:
+        def fail(*args):
+            calls.append(args)
+            if len(calls) == 2:  # the second snapshot
                 raise ValueError("no such state")
-            return original(geometries)
+            return original(*args)
 
         monkeypatch.setattr(result, "lift_geometries", fail)
         with pytest.raises(ValueError, match=rf"iteration {broken.iteration}.*interpolation='nearest'"):
@@ -330,3 +332,152 @@ class TestAlignVertices:
         check_aligned([cart.get_geometry(), moved.get_geometry()], aligned)
         assert [g.geom_type for g in aligned[1]] == ["Polygon", "MultiPolygon"]
         assert count(aligned[0]) == 23
+
+
+# ----------------------------------------------------------------------------
+# validity="quadtree": removals, states shared by two vertex counts, the lineage ends at the best iterate
+# ----------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def quadtree():
+    """A quadtree morph with snapshots before and after the best iterate, and a second one with other values."""
+    polygons, values = strip_scene(11)
+    _, first = run(11, validity="quadtree", snapshot_every=5)
+    _, second = run(11, values[::-1].copy(), validity="quadtree")
+    _, plain = run(11, values[::-1].copy())
+    return polygons, values, first, second, plain
+
+
+class TestStateAt:
+    @pytest.fixture
+    def lineage(self):
+        # 3 vertices, one inserted at iteration 5 (4), then removed again at iteration 8 (3)
+        insertion = InsertionRound(new_index=np.array([1]), left=np.array([0]), fraction=0.5, iteration=5)
+        removal = RemovalRound(kept_index=np.array([0, 2, 3]), iteration=8)
+        return VertexLineage(n_input=3, rounds=(insertion, removal))
+
+    def test_a_shared_count_is_resolved_by_the_iteration(self, lineage):
+        assert [lineage.state_at(3, it) for it in (0, 4, 6, 7, 8, 20)] == [0, 0, 0, 0, 2, 2]
+
+    def test_a_unique_count_gives_its_state(self, lineage):
+        assert lineage.state_at(4, 5) == 1
+        assert lineage.state_at(4, 100) == 1
+
+    def test_unknown_counts_raise(self, lineage):
+        with pytest.raises(ValueError, match="not a state"):
+            lineage.state_at(5, 10)
+
+
+class TestQuadtreeLifting:
+    def test_the_lineage_has_insertions_and_removals(self, quadtree):
+        _, _, first, second, _ = quadtree
+        for result in (first, second):
+            kinds = {type(r) for r in result.vertex_lineage.rounds}
+            assert kinds == {InsertionRound, RemovalRound}
+
+    def test_snapshots_up_to_the_best_iterate_lift_to_the_returned_vertex_set(self, quadtree):
+        result = quadtree[2]
+        before = [s for s in result.snapshots.snapshots if s.iteration <= result.best_iteration]
+        assert len({count(s.geometry) for s in before}) > 1
+        for snapshot in before:
+            state = result.vertex_lineage.state_at(count(snapshot.geometry), snapshot.iteration)
+            lifted = result.lift_geometries(snapshot.geometry, state)
+            assert count(lifted) == count(result.get_geometry())
+            # the vertices that were removed later lie within the removal tolerance of the chord of their neighbors
+            area = shapely.area(np.asarray(snapshot.geometry, dtype=object))
+            assert np.abs(shapely.area(lifted) - area).max() < 1e-3 * area.sum()
+
+    def test_a_snapshot_after_the_best_iterate_is_not_a_state_of_the_lineage(self, quadtree):
+        result = quadtree[2]
+        after = [s for s in result.snapshots.snapshots if s.iteration > result.best_iteration]
+        counts = set(result.vertex_lineage._counts())
+        # a snapshot whose vertex count is that of no state cannot be lifted (one that happens to have the count of a
+        # state is not detectable by its count, so the scene decides whether there is any)
+        for snapshot in after:
+            if count(snapshot.geometry) not in counts:
+                with pytest.raises(ValueError, match="not a state"):
+                    result.lift_geometries(snapshot.geometry)
+
+    def test_a_state_that_does_not_match_raises(self, quadtree):
+        polygons, _, result, _, _ = quadtree
+        with pytest.raises(ValueError, match="not the state"):
+            result.lift_geometries(polygons, state=1)
+
+    def test_the_input_lifts_with_the_same_shape(self, quadtree):
+        polygons, _, result, _, _ = quadtree
+        lifted = result.lift_geometries(polygons, state=0)
+        assert count(lifted) == count(result.get_geometry())
+        for original, new in zip(polygons, lifted, strict=True):
+            assert new.symmetric_difference(original).area == pytest.approx(0.0, abs=1e-9)
+
+
+class TestQuadtreeAnimation:
+    def collect(self, monkeypatch):
+        seen = []
+        fast = animation_module._fast_precompute_paths
+        monkeypatch.setattr(
+            animation_module,
+            "_fast_precompute_paths",
+            lambda gdfs, *args: seen.append([count(g.geometry) for g in gdfs]) or fast(gdfs, *args),
+        )
+        return seen
+
+    def test_linear_ends_at_the_best_iterate_and_has_equal_vertex_sets(self, quadtree, monkeypatch):
+        _, values, result, _, _ = quadtree
+        seen = self.collect(monkeypatch)
+        animate_morph_history(result, interpolation="linear", duration=1, fps=5, facecolor=values)
+        n_final = count(result.get_geometry())
+        (counts,) = seen
+        assert counts == [n_final] * len(result.snapshots.through_best())
+        assert len(counts) < len(result.snapshots.snapshots)
+
+    def test_linear_without_colors_builds_the_animation(self, quadtree):
+        animate_morph_history(quadtree[2], interpolation="linear", duration=1, fps=5)
+
+    def test_snapshots_after_the_best_iterate_cannot_be_lifted(self, quadtree):
+        _, values, result, _, _ = quadtree
+        first_after = next(s for s in result.snapshots.snapshots if s.iteration > result.best_iteration)
+        with pytest.raises(ValueError, match=rf"iteration {first_after.iteration}.*lineage ends.*through='best'"):
+            animate_morph_history(result, interpolation="linear", through="last", duration=1, fps=5, facecolor=values)
+
+    def test_nearest_can_continue_after_the_best_iterate(self, quadtree, monkeypatch):
+        _, values, result, _, _ = quadtree
+        seen = self.collect(monkeypatch)
+        animate_morph_history(result, interpolation="nearest", through="last", duration=1, fps=5, facecolor=values)
+        assert len(seen[0]) == len(result.snapshots.snapshots)
+
+
+class TestQuadtreeAlignment:
+    def test_two_morphs_with_different_inserted_and_removed_vertices(self, quadtree):
+        _, _, first, second, _ = quadtree
+        assert count(first.get_geometry()) != count(second.get_geometry())
+        aligned = align_vertices([first, second])
+        check_aligned([first.get_geometry(), second.get_geometry()], aligned)
+        assert shapely.is_valid(aligned[0]).all()
+        assert shapely.is_valid(aligned[1]).all()
+        frames = [gpd.GeoDataFrame({"v": np.ones(len(g))}, geometry=list(g)) for g in aligned]
+        animate_geometry_keyframes(frames, interpolation="linear", facecolor="v", duration=1, fps=5)
+
+    def test_a_morph_without_lineage_and_a_windows_morph_mix_with_quadtree(self, quadtree):
+        _, _, first, _, plain = quadtree
+        _, windows = run(11, strip_scene(11)[1][::-1].copy(), validity="windows")
+        aligned = align_vertices([plain, first, windows])
+        check_aligned([plain.get_geometry(), first.get_geometry(), windows.get_geometry()], aligned)
+
+    def test_a_ladder_workflow_is_chained_through_its_levels(self):
+        polygons, values = strip_scene(31)
+        gdf = gpd.GeoDataFrame({"v": values, "w": values[::-1].copy()}, geometry=polygons)
+        options = MorphOptions(
+            grid=64, n_iter=60, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="quadtree"
+        )
+        workflows = []
+        for column in ("v", "w"):
+            workflow = CartogramWorkflow(gdf, column, validate=False)
+            workflow.morph(options=options)
+            workflow.morph()
+            workflows.append(workflow)
+        levels = [c.vertex_lineage for c in workflows[0]][1:]
+        assert levels[1].n_input == levels[0].n_vertices
+        aligned = align_vertices(workflows)
+        check_aligned([w[-1].get_geometry() for w in workflows], aligned)

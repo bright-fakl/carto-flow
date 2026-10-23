@@ -98,7 +98,7 @@ class TestOptions:
     @pytest.mark.parametrize(
         ("name", "value"),
         [
-            ("validity", "quadtree"),
+            ("validity", "mosaic"),
             ("validity", True),
             ("validity", None),
             ("validity_check_every", 0),

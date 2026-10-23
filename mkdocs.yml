@@ -59,6 +59,8 @@ nav:
             - Velocity: reference/flow_cartogram/velocity.md
             - Displacement: reference/flow_cartogram/displacement.md
             - Validity: reference/flow_cartogram/validity.md
+            - Validity quadtree: reference/flow_cartogram/validity_quadtree.md
+            - Quadtree mesh: reference/flow_cartogram/quadtree_mesh.md
             - Anisotropy: reference/flow_cartogram/anisotropy.md
         - Analysis:
             - History: reference/flow_cartogram/history.md

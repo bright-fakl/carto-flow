@@ -55,6 +55,21 @@ Releases before 2.0.0 have no changelog entry; see the
   of an earlier snapshot, to the vertex set of the returned geometries. Regions that stay invalid (a fold of the flow itself,
   zero-width features, a hole that leaves its shell) are listed in `Cartogram.invalid_regions`. The default `validity="none"`
   changes nothing. The crossing test is public as `carto_flow.geo_utils.find_crossing_segments` and `find_crossing_pairs`.
+- **`MorphOptions(validity="quadtree")` keeps the flow cartogram's output polygons from self-intersecting with a piecewise-affine map.**
+  At every recompute of the velocity field (a window) a graded quadtree is built from the density and its leaves are triangulated as
+  fans. Vertices are inserted where region boundaries cross an edge of the triangulation, so that every segment lies inside one
+  triangle; during the window only the nodes of the mesh are advected through the field and the vertices move with the affine map of
+  their triangle. Segments cannot cross while no triangle is inverted, so input whose segments are much longer than the grid cells,
+  where the crossing test of `validity="windows"` cannot catch the crossings, stays valid. The mesh is kept for the following windows
+  and rebuilt after a repair or when a triangle has shrunk to a small fraction of its area. A leaf squeezed into a sliver with a
+  reflex corner has its fan center moved to the centroid of its kernel, the nodes of a leaf that still inverts are limited, and an
+  inversion that survives is counted and reported with a warning at the end of the run. Inserted vertices that lie on the chord of
+  their neighbors are removed again when the chord crosses no segment and no small ring lies within the tolerance (a heuristic that
+  looks at rings of at most 64 vertices). No input vertex is moved or removed; the output has more vertices than with
+  `validity="windows"` and the method takes more time. It stores no velocity fields, so `validity_check_every` and
+  `validity_memory_mb` apply to `"windows"` only. `Cartogram.vertex_lineage` now records removals as well as insertions
+  (`RemovalRound`), `VertexLineage.lift` takes a `state` when a vertex count is shared by two states of the run, and the returned
+  best iterate keeps its own vertex set, with the lineage ending at it.
 - **Animations of cartograms with inserted vertices.** With `validity="windows"` the snapshots of a run and the outputs of
   different morphs have different vertices, which linear interpolation cannot handle. `animate_morph_history(...,
   interpolation="linear")` now lifts every snapshot to the vertices of the returned geometries when the snapshots have
@@ -64,7 +79,9 @@ Releases before 2.0.0 have no changelog entry; see the
   without lineage) on the union of their vertex positions along the input rings, so that `animate_geometry_keyframes` can
   interpolate between them; every output keeps its shape, area and validity. `animate_geometry_keyframes` raises a
   `ValueError` that points to both when the precomputed animation of colored polygons gets keyframes with different numbers
-  of vertices (it raised a broadcast error).
+  of vertices (it raised a broadcast error). With `validity="quadtree"` the lineage ends at the returned best iterate:
+  `lift_geometries` takes the `state` like `lift_coordinates`, the animation with `interpolation="linear"` ends at the best
+  iterate, and `through="last"` raises a `ValueError` that names the first snapshot after it.
 - **`PlotStyle` sets the look of the flow plots and animations in one place.** The surface
   and text colors, the boundary, one palette per data role (sequential, diverging,
   categorical), the color scale and the colorbar are fields of a frozen `PlotStyle`, with

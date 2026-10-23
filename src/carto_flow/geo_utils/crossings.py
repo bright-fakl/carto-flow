@@ -281,6 +281,16 @@ class SegmentGrid:
     def _args(self):
         return (self.coords, self.starts, *self._cells, *self._params)
 
+    def arrays(self) -> tuple:
+        """
+        The arrays of the grid, for compiled kernels that query it.
+
+        Returns ``(coords, starts, cell_offsets, items, h, x0, y0, nx, ny)``: the segments of cell ``k`` are
+        ``items[cell_offsets[k]:cell_offsets[k + 1]]``, cell ``(i, j)`` has the index ``j * nx + i`` and spans
+        ``[x0 + i * h, x0 + (i + 1) * h]`` by ``[y0 + j * h, y0 + (j + 1) * h]``.
+        """
+        return self._args()
+
     def crossing_mask(self) -> np.ndarray:
         """Boolean mask over the segments: True for a segment that crosses another one."""
         flag = np.zeros(len(self.starts), np.bool_)

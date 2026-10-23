@@ -39,6 +39,8 @@ graph TD
 | **[Velocity](velocity.md)** | Velocity field computation using FFTW |
 | **[Displacement](displacement.md)** | Coordinate displacement with numba |
 | **[Validity](validity.md)** | Validated windows: crossing repair and the vertex lineage |
+| **[Validity quadtree](validity_quadtree.md)** | Quadtree windows: piecewise-affine map inside each window |
+| **[Quadtree mesh](quadtree_mesh.md)** | Graded quadtree with fan triangles, point location and vertex insertion |
 | **[Anisotropy](anisotropy.md)** | Velocity modulator system (`BoundaryDecay`, `BoundaryNormalDecay`, `DirectionalTensor`, …) |
 
 ## Analysis

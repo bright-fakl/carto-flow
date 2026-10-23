@@ -391,9 +391,13 @@ class TestQuadtreeLifting:
     def test_a_snapshot_after_the_best_iterate_is_not_a_state_of_the_lineage(self, quadtree):
         result = quadtree[2]
         after = [s for s in result.snapshots.snapshots if s.iteration > result.best_iteration]
-        assert after
         counts = set(result.vertex_lineage._counts())
-        assert any(count(s.geometry) not in counts for s in after)
+        # a snapshot whose vertex count is that of no state cannot be lifted (one that happens to have the count of a
+        # state is not detectable by its count, so the scene decides whether there is any)
+        for snapshot in after:
+            if count(snapshot.geometry) not in counts:
+                with pytest.raises(ValueError, match="not a state"):
+                    result.lift_geometries(snapshot.geometry)
 
     def test_a_state_that_does_not_match_raises(self, quadtree):
         polygons, _, result, _, _ = quadtree

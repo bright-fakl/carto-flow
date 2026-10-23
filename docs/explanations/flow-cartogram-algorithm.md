@@ -243,7 +243,34 @@ A window is the span of iterations between two recomputes of the velocity field 
 
 The run is also checked when it ends (converged, stalled or at `n_iter`), whatever the position in the span, and the returned best iterate is checked through its own recorded path. The fields of a span are stored as float32; the span ends early when they reach `validity_memory_mb` (default 128), so the memory does not depend on `recompute_every` or `validity_check_every`. A check every window finds crossings that the next window removes, and costs time and accuracy; longer spans work because the repair acts back on the whole span.
 
-The output then has more vertices than the input. `Cartogram.vertex_lineage` records every insertion: a new vertex lies at fraction 0.5 between two older vertices of the same ring, and `Cartogram.lift_coordinates` lifts the coordinates of the input, or of a snapshot recorded earlier in the run, to the vertex set of the returned geometries. Snapshots keep the vertices they had when they were recorded, so snapshots of one run can have different numbers of vertices; the animation with `interpolation="linear"` needs equal vertex sets, so lift the coordinates first. Landmarks, probes and displacement coordinates are separate point sets and are not affected. Each level of a ladder is a separate morph that starts from the output of the level before, with its own lineage.
+The output then has more vertices than the input. `Cartogram.vertex_lineage` records every insertion: a new vertex lies at fraction 0.5 between two older vertices of the same ring, and `Cartogram.lift_coordinates` lifts the coordinates of the input, or of a snapshot recorded earlier in the run, to the vertex set of the returned geometries. Snapshots keep the vertices they had when they were recorded, so snapshots of one run can have different numbers of vertices. `Cartogram.lift_geometries` does for geometries what `lift_coordinates` does for coordinates. Landmarks, probes and displacement coordinates are separate point sets and are not affected. Each level of a ladder is a separate morph that starts from the output of the level before, with its own lineage.
+
+### Animating cartograms with inserted vertices
+
+Linear interpolation between two states needs equal vertex sets.
+
+- `animate_morph_history(cartogram, interpolation="linear")` lifts every snapshot to the vertices of the returned geometries when the snapshots have different numbers of vertices, so it works as it does without `validity`. A snapshot that cannot be lifted raises a `ValueError` that names it; `interpolation="nearest"` shows the snapshots as recorded and needs no lifting.
+- `animate_geometry_keyframes(..., interpolation="linear")` takes arbitrary keyframes and does not lift. The precomputed animation of colored polygons raises a `ValueError` for keyframes with different numbers of vertices; the other animations resample the rings by index, which misaligns the vertices. Give the keyframes equal vertex sets first.
+
+`Cartogram.lift_geometries(geometries)` lifts the geometries of the input, or of a snapshot, to the vertices and ring structure of the returned geometries, for example to animate between the input and the result with the lifted input as a keyframe:
+
+```python
+start = cartogram.lift_geometries(gdf.geometry)
+keyframes = [gdf.assign(geometry=start), cartogram.to_geodataframe()]
+anim = animate_geometry_keyframes(keyframes, interpolation="linear", facecolor="population")
+```
+
+`align_vertices(sources)` gives the outputs of several morphs of the same input (for example the same map with the values of different years) one vertex set. Every vertex of an output has a position along the rings of the input, which the vertex lineage gives; the result has, in every ring, the vertices at the union of the positions of all sources. Each output is re-sampled at these positions along its own segments, so its shape, area and validity are unchanged and only vertices on its own segments are added. A source is a `Cartogram` (a morph of the input itself) or a `CartogramWorkflow` (a ladder or a chain of refinements, which start from the output of the one before and are followed through all levels). Sources without a lineage (`validity="none"`) can be mixed with others. The sources must have the same number of geometries, parts, rings and input vertices per ring.
+
+```python
+from carto_flow.flow_cartogram import align_vertices
+
+options = MorphOptions(validity="windows")
+a = create_flow_cartogram(gdf, "pop_2010", options=options)
+b = create_flow_cartogram(gdf, "pop_2020", options=options)
+keyframes = [gdf.assign(geometry=geometry) for geometry in align_vertices([a, b])]
+anim = animate_geometry_keyframes(keyframes, interpolation="linear", facecolor="population")
+```
 
 The test detects crossings of segments only. A region that remains invalid is listed in `Cartogram.invalid_regions`: a fold that the flow itself creates (splitting does not remove it), zero-width features of the input, or a hole that leaves its shell without crossing it. The number of inserted vertices is capped at 1 % of the input vertices (at least 5,000) over the run; when the cap is reached the checks end.
 

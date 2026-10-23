@@ -69,6 +69,7 @@ nav:
         - Output:
             - Visualization: reference/flow_cartogram/visualization.md
             - Animation: reference/flow_cartogram/animation.md
+            - Alignment: reference/flow_cartogram/alignment.md
             - Serialization: reference/flow_cartogram/serialization.md
     - Proportional Cartogram:
         - Overview: reference/proportional_cartogram/index.md

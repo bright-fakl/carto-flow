@@ -72,6 +72,7 @@ Access the result via ``cartogram.best`` (the returned snapshot; ``cartogram.las
 - ``history`` - Iteration history and snapshot management
 - ``anisotropy`` - Anisotropy tensor utilities for velocity modulation
 - ``animation`` - Animation generation utilities
+- ``alignment`` - Common vertex sets for the outputs of several morphs (``align_vertices``)
 - ``visualization`` - Visualization tools
 - ``serialization`` - Result serialization
 - ``metrics`` - Computation metrics
@@ -143,6 +144,7 @@ from . import (
 
 # Core morphing functions and classes
 from .algorithm import morph_geometries
+from .alignment import align_vertices
 from .anisotropy import (
     BoundaryDecay,
     BoundaryNormalDecay,
@@ -222,6 +224,7 @@ __all__ = [
     "VelocityPlotOptions",
     "VelocitySmooth",
     "WorkflowConvergencePlotResult",
+    "align_vertices",
     "animation",
     "anisotropy",
     "comparison",

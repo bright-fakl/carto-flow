@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
+import shapely
 
 from .._plot_params import deprecated_params
 from ..geo_utils.validity import invalid_indices, repair_polygons
@@ -42,6 +43,7 @@ if TYPE_CHECKING:
     from .options import MorphOptions, MorphStatus
     from .plot_results import CartogramPlotResult
     from .timings import Benchmark
+    from .validity import VertexLineage
 
 __all__ = ["Cartogram"]
 
@@ -52,6 +54,12 @@ def _repaired(geometry: Any) -> Any:
         return None
     invalid = invalid_indices(geometry)
     return repair_polygons(geometry, invalid) if len(invalid) else geometry
+
+
+def _ring_counts(geometries: np.ndarray) -> np.ndarray:
+    """Number of rings (exteriors and holes of all parts) of every geometry."""
+    _, index = shapely.get_rings(geometries, return_index=True)
+    return np.bincount(index, minlength=len(geometries))
 
 
 @dataclass
@@ -85,7 +93,12 @@ class Cartogram:
     invalid_regions : tuple of int
         Indices of the regions whose returned geometry is not a valid polygon (a self-intersecting
         boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
-        the vertices of the input, unless ``repair=True``.
+        the vertices of the input (with ``validity="windows"``: the vertices of the input and the inserted ones),
+        unless ``repair=True``.
+    vertex_lineage : VertexLineage or None
+        With ``validity="windows"``, the vertices that the morph inserted into the segments of the geometries
+        (``None`` otherwise). :meth:`lift_coordinates` lifts the coordinates of an earlier state to the vertices of
+        the returned geometries, :meth:`lift_geometries` does the same for geometries. Landmarks, probes and ``coords`` are separate point sets and are not affected.
     landmark_area_scaling : np.ndarray or None
         Property. With landmarks, the area scaling of the flow along the path of every landmark vertex (the
         exponential of the integral of the divergence of the velocity field along the path) for the returned
@@ -115,6 +128,7 @@ class Cartogram:
     internals: Optional["History[CartogramInternalsSnapshot]"] = None
     benchmark: Optional["Benchmark"] = None
     invalid_regions: tuple[int, ...] = ()
+    vertex_lineage: Optional["VertexLineage"] = None
 
     # Source references for GeoDataFrame reconstruction (not shown in repr)
     _source_gdf: Any | None = field(default=None, repr=False)
@@ -171,6 +185,86 @@ class Cartogram:
             stacklevel=2,
         )
         return self.best
+
+    def lift_coordinates(self, coords: Any) -> np.ndarray:
+        """Lift the vertex coordinates of an earlier state to the vertices of the returned geometries.
+
+        With ``validity="windows"`` the morph inserts vertices into segments, so the returned geometries have more
+        vertices than the input, and a snapshot recorded in the middle of a run (``snapshot_every``) keeps the
+        vertices it had when it was recorded. This method gives the coordinates of such a state at the vertices of
+        the returned geometries: every vertex that was inserted later lies at fraction ``t`` (0.5) between the two
+        older vertices of the same ring that it split, so the lifted shape is the same polyline as the original.
+
+        Parameters
+        ----------
+        coords : array-like of shape (n, 2)
+            Coordinates in the order of ``shapely.get_coordinates`` of the geometries of the input of this morph or
+            of one of its snapshots. The number of rows must be that of such a state.
+
+        Returns
+        -------
+        np.ndarray
+            Coordinates of shape (n_final, 2), n_final being the number of vertices of the returned geometries
+            (``len(shapely.get_coordinates(self.best.geometry))`` for geometries without a repair).
+
+        Raises
+        ------
+        ValueError
+            If the number of rows is not that of a state of the run.
+
+        Notes
+        -----
+        Without ``validity="windows"`` no vertex is inserted and the coordinates are returned unchanged. A cartogram
+        of a ladder level starts from the output of the level before: lift through the levels in turn.
+        """
+        coords = np.asarray(coords, dtype=float)
+        return coords if self.vertex_lineage is None else self.vertex_lineage.lift(coords)
+
+    def lift_geometries(self, geometries: Any) -> np.ndarray:
+        """Lift geometries of an earlier state to the vertex set and ring structure of the returned geometries.
+
+        The geometries are those of the input of this morph or of one of its snapshots, and have the number of
+        geometries, parts and rings of the returned geometries. Their coordinates are lifted with
+        :meth:`lift_coordinates` and put on a copy of the returned geometries, so the result has the vertices of the
+        returned geometries and the shape of the given state (the same polylines, with the vertices that were inserted
+        later on their segments). Lifted states of one cartogram have equal vertex sets and can be interpolated
+        linearly.
+
+        Parameters
+        ----------
+        geometries : array-like of shapely geometries
+            The geometries of the input or of a snapshot (``snapshot.geometry``). The number of vertices must be that
+            of a state of the run, as for :meth:`lift_coordinates`.
+
+        Returns
+        -------
+        np.ndarray
+            Object array of geometries with the vertices of the returned geometries (``get_geometry()`` without a
+            repair).
+
+        Raises
+        ------
+        ValueError
+            If the number of geometries or of rings differs from the returned geometries, or the number of vertices is
+            not that of a state of the run.
+
+        Notes
+        -----
+        Without a vertex lineage the geometries are returned unchanged.
+        """
+        geometries = np.asarray(geometries, dtype=object)
+        if self.vertex_lineage is None:
+            return geometries.copy()
+        final = self.get_geometry()
+        if final is None:
+            raise ValueError("The cartogram has no geometry to lift to")
+        final = np.asarray(final, dtype=object)
+        if len(geometries) != len(final):
+            raise ValueError(f"{len(geometries)} geometries given; the cartogram has {len(final)}")
+        if not np.array_equal(_ring_counts(geometries), _ring_counts(final)):
+            raise ValueError("The geometries do not have the parts and rings of the returned geometries")
+        lifted = self.lift_coordinates(shapely.get_coordinates(geometries))
+        return np.asarray(shapely.set_coordinates(final.copy(), lifted), dtype=object)
 
     def get_errors(self, iteration: int | None = None) -> Optional["MorphErrors"]:
         """Get error metrics for a specific iteration.

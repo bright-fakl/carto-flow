@@ -335,6 +335,44 @@ class MorphOptions:
     a cycle of 10 iterations at the default ``dt`` of 0.2 on regions of 8 cells has to improve by 1%.
     """
 
+    # Validity of the output polygons
+    validity: str = "none"
+    """How the morph keeps the output polygons from self-intersecting.
+
+    Vertices move individually through the velocity field, so where a region is squeezed into a strip narrower
+    than the vertex spacing, the segments of its boundary can cross and the output polygon is invalid.
+
+    - ``"none"``: no check. The output has the vertices of the input.
+    - ``"windows"``: validated windows. Every ``validity_check_every`` windows (a window is the span of iterations
+      between two recomputes of the velocity field) and at the end of the run, a crossing test finds the crossing
+      segments. Each is split at the midpoint of its chord at the start of the span, and the new vertex is moved
+      through the recorded steps of the span, so it lies on the path the flow gives it. The new segments are tested
+      again, for at most 14 rounds. No input vertex is moved or removed, the output has more vertices than the
+      input, and ``Cartogram.vertex_lineage`` maps the vertices of earlier states to those of the output. The test
+      covers all regions together, so overlaps between neighbors are repaired too. The returned (best) iterate is
+      tested as well. Regions that remain invalid, such as zero-width features of the input, are listed in
+      ``Cartogram.invalid_regions``.
+
+    The check needs the velocity fields of a span (stored as float32, bounded by ``validity_memory_mb``) and one
+    copy of the coordinates. The snapshots of ``snapshot_every`` keep the vertices they had when recorded.
+    """
+
+    validity_check_every: int = 10
+    """Windows between two crossing tests with ``validity="windows"``.
+
+    A longer span costs fewer tests and stores more fields. A test after every window finds crossings that
+    disappear by themselves in the next window and costs accuracy and time, so the default of 10 windows is
+    suitable for most inputs.
+    """
+
+    validity_memory_mb: float = 128.0
+    """Size in MB of the stored velocity fields at which ``validity="windows"`` ends a span early.
+
+    The memory of the check is bounded by this value plus one field, whatever ``recompute_every`` and
+    ``validity_check_every`` are. A field is stored for every window of the span; on a grid of 2048 cells two
+    float32 components take 32 MB.
+    """
+
     def get_grid(self, bounds: tuple[float, float, float, float]) -> "Grid":
         """Get the Grid object for computation with clear precedence.
 
@@ -517,6 +555,9 @@ class MorphOptions:
             "adaptive_dt",
             "stall_patience",
             "stall_min_efficiency",
+            "validity",
+            "validity_check_every",
+            "validity_memory_mb",
             "recompute_on_rise",
             "error_floor",
             "density_rasterization",
@@ -630,6 +671,16 @@ class MorphOptions:
         elif field_name == "stall_min_efficiency":
             if not isinstance(value, int | float) or isinstance(value, bool) or value < 0:
                 return "stall_min_efficiency must be a non-negative number"
+
+        elif field_name == "validity":
+            if value not in ("none", "windows"):
+                return 'validity must be "none" or "windows"'
+        elif field_name == "validity_check_every":
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                return "validity_check_every must be a positive integer"
+        elif field_name == "validity_memory_mb":
+            if not isinstance(value, int | float) or isinstance(value, bool) or not value > 0:
+                return "validity_memory_mb must be a positive number"
 
         # Outer-boundary distortion reduction options
         elif field_name == "adaptive_dt" and not isinstance(value, bool):

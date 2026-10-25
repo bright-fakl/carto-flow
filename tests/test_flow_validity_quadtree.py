@@ -1,4 +1,4 @@
-"""Quadtree windows: output polygons that do not self-intersect (validity="quadtree")."""
+"""Quadtree windows: output polygons that do not self-intersect (validity="repair-quadtree")."""
 
 from __future__ import annotations
 
@@ -459,7 +459,7 @@ class TestLineage:
             lineage.lift(coords, state=1)
 
     def test_removals_keep_the_input_vertices_and_their_order_in_a_morph(self):
-        polygons, result = morph(11, validity="quadtree")
+        polygons, result = morph(11, validity="repair-quadtree")
         lineage = result.vertex_lineage
         assert any(isinstance(r, RemovalRound) for r in lineage.rounds)
         assert any(isinstance(r, InsertionRound) for r in lineage.rounds)
@@ -670,17 +670,20 @@ class TestWindow:
 
 
 class TestOptions:
-    def test_quadtree_is_accepted_next_to_windows_and_none(self):
-        for value in ("none", "windows", "quadtree"):
+    def test_quadtree_is_accepted_next_to_the_other_values(self):
+        for value in ("check", "repair-crossings", "repair-quadtree"):
             assert MorphOptions(validity=value).validity == value
-        assert MorphOptions(validity="quadtree").copy_with(validity="windows").validity == "windows"
+        assert (
+            MorphOptions(validity="repair-quadtree").copy_with(validity="repair-crossings").validity
+            == "repair-crossings"
+        )
 
-    @pytest.mark.parametrize("value", ["both", "quadtree,windows", "Quadtree", True, None])
+    @pytest.mark.parametrize("value", ["both", "quadtree", "windows", "none", "repair", "Repair-Quadtree", True, None])
     def test_other_values_are_rejected(self, value):
         with pytest.raises(MorphOptionsValidationError, match="validity"):
             MorphOptions(validity=value)
         options = MorphOptions()
-        with pytest.raises(MorphOptionsValidationError, match='"quadtree"'):
+        with pytest.raises(MorphOptionsValidationError, match='"repair-quadtree"'):
             options.validity = value
 
     def test_each_value_selects_one_method(self, monkeypatch):
@@ -694,11 +697,11 @@ class TestOptions:
 
         monkeypatch.setattr(algorithm, "ValidatedWindows", forbidden("ValidatedWindows"))
         polygons, values = strip_scene(11)
-        options = MorphOptions(grid=64, n_iter=20, show_progress=False, validity="quadtree")
+        options = MorphOptions(grid=64, n_iter=20, show_progress=False, validity="repair-quadtree")
         assert morph_geometries(polygons, values, options=options).vertex_lineage is not None
         monkeypatch.undo()
         monkeypatch.setattr(algorithm, "QuadtreeWindows", forbidden("QuadtreeWindows"))
-        for validity in ("none", "windows"):
+        for validity in ("check", "repair-crossings"):
             options = MorphOptions(grid=64, n_iter=20, show_progress=False, validity=validity)
             morph_geometries(polygons, values, options=options)
 
@@ -748,7 +751,7 @@ class TestMorph:
         if invalid_count(baseline) == 0:
             pytest.skip("the run without the option is valid for this seed on this platform (the scene is chaotic)")
         assert invalid_count(baseline) >= 1
-        polygons, result = morph(seed, validity="quadtree")
+        polygons, result = morph(seed, validity="repair-quadtree")
         # a degenerate region can stay invalid (reported in invalid_regions); the method never adds invalid polygons
         assert invalid_count(result) <= invalid_count(baseline)
         assert len(result.invalid_regions) == invalid_count(result)
@@ -763,7 +766,7 @@ class TestMorph:
         if invalid_count(baseline) == 0:
             pytest.skip("the run without the option is valid for this seed on this platform (the scene is chaotic)")
         assert invalid_count(baseline) >= 1
-        _, result = morph(seed, validity="quadtree")
+        _, result = morph(seed, validity="repair-quadtree")
         expected = {"n_iter": "COMPLETED", "converged": "CONVERGED", "stalled": "STALLED"}[how]
         assert result.status.name == expected
         assert invalid_count(result) <= invalid_count(baseline)
@@ -772,7 +775,7 @@ class TestMorph:
         assert shapely.is_valid(np.array(result.last.geometry, dtype=object)).all()
 
     def test_the_returned_best_iterate_has_its_own_vertex_set_and_errors(self):
-        _, result = morph(ENDS["stalled"], validity="quadtree")
+        _, result = morph(ENDS["stalled"], validity="repair-quadtree")
         assert result.best_iteration < result.niterations
         polygons, values = strip_scene(ENDS["stalled"])
         areas = np.array([g.area for g in result.best.geometry])
@@ -783,7 +786,7 @@ class TestMorph:
         assert result.vertex_lineage.n_vertices == n_vertices_of(result.best.geometry)
 
     def test_snapshots_before_the_best_iterate_lift_to_the_returned_vertex_set(self):
-        _, result = morph(11, validity="quadtree", snapshot_every=5)
+        _, result = morph(11, validity="repair-quadtree", snapshot_every=5)
         final = n_vertices_of(result.best.geometry)
         lifted = 0
         for snapshot in result.snapshots.snapshots:
@@ -803,7 +806,7 @@ class TestMorph:
         landmarks = [Point(1.0, 0.5), Point(4.0, 2.0)]
         coords = np.array([[1.0, 1.0], [3.0, 2.0], [5.0, 1.0]])
         options = MorphOptions(
-            grid=64, n_iter=300, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="quadtree"
+            grid=64, n_iter=300, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="repair-quadtree"
         )
         result = morph_geometries(polygons, values, landmarks=landmarks, coords=coords, options=options)
         assert result.vertex_lineage.rounds
@@ -818,7 +821,7 @@ class TestMorph:
         polygons, values = strip_scene(11)
         gdf = gpd.GeoDataFrame({"v": values}, geometry=polygons)
         options = [
-            MorphOptions(n_iter=100, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="quadtree")
+            MorphOptions(n_iter=100, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="repair-quadtree")
             for _ in range(2)
         ]
         workflow = CartogramWorkflow(gdf, "v", validate=False)
@@ -837,7 +840,7 @@ class TestMorph:
         single = shapely.segmentize(box(9, 0, 12, 4), 0.7)
         geometries = [holed, parts, single]
         options = MorphOptions(
-            grid=64, n_iter=150, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="quadtree"
+            grid=64, n_iter=150, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="repair-quadtree"
         )
         result = morph_geometries(geometries, np.array([5.0, 0.4, 4.0]), options=options)
         assert result.invalid_regions == ()

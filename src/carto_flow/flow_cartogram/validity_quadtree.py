@@ -247,7 +247,7 @@ def _required(value):
 
 class QuadtreeWindows(ValidityMethod):
     """
-    The validity method of a morph with ``validity="quadtree"``.
+    The validity method of a morph with ``validity="repair-quadtree"``.
 
     One instance belongs to one call of the morph loop (one level of a ladder). It holds the mesh of the current
     window and the per-vertex triangle and barycentric coordinates (36 bytes per vertex), the flags of the input

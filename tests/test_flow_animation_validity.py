@@ -1,4 +1,4 @@
-"""Animation of flow cartograms with inserted vertices: lift_geometries and align_vertices (validity="windows")."""
+"""Animation of flow cartograms with inserted vertices: lift_geometries and align_vertices (validity="repair-crossings")."""
 
 from __future__ import annotations
 
@@ -49,7 +49,7 @@ def run(seed, values=None, **kwargs):
 @pytest.fixture(scope="module")
 def grown():
     """A windows morph whose snapshots have different numbers of vertices, and its input and values."""
-    polygons, result = run(11, validity="windows", snapshot_every=5)
+    polygons, result = run(11, validity="repair-crossings", snapshot_every=5)
     return polygons, strip_scene(11)[1], result
 
 
@@ -57,8 +57,8 @@ def grown():
 def pair():
     """Two windows morphs of one input with different values (different inserted vertices) and one without lineage."""
     polygons, values = strip_scene(11)
-    _, a = run(11, validity="windows")
-    _, b = run(11, values[::-1].copy(), validity="windows")
+    _, a = run(11, validity="repair-crossings")
+    _, b = run(11, values[::-1].copy(), validity="repair-crossings")
     _, plain = run(11, values[::-1].copy())
     return polygons, a, b, plain
 
@@ -282,7 +282,9 @@ class TestAlignVertices:
     def test_a_ladder_workflow_is_chained_through_its_levels(self):
         polygons, values = strip_scene(31)
         gdf = gpd.GeoDataFrame({"v": values, "w": values[::-1].copy()}, geometry=polygons)
-        options = MorphOptions(grid=64, n_iter=60, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="windows")
+        options = MorphOptions(
+            grid=64, n_iter=60, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="repair-crossings"
+        )
         workflows = []
         for column in ("v", "w"):
             workflow = CartogramWorkflow(gdf, column, validate=False)
@@ -294,7 +296,7 @@ class TestAlignVertices:
         aligned = align_vertices(workflows)
         check_aligned([w[-1].get_geometry() for w in workflows], aligned)
         # a plain Cartogram of a single morph can be mixed with a workflow
-        _, single = run(31, values[::-1].copy(), validity="windows")
+        _, single = run(31, values[::-1].copy(), validity="repair-crossings")
         mixed = align_vertices([workflows[0], single])
         check_aligned([workflows[0][-1].get_geometry(), single.get_geometry()], mixed)
 
@@ -304,7 +306,7 @@ class TestAlignVertices:
             align_vertices([a])
         with pytest.raises(TypeError, match="Cartogram or CartogramWorkflow"):
             align_vertices([a, object()])
-        _, other_input = run(31, validity="windows")
+        _, other_input = run(31, validity="repair-crossings")
         with pytest.raises(ValueError, match="same input"):
             align_vertices([a, other_input])
         _, cart = synthetic()
@@ -335,7 +337,7 @@ class TestAlignVertices:
 
 
 # ----------------------------------------------------------------------------
-# validity="quadtree": removals, states shared by two vertex counts, the lineage ends at the best iterate
+# validity="repair-quadtree": removals, states shared by two vertex counts, the lineage ends at the best iterate
 # ----------------------------------------------------------------------------
 
 
@@ -343,8 +345,8 @@ class TestAlignVertices:
 def quadtree():
     """A quadtree morph with snapshots before and after the best iterate, and a second one with other values."""
     polygons, values = strip_scene(11)
-    _, first = run(11, validity="quadtree", snapshot_every=5)
-    _, second = run(11, values[::-1].copy(), validity="quadtree")
+    _, first = run(11, validity="repair-quadtree", snapshot_every=5)
+    _, second = run(11, values[::-1].copy(), validity="repair-quadtree")
     _, plain = run(11, values[::-1].copy())
     return polygons, values, first, second, plain
 
@@ -461,7 +463,7 @@ class TestQuadtreeAlignment:
 
     def test_a_morph_without_lineage_and_a_windows_morph_mix_with_quadtree(self, quadtree):
         _, _, first, _, plain = quadtree
-        _, windows = run(11, strip_scene(11)[1][::-1].copy(), validity="windows")
+        _, windows = run(11, strip_scene(11)[1][::-1].copy(), validity="repair-crossings")
         aligned = align_vertices([plain, first, windows])
         check_aligned([plain.get_geometry(), first.get_geometry(), windows.get_geometry()], aligned)
 
@@ -469,7 +471,7 @@ class TestQuadtreeAlignment:
         polygons, values = strip_scene(31)
         gdf = gpd.GeoDataFrame({"v": values, "w": values[::-1].copy()}, geometry=polygons)
         options = MorphOptions(
-            grid=64, n_iter=60, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="quadtree"
+            grid=64, n_iter=60, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="repair-quadtree"
         )
         workflows = []
         for column in ("v", "w"):

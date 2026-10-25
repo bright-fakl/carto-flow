@@ -93,11 +93,11 @@ class Cartogram:
     invalid_regions : tuple of int
         Indices of the regions whose returned geometry is not a valid polygon (a self-intersecting
         boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
-        the vertices of the input (with ``validity="windows"`` or ``"quadtree"``: the vertices of the input and the
+        the vertices of the input (with ``validity="repair-crossings"`` or ``"repair-quadtree"``: the vertices of the input and the
         inserted ones), unless ``repair=True``.
     vertex_lineage : VertexLineage or None
-        With ``validity="windows"`` or ``"quadtree"``, the vertices that the morph inserted into the segments of the
-        geometries, and with ``"quadtree"`` the inserted vertices it removed again (``None`` otherwise).
+        With ``validity="repair-crossings"`` or ``"repair-quadtree"``, the vertices that the morph inserted into the segments of the
+        geometries, and with ``"repair-quadtree"`` the inserted vertices it removed again (``None`` otherwise).
         :meth:`lift_coordinates` lifts the coordinates of an earlier state to the vertices of the returned geometries,
         :meth:`lift_geometries` does the same for geometries. Landmarks, probes and ``coords`` are separate point sets
         and are not affected.
@@ -191,12 +191,12 @@ class Cartogram:
     def lift_coordinates(self, coords: Any, state: int | None = None) -> np.ndarray:
         """Lift the vertex coordinates of an earlier state to the vertices of the returned geometries.
 
-        With ``validity="windows"`` or ``"quadtree"`` the morph inserts vertices into segments, so the returned
+        With ``validity="repair-crossings"`` or ``"repair-quadtree"`` the morph inserts vertices into segments, so the returned
         geometries have more vertices than the input, and a snapshot recorded in the middle of a run
         (``snapshot_every``) keeps the vertices it had when it was recorded. This method gives the coordinates of such
         a state at the vertices of the returned geometries: every vertex that was inserted later lies between the two
         older vertices of the same ring that it split, so the lifted shape is the same polyline as the original. With
-        ``"quadtree"`` the vertices that were removed later are dropped from the lifted state. The returned best
+        ``"repair-quadtree"`` the vertices that were removed later are dropped from the lifted state. The returned best
         iterate is the end of the lineage: a snapshot recorded after it is not a state of the lineage and cannot be
         lifted.
 
@@ -223,7 +223,7 @@ class Cartogram:
 
         Notes
         -----
-        Without ``validity="windows"`` or ``"quadtree"`` no vertex is inserted and the coordinates are returned
+        Without ``validity="repair-crossings"`` or ``"repair-quadtree"`` no vertex is inserted and the coordinates are returned
         unchanged. A cartogram
         of a ladder level starts from the output of the level before: lift through the levels in turn.
         """
@@ -263,7 +263,7 @@ class Cartogram:
 
         Notes
         -----
-        Without a vertex lineage the geometries are returned unchanged. With ``validity="quadtree"`` the vertices that
+        Without a vertex lineage the geometries are returned unchanged. With ``validity="repair-quadtree"`` the vertices that
         the morph removed later are dropped, and a snapshot recorded after the returned best iterate cannot be lifted
         (the lineage ends at the best iterate).
         """

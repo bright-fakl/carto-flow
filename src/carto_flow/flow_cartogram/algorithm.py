@@ -50,7 +50,7 @@ from .history import (
     ConvergenceHistory,
     History,
 )
-from .options import MorphOptions, MorphStatus
+from .options import VALIDITY_REPAIR_CROSSINGS, VALIDITY_REPAIR_QUADTREE, MorphOptions, MorphStatus
 from .recompute import score_rose, should_recompute
 from .stall import StallMonitor, cycle_length, region_size
 from .stepsize import DEAD_BAND_FRACTION, StepController
@@ -402,11 +402,11 @@ def morph_geometries(
     # Resolve grid using options
     grid = options.get_grid(options._calculate_bounds_from_geometries(geometries))
 
-    # Validity method (validity="windows" or "quadtree"; remove this and the calls of `windows` below to disable)
+    # Validity method (validity="repair-crossings" or "repair-quadtree"; remove this and the calls of `windows` below to disable)
     windows: ValidityMethod | None = None
-    if options.validity == "windows":
+    if options.validity == VALIDITY_REPAIR_CROSSINGS:
         windows = ValidatedWindows(options.validity_check_every, options.validity_memory_mb, len(flat_geoms.coords))
-    elif options.validity == "quadtree":
+    elif options.validity == VALIDITY_REPAIR_QUADTREE:
         windows = QuadtreeWindows(len(flat_geoms.coords))
 
     # Warn if input geometries have segments too long for the grid to bend.

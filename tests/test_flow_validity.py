@@ -1,6 +1,8 @@
-"""Validated windows: output polygons that do not self-intersect (validity="windows")."""
+"""Validated windows: output polygons that do not self-intersect (validity="repair-crossings")."""
 
 from __future__ import annotations
+
+import warnings
 
 import numpy as np
 import pytest
@@ -11,7 +13,7 @@ from carto_flow.flow_cartogram import CartogramWorkflow, MorphOptions, morph_geo
 from carto_flow.flow_cartogram.displacement import displace_coords_numba
 from carto_flow.flow_cartogram.errors import compute_error_metrics
 from carto_flow.flow_cartogram.grid import Grid
-from carto_flow.flow_cartogram.options import MorphOptionsValidationError
+from carto_flow.flow_cartogram.options import VALIDITY_VALUES, MorphOptionsValidationError
 from carto_flow.flow_cartogram.validity import (
     InsertionRound,
     ValidatedWindows,
@@ -87,13 +89,31 @@ def plain(coords, grid, field, dt=1.0, steps=1):
 class TestOptions:
     def test_defaults(self):
         options = MorphOptions()
-        assert options.validity == "none"
+        assert options.validity == "check"
         assert options.validity_check_every == 10
         assert options.validity_memory_mb == 128.0
 
-    def test_windows_is_accepted(self):
-        options = MorphOptions(validity="windows", validity_check_every=1, validity_memory_mb=0.5)
+    @pytest.mark.parametrize("value", ["check", "repair-crossings", "repair-quadtree"])
+    def test_the_values_are_accepted(self, value):
+        assert MorphOptions(validity=value).validity == value
+        assert VALIDITY_VALUES == ("check", "repair-crossings", "repair-quadtree")
+
+    def test_other_options_are_accepted(self):
+        options = MorphOptions(validity="repair-crossings", validity_check_every=1, validity_memory_mb=0.5)
         assert options.copy_with(validity_check_every=3).validity_check_every == 3
+
+    @pytest.mark.parametrize("value", ["none", "windows", "quadtree", "Check", ""])
+    def test_removed_and_unknown_values_are_rejected_with_the_valid_ones(self, value):
+        with pytest.raises(MorphOptionsValidationError, match=r'one of "check", "repair-crossings", "repair-quadtree"'):
+            MorphOptions(validity=value)
+
+    @pytest.mark.parametrize("name", ["validity_check_every", "validity_memory_mb"])
+    def test_the_budget_options_are_validated_but_unused_with_check(self, name):
+        value = {"validity_check_every": 3, "validity_memory_mb": 0.5}[name]
+        options = MorphOptions(validity="check", **{name: value})
+        assert getattr(options, name) == value
+        with pytest.raises(MorphOptionsValidationError, match=name):
+            MorphOptions(validity="check", **{name: 0})
 
     @pytest.mark.parametrize(
         ("name", "value"),
@@ -279,7 +299,8 @@ class TestWindows:
         grid, vx, vy = squeeze
         geoms = unpack_geometries([ribbon()])
         windows = ValidatedWindows(10, 128.0, 8, max_inserted=1)
-        drive(windows, geoms, grid, [(vx, vy)])
+        with pytest.warns(UserWarning, match="stopped after inserting 0 vertices, the cap of 1"):
+            drive(windows, geoms, grid, [(vx, vy)])
         assert not shapely.is_valid(reconstruct_geometries(geoms)[0])
         assert len(geoms.coords) == 8
         assert windows.n_unresolved > 0
@@ -288,7 +309,9 @@ class TestWindows:
         assert windows._windows == []
         geoms = unpack_geometries([ribbon()])
         windows = ValidatedWindows(10, 128.0, 8, max_inserted=1000)
-        drive(windows, geoms, grid, [(vx, vy)])
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")  # no warning below the cap
+            drive(windows, geoms, grid, [(vx, vy)])
         assert shapely.is_valid(reconstruct_geometries(geoms)[0])
 
     def test_the_best_iterate_is_lifted_and_valid(self, squeeze):
@@ -393,7 +416,7 @@ class TestMorph:
             pytest.skip("the run without the option is valid for this seed on this platform (the scene is chaotic)")
         assert invalid_count(baseline) >= 1
         assert baseline.invalid_regions != ()
-        polygons, repaired = morph(seed, validity="windows")
+        polygons, repaired = morph(seed, validity="repair-crossings")
         # a zero-width cusp can stay invalid (reported in invalid_regions); the repair never adds invalid polygons
         assert invalid_count(repaired) <= invalid_count(baseline)
         assert len(repaired.invalid_regions) == invalid_count(repaired)
@@ -411,7 +434,7 @@ class TestMorph:
         if invalid_count(baseline) == 0:
             pytest.skip("the run without the option is valid for this seed on this platform (the scene is chaotic)")
         assert invalid_count(baseline) >= 1
-        _, repaired = morph(seed, validity="windows", validity_check_every=10_000)
+        _, repaired = morph(seed, validity="repair-crossings", validity_check_every=10_000)
         expected = {"n_iter": "COMPLETED", "converged": "CONVERGED", "stalled": "STALLED"}[how]
         assert repaired.status.name == expected
         assert repaired.vertex_lineage.rounds
@@ -419,7 +442,7 @@ class TestMorph:
 
     def test_the_returned_best_iterate_is_checked_when_it_is_not_the_last(self):
         _, baseline = morph(ENDS["stalled"])
-        _, repaired = morph(ENDS["stalled"], validity="windows", validity_check_every=10_000)
+        _, repaired = morph(ENDS["stalled"], validity="repair-crossings", validity_check_every=10_000)
         assert repaired.best_iteration < repaired.niterations
         assert invalid_count(repaired) <= invalid_count(baseline)
         # the errors of the snapshot are those of the geometry it holds
@@ -429,9 +452,10 @@ class TestMorph:
         expected = compute_error_metrics(areas, target, eps=0.0)
         np.testing.assert_allclose(repaired.best.errors.log_errors, expected.log_errors, rtol=1e-9, atol=1e-12)
 
-    def test_option_off_inserts_nothing(self):
+    def test_check_inserts_nothing(self):
         polygons, default = morph(11)
-        _, explicit = morph(11, validity="none")
+        _, explicit = morph(11, validity="check")
+        assert explicit.options.validity == "check" and default.options.validity == "check"
         assert default.vertex_lineage is None
         assert explicit.vertex_lineage is None
         n_input = len(shapely.get_coordinates(np.array(polygons, dtype=object)))
@@ -439,12 +463,12 @@ class TestMorph:
         coords = np.array([[0.0, 0.0], [1.0, 1.0]])
         assert default.lift_coordinates(coords) is coords or (default.lift_coordinates(coords) == coords).all()
 
-    def test_option_off_does_not_touch_the_loop(self, monkeypatch):
+    def test_check_does_not_touch_the_loop(self, monkeypatch):
         import carto_flow.flow_cartogram.algorithm as algorithm
         from carto_flow import data
 
         def forbidden(*args, **kwargs):
-            raise AssertionError("ValidatedWindows is used with validity='none'")
+            raise AssertionError("ValidatedWindows is used with validity='check'")
 
         monkeypatch.setattr(algorithm, "ValidatedWindows", forbidden)
         states = data.load_us_census(level="state")
@@ -454,8 +478,73 @@ class TestMorph:
         n_input = len(shapely.get_coordinates(states.geometry.values))
         assert len(shapely.get_coordinates(np.array(result.best.geometry, dtype=object))) == n_input
 
+    def test_the_memory_budget_sets_the_number_of_checks(self, monkeypatch):
+        import carto_flow.flow_cartogram.algorithm as algorithm
+        from carto_flow import data
+
+        spies = []
+
+        class Spy(ValidatedWindows):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.n_windows = 0
+                spies.append(self)
+
+            def add_field(self, vx, vy):
+                self.n_windows += 1
+                super().add_field(vx, vy)
+
+        monkeypatch.setattr(algorithm, "ValidatedWindows", Spy)
+        # the states have no crossings, so the checks insert nothing and the number of checks is set by the spans
+        states = data.load_us_census(level="state")
+        geometries = list(states.geometry)
+        values = states["Population"].to_numpy(float)
+
+        def run(**kwargs):
+            options = MorphOptions(
+                grid=64,
+                n_iter=80,
+                mean_tol=1e-9,
+                max_tol=1e-9,
+                stall_patience=None,
+                show_progress=False,
+                validity="repair-crossings",
+                **kwargs,
+            )
+            result = morph_geometries(geometries, values, options=options)
+            return spies[-1], result
+
+        # a budget below one field: the span ends after every window although 10,000 windows are allowed
+        tiny, _ = run(validity_check_every=10_000, validity_memory_mb=1e-6)
+        field = tiny.peak_field_bytes
+        assert field > 0
+        assert tiny.n_windows > 3
+        assert tiny.n_checks == tiny.n_windows  # one at the start of every window but the first, and the last
+        # the memory is the budget plus one field: one field here
+        # a budget of 2.5 fields stores three
+        three, _ = run(validity_check_every=10_000, validity_memory_mb=2.5 * field / 2**20)
+        assert three.peak_field_bytes == 3 * field
+        assert three.n_checks == -(-three.n_windows // 3)
+        # a large budget and a long span: only the check at the end of the run
+        large, _ = run(validity_check_every=10_000, validity_memory_mb=1024.0)
+        assert large.n_checks == 1
+        assert large.peak_field_bytes == large.n_windows * field
+        # the span is also limited by validity_check_every
+        short, _ = run(validity_check_every=2, validity_memory_mb=1024.0)
+        assert short.n_checks == -(-short.n_windows // 2)
+
+    def test_check_interval_options_have_no_effect_with_check(self, monkeypatch):
+        import carto_flow.flow_cartogram.algorithm as algorithm
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError("ValidatedWindows is used with validity='check'")
+
+        monkeypatch.setattr(algorithm, "ValidatedWindows", forbidden)
+        _, result = morph(11, validity="check", validity_check_every=1, validity_memory_mb=1e-6)
+        assert result.vertex_lineage is None
+
     def test_lift_coordinates_gives_the_final_vertex_set_and_the_same_rings(self):
-        polygons, repaired = morph(11, validity="windows")
+        polygons, repaired = morph(11, validity="repair-crossings")
         start = shapely.get_coordinates(np.array(polygons, dtype=object))
         lifted = repaired.lift_coordinates(start)
         assert len(lifted) == len(shapely.get_coordinates(np.array(repaired.best.geometry, dtype=object)))
@@ -469,7 +558,7 @@ class TestMorph:
             assert new.symmetric_difference(original).area == pytest.approx(0.0, abs=1e-9)
 
     def test_snapshots_keep_the_vertex_set_they_had_and_lift_to_the_final_one(self):
-        _, result = morph(11, validity="windows", snapshot_every=5)
+        _, result = morph(11, validity="repair-crossings", snapshot_every=5)
         final = result.vertex_lineage.n_vertices
         counts = [len(shapely.get_coordinates(np.array(s.geometry, dtype=object))) for s in result.snapshots.snapshots]
         assert len(set(counts)) > 1  # snapshots recorded before an insertion have fewer vertices
@@ -483,7 +572,7 @@ class TestMorph:
         landmarks = [Point(1.0, 0.5), Point(4.0, 2.0)]
         coords = np.array([[1.0, 1.0], [3.0, 2.0], [5.0, 1.0]])
         options = MorphOptions(
-            grid=64, n_iter=300, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="windows"
+            grid=64, n_iter=300, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="repair-crossings"
         )
         result = morph_geometries(polygons, values, landmarks=landmarks, coords=coords, options=options)
         assert result.vertex_lineage.rounds
@@ -496,7 +585,7 @@ class TestMorph:
         polygons, values = strip_scene(11)
         gdf = gpd.GeoDataFrame({"v": values}, geometry=polygons)
         options = [
-            MorphOptions(n_iter=100, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="windows")
+            MorphOptions(n_iter=100, mean_tol=0.02, max_tol=0.05, show_progress=False, validity="repair-crossings")
             for _ in range(2)
         ]
         workflow = CartogramWorkflow(gdf, "v", validate=False)

@@ -28,6 +28,7 @@ ValidatedWindows
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import TYPE_CHECKING
@@ -86,7 +87,7 @@ class VertexLineage:
     """
     The vertices inserted by validated windows, in the order of insertion.
 
-    A morph with ``validity="windows"`` can insert vertices into the segments of the geometries; none of the input
+    A morph with ``validity="repair-crossings"`` can insert vertices into the segments of the geometries; none of the input
     vertices moves or is removed. The lineage lifts the coordinates of a state with fewer vertices (the input, or a
     snapshot recorded earlier in the run) to the vertex set of the returned geometry.
 
@@ -248,7 +249,7 @@ class _Window:
 
 class ValidatedWindows:
     """
-    The validity check of a morph with ``validity="windows"``.
+    The validity check of a morph with ``validity="repair-crossings"``.
 
     One instance belongs to one call of the morph loop (one level of a ladder); it holds the geometry at the start of
     the current span, the fields and step sizes of the windows of the span, and the insertion rounds. The loop calls
@@ -268,8 +269,8 @@ class ValidatedWindows:
         Cap on the vertices inserted in the whole run, defaults to ``max(5000, n_vertices // 100)``. A crossing that
         the flow itself creates (a fold) is flagged again by every check and splitting does not remove it, so the
         number of inserted vertices would grow without bound. A check stops before the round that would exceed the
-        cap and disables the checks of the rest of the run (the fields are no longer stored); the regions that
-        are still invalid are reported by the morph as usual.
+        cap, warns, and disables the checks of the rest of the run (the fields are no longer stored); the regions
+        that are still invalid are reported by the morph as usual.
     """
 
     def __init__(
@@ -420,6 +421,13 @@ class ValidatedWindows:
                 break
             if self._inserted + int(split.sum()) > self.max_inserted:
                 self._exhausted = True
+                warnings.warn(
+                    f"The repair of crossing segments (validity='repair-crossings') stopped after inserting "
+                    f"{self._inserted} vertices, the cap of {self.max_inserted}. The rest of the run continues "
+                    "without repair; regions that are invalid at the end are listed in Cartogram.invalid_regions.",
+                    UserWarning,
+                    stacklevel=2,
+                )
                 break
             start, end, best, offsets, new_index, left, near = _split_segments(start, end, best, offsets, split, near)
             positions = self._replay(np.ascontiguousarray(start[new_index]), grid, keep_steps)

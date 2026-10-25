@@ -50,7 +50,7 @@ from .history import (
     ConvergenceHistory,
     History,
 )
-from .options import MorphOptions, MorphStatus
+from .options import VALIDITY_REPAIR_CROSSINGS, MorphOptions, MorphStatus
 from .recompute import score_rose, should_recompute
 from .stall import StallMonitor, cycle_length, region_size
 from .stepsize import DEAD_BAND_FRACTION, StepController
@@ -401,10 +401,10 @@ def morph_geometries(
     # Resolve grid using options
     grid = options.get_grid(options._calculate_bounds_from_geometries(geometries))
 
-    # Validated windows (validity="windows"; remove this and the calls of `windows` below to disable)
+    # Validated windows (validity="repair-crossings"; remove this and the calls of `windows` below to disable)
     windows = (
         ValidatedWindows(options.validity_check_every, options.validity_memory_mb, len(flat_geoms.coords))
-        if options.validity == "windows"
+        if options.validity == VALIDITY_REPAIR_CROSSINGS
         else None
     )
 

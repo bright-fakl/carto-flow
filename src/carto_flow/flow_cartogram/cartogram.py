@@ -93,10 +93,10 @@ class Cartogram:
     invalid_regions : tuple of int
         Indices of the regions whose returned geometry is not a valid polygon (a self-intersecting
         boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
-        the vertices of the input (with ``validity="windows"``: the vertices of the input and the inserted ones),
+        the vertices of the input (with ``validity="repair-crossings"``: the vertices of the input and the inserted ones),
         unless ``repair=True``.
     vertex_lineage : VertexLineage or None
-        With ``validity="windows"``, the vertices that the morph inserted into the segments of the geometries
+        With ``validity="repair-crossings"``, the vertices that the morph inserted into the segments of the geometries
         (``None`` otherwise). :meth:`lift_coordinates` lifts the coordinates of an earlier state to the vertices of
         the returned geometries, :meth:`lift_geometries` does the same for geometries. Landmarks, probes and ``coords`` are separate point sets and are not affected.
     landmark_area_scaling : np.ndarray or None
@@ -189,7 +189,7 @@ class Cartogram:
     def lift_coordinates(self, coords: Any) -> np.ndarray:
         """Lift the vertex coordinates of an earlier state to the vertices of the returned geometries.
 
-        With ``validity="windows"`` the morph inserts vertices into segments, so the returned geometries have more
+        With ``validity="repair-crossings"`` the morph inserts vertices into segments, so the returned geometries have more
         vertices than the input, and a snapshot recorded in the middle of a run (``snapshot_every``) keeps the
         vertices it had when it was recorded. This method gives the coordinates of such a state at the vertices of
         the returned geometries: every vertex that was inserted later lies at fraction ``t`` (0.5) between the two
@@ -214,7 +214,7 @@ class Cartogram:
 
         Notes
         -----
-        Without ``validity="windows"`` no vertex is inserted and the coordinates are returned unchanged. A cartogram
+        Without ``validity="repair-crossings"`` no vertex is inserted and the coordinates are returned unchanged. A cartogram
         of a ladder level starts from the output of the level before: lift through the levels in turn.
         """
         coords = np.asarray(coords, dtype=float)

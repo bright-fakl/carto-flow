@@ -43,19 +43,21 @@ Releases before 2.0.0 have no changelog entry; see the
   whose shared edges do not match) and information (repeated consecutive vertices). Every issue names the rows by index
   label. `create_flow_cartogram`, `CartogramWorkflow`, `create_voronoi_cartogram` and `create_noncontiguous_cartogram`
   run it first and take `validate=False` to skip it.
-- **`MorphOptions(validity="windows")` keeps the flow cartogram's output polygons from self-intersecting.** Vertices move
+- **`MorphOptions(validity="repair-crossings")` keeps the flow cartogram's output polygons from self-intersecting.** Vertices move
   individually, so a region squeezed into a strip narrower than the vertex spacing ends with crossing boundary segments. Every
   `validity_check_every` windows (default 10; a window is the span between two recomputes of the velocity field) and when the
   run ends, a crossing test over all regions finds the crossing segments. Each is split at the midpoint of its chord at the start
   of the span, and the new vertex is moved through the recorded steps of the span, so it lies on the path the flow gives it; the
   new segments are tested again for at most 14 rounds. No input vertex is moved or removed, the two sides of a shared boundary
   get identical vertices, and the returned best iterate is checked as well. The fields of a span are stored as float32 and a span
-  ends when they reach `validity_memory_mb` (default 128), independent of `recompute_every`. The output has more vertices than the
+  ends early when they reach `validity_memory_mb` (default 128 MB; the memory of the check is bounded by this value plus one field,
+  independent of `recompute_every` and `validity_check_every`; both options apply to `"repair-crossings"` only). The output has more vertices than the
   input: `Cartogram.vertex_lineage` records the insertions and `Cartogram.lift_coordinates` lifts the coordinates of the input, or
   of an earlier snapshot, to the vertex set of the returned geometries. Regions that stay invalid (a fold of the flow itself,
-  zero-width features, a hole that leaves its shell) are listed in `Cartogram.invalid_regions`. The default `validity="none"`
-  changes nothing. The crossing test is public as `carto_flow.geo_utils.find_crossing_segments` and `find_crossing_pairs`.
-- **Animations of cartograms with inserted vertices.** With `validity="windows"` the snapshots of a run and the outputs of
+  zero-width features, a hole that leaves its shell) are listed in `Cartogram.invalid_regions`. The number of inserted vertices is capped
+  at `max(5000, n // 100)` for `n` input vertices; when a check reaches the cap, the run warns and continues without repair. The
+  default `validity="check"` only checks the validity of the output, as before, and changes nothing else. The crossing test is public as `carto_flow.geo_utils.find_crossing_segments` and `find_crossing_pairs`.
+- **Animations of cartograms with inserted vertices.** With `validity="repair-crossings"` the snapshots of a run and the outputs of
   different morphs have different vertices, which linear interpolation cannot handle. `animate_morph_history(...,
   interpolation="linear")` now lifts every snapshot to the vertices of the returned geometries when the snapshots have
   different numbers of vertices, and raises a `ValueError` that names a snapshot that cannot be lifted. `Cartogram.lift_geometries`

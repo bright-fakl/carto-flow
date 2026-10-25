@@ -1,7 +1,7 @@
 """
 Common vertex sets for the outputs of flow cartograms of the same input.
 
-A flow morph with ``validity="windows"`` inserts vertices into the segments of the geometries, so morphs of the same
+A flow morph with ``validity="repair-crossings"`` inserts vertices into the segments of the geometries, so morphs of the same
 input with different values (for example different years) return geometries with different vertices and cannot be
 interpolated linearly. :func:`align_vertices` gives the outputs of several morphs one vertex set.
 
@@ -62,7 +62,7 @@ def _input_positions(chain: list[Cartogram], n_input: int, n_output: int, index:
 def align_vertices(sources: Any) -> list[np.ndarray]:
     """Give the outputs of several morphs of the same input one vertex set.
 
-    Flow cartograms with ``validity="windows"`` insert vertices, different ones for different values, so their
+    Flow cartograms with ``validity="repair-crossings"`` insert vertices, different ones for different values, so their
     outputs cannot be interpolated linearly. Every vertex of an output has a position along the rings of the input:
     the input vertices are at the integers of their index in the coordinate array and an inserted vertex is
     at the position that its vertex lineage gives it between its parents. The result has, in every ring, the vertices
@@ -77,7 +77,7 @@ def align_vertices(sources: Any) -> list[np.ndarray]:
         years. A :class:`CartogramWorkflow` is a chain of morphs (a ladder, or refinements) that start from the
         output of the one before, and its returned state is the last result; pass the workflow, not one of its
         levels. A :class:`Cartogram` is taken to be a morph of the input itself. Sources without a vertex lineage
-        (``validity="none"``) can be mixed with others.
+        (``validity="check"``) can be mixed with others.
 
     Returns
     -------
@@ -96,7 +96,7 @@ def align_vertices(sources: Any) -> list[np.ndarray]:
 
     Examples
     --------
-    >>> options = MorphOptions(validity="windows")
+    >>> options = MorphOptions(validity="repair-crossings")
     >>> a = create_flow_cartogram(gdf, "pop_2010", options=options)
     >>> b = create_flow_cartogram(gdf, "pop_2020", options=options)
     >>> frames = [gdf.assign(geometry=geometry) for geometry in align_vertices([a, b])]

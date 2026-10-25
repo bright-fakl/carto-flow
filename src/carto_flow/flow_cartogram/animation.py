@@ -136,7 +136,7 @@ def _interpolate_rings_to_path(rings_a: list[np.ndarray], rings_b: list[np.ndarr
     if len(rings_a) != len(rings_b) or any(a.shape != b.shape for a, b in zip(rings_a, rings_b, strict=True)):
         raise ValueError(
             "Linear interpolation needs keyframes with the same vertices, but the keyframes have different "
-            "numbers of vertices or rings (a flow cartogram with validity='windows' inserts vertices). Give the "
+            "numbers of vertices or rings (a flow cartogram with validity='repair-crossings' inserts vertices). Give the "
             "keyframes equal vertex sets with carto_flow.flow_cartogram.align_vertices, or lift the geometries of "
             "one cartogram with Cartogram.lift_geometries; interpolation='nearest' needs neither."
         )
@@ -944,7 +944,7 @@ def animate_morph_history(
     Color limits are computed globally across all snapshots to ensure
     consistent coloring throughout the animation.
 
-    With ``validity="windows"`` snapshots can have different numbers of vertices (``Cartogram.vertex_lineage``). The
+    With ``validity="repair-crossings"`` snapshots can have different numbers of vertices (``Cartogram.vertex_lineage``). The
     animation with ``interpolation="linear"`` then lifts every snapshot to the vertices of the returned geometries
     (:meth:`Cartogram.lift_geometries`); a snapshot that cannot be lifted raises a ``ValueError``.
     ``interpolation="nearest"`` shows the snapshots as recorded.
@@ -1496,7 +1496,7 @@ def animate_geometry_keyframes(
         - "linear": Linearly interpolate geometry vertices between keyframes. The keyframes need the same vertices:
           the precomputed animation of polygons with colors raises a ``ValueError`` for keyframes with different
           numbers of vertices, the other animations resample the rings by index, which misaligns the vertices. Cartograms of a flow morph with
-          ``validity="windows"`` have inserted vertices: see :func:`align_vertices` and
+          ``validity="repair-crossings"`` have inserted vertices: see :func:`align_vertices` and
           :meth:`Cartogram.lift_geometries`.
     position_mapper : callable, optional
         Function to control animation timing. Maps progress [0,1] to position

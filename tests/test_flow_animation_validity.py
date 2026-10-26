@@ -44,7 +44,7 @@ def run(seed, values=None, **kwargs):
     """Morph of the squeezed-strip scene of `seed` (optionally with other values)."""
     polygons, scene_values = strip_scene(seed)
     options = MorphOptions(
-        grid=64, n_iter=300, mean_tol=0.02, max_tol=0.05, show_progress=False, stall_lagging=False, **kwargs
+        grid=64, n_iter=300, mean_tol=0.02, max_tol=0.05, show_progress=False, wait_for_lagging_regions=False, **kwargs
     )
     return polygons, morph_geometries(polygons, scene_values if values is None else values, options=options)
 

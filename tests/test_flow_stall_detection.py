@@ -78,7 +78,7 @@ class TestBestIterate:
         "mean_tol": 0.001,
         "max_tol": 0.002,
         "stall_patience": None,
-        "stall_lagging": False,  # these tests are of the best iterate by the mean and max ratios
+        "wait_for_lagging_regions": False,  # these tests are of the best iterate by the mean and max ratios
     }
 
     def test_iteration_cap_returns_best_iterate(self, states):

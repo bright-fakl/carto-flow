@@ -351,8 +351,8 @@ class MorphOptions:
     starts from the best iterate, with the previous options and the given overrides.
     """
 
-    stall_lagging: bool = True
-    """Whether the stall rule also follows the regions that are still above the tolerance.
+    wait_for_lagging_regions: bool = True
+    """Whether the run keeps going while the regions that are still above the tolerance improve.
 
     The mean error is dominated by the regions that are already close and the max error is held by one region, so a
     group of lagging regions can improve steadily without either moving enough to count as progress. With True a
@@ -636,7 +636,7 @@ class MorphOptions:
             "prescale_coords",
             "adaptive_dt",
             "stall_patience",
-            "stall_lagging",
+            "wait_for_lagging_regions",
             "stall_min_efficiency",
             "validity",
             "validity_repair_every",
@@ -755,9 +755,9 @@ class MorphOptions:
         elif field_name == "recompute_on_rise":
             if value is not None and (not isinstance(value, int | float) or isinstance(value, bool) or value < 0):
                 return "recompute_on_rise must be a non-negative number or None"
-        elif field_name == "stall_lagging":
+        elif field_name == "wait_for_lagging_regions":
             if not isinstance(value, bool):
-                return "stall_lagging must be a bool"
+                return "wait_for_lagging_regions must be a bool"
         elif field_name == "stall_min_efficiency":
             if not isinstance(value, int | float) or isinstance(value, bool) or value < 0:
                 return "stall_min_efficiency must be a non-negative number"

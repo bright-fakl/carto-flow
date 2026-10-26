@@ -74,12 +74,12 @@ class TestStallMonitorLag:
 
 class TestOption:
     def test_default_is_on(self):
-        assert MorphOptions().stall_lagging is True
+        assert MorphOptions().wait_for_lagging_regions is True
 
     @pytest.mark.parametrize("value", [1, "yes", None])
     def test_invalid_values_raise(self, value):
-        with pytest.raises(MorphOptionsValidationError, match="stall_lagging"):
-            MorphOptions(stall_lagging=value)
+        with pytest.raises(MorphOptionsValidationError, match="wait_for_lagging_regions"):
+            MorphOptions(wait_for_lagging_regions=value)
 
 
 def lag_of(snapshot, options):
@@ -112,7 +112,7 @@ class TestRun:
                 results[lagging] = morph_geometries(
                     list(states.geometry),
                     states["Population"].to_numpy(float),
-                    options=MorphOptions(**kwargs, stall_lagging=lagging),
+                    options=MorphOptions(**kwargs, wait_for_lagging_regions=lagging),
                 )
         assert results[True].niterations <= 150
         assert results[True].niterations >= results[False].niterations  # the same until the old rule would stall
@@ -124,7 +124,7 @@ class TestRun:
         real = workflow_module.morph_geometries
 
         def short(*args, options, **kwargs):
-            seen.append(options.stall_lagging)
+            seen.append(options.wait_for_lagging_regions)
             return real(*args, options=options.copy_with(n_iter=2), **kwargs)
 
         monkeypatch.setattr(workflow_module, "morph_geometries", short)
@@ -141,4 +141,4 @@ class TestRun:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             workflow.morph_multiresolution(min_resolution=32, levels=2, options=[options, options])
-        assert [c.options.stall_lagging for c in list(workflow)[1:]] == [True, True]
+        assert [c.options.wait_for_lagging_regions for c in list(workflow)[1:]] == [True, True]

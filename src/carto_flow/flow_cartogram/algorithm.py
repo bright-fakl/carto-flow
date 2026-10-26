@@ -795,7 +795,7 @@ def morph_geometries(
         step_controller.update(error_metrics.log_errors, score)
         lag = None
         best_key = score
-        if options.stall_lagging:
+        if options.wait_for_lagging_regions:
             effective = effective_log_errors(error_metrics.log_errors, current_areas, target_areas, abs_tol)
             lag = lagging_error(effective, log2_max_tol, log2_mean_tol)
             best_key = lag

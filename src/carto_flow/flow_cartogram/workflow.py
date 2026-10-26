@@ -452,7 +452,7 @@ class CartogramWorkflow:
             level_options.grid = grid  # type: ignore[union-attr]
             if not isinstance(options, list) and level < len(grids) - 1:
                 # the coarse levels cannot resolve their smallest regions: they would use the iterations of the finest
-                level_options.stall_lagging = False  # type: ignore[union-attr]
+                level_options.wait_for_lagging_regions = False  # type: ignore[union-attr]
             # the same area at every level: area_tol_cells counts cells of the finest grid
             level_options.area_tol_cells *= (grids[-1].dx * grids[-1].dy) / (grid.dx * grid.dy)  # type: ignore[union-attr]
             level_options.progress_message = (  # type: ignore[union-attr]

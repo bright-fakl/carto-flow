@@ -230,62 +230,14 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 
 ## Output Validity
 
-Vertices move individually through the velocity field, so the straight segment between two vertices is not the image of the segment. Where a region is squeezed into a strip narrower than the vertex spacing, the segments of its boundary can cross and the output polygon is invalid. `MorphOptions.validity` sets what the morph does about it; the values are mutually exclusive:
+<a id="memory-budget"></a>
+
+The morph moves the vertices and draws a straight line (a chord) between their new positions. Where a region is squeezed into a strip narrower than the vertex spacing, the chords of its boundary can cross although the boundary itself does not, and the output polygon is invalid. `MorphOptions.validity` sets what the morph does about it; the values are mutually exclusive:
 
 - `"check"` (default): the validity is only checked. At the end of the run the returned best iterate is tested, the invalid regions are listed in `Cartogram.invalid_regions` and the run warns. The geometry is not changed and no vertex is inserted.
-- `"repair-crossings"`: a crossing test and a local repair (validated windows), described below.
+- `"repair-crossings"`: a crossing test and a local repair (validated windows). Every `validity_repair_every` windows the crossing segments are split and the new vertices are moved along their flow paths. `validity_memory_mb` bounds the memory of the stored velocity fields, and the number of inserted vertices is capped.
 
-A window is the span of iterations between two recomputes of the velocity field (`recompute_every`). Inside a window the field is fixed, so every vertex moves independently of all others, and the path of a vertex through the window is known. A span of `validity_repair_every` windows (default 10) is checked at its end:
-
-1. A crossing test finds the segments that cross another segment. It covers all regions together, so a region that overlaps a neighbor is found as well as a self-intersection. Segments that share an end point, touch, or are identical (the two sides of a shared boundary) do not count.
-2. Every crossing segment is split at the midpoint of its chord at the start of the span. The two regions of a shared boundary get identical new vertices, and the original vertices are neither moved nor removed.
-3. The new vertices are moved through the recorded steps of the span with the stored fields, so they end on the path the flow gives them and not on the chord.
-4. The new segments are tested again around the crossings, for at most 14 rounds.
-
-The run is also checked when it ends (converged, stalled or at `n_iter`), whatever the position in the span, and the returned best iterate is checked through its own recorded path.
-
-The output then has more vertices than the input. `Cartogram.vertex_lineage` records every insertion: a new vertex lies at fraction 0.5 between two older vertices of the same ring, and `Cartogram.lift_coordinates` lifts the coordinates of the input, or of a snapshot recorded earlier in the run, to the vertex set of the returned geometries. Snapshots keep the vertices they had when they were recorded, so snapshots of one run can have different numbers of vertices. `Cartogram.lift_geometries` does for geometries what `lift_coordinates` does for coordinates. Landmarks, probes and displacement coordinates are separate point sets and are not affected. Each level of a ladder is a separate morph that starts from the output of the level before, with its own lineage.
-
-### Animating cartograms with inserted vertices
-
-Linear interpolation between two states needs equal vertex sets.
-
-- `animate_morph_history(cartogram, interpolation="linear")` lifts every snapshot to the vertices of the returned geometries when the snapshots have different numbers of vertices, so it works as it does without `validity`. A snapshot that cannot be lifted raises a `ValueError` that names it; `interpolation="nearest"` shows the snapshots as recorded and needs no lifting.
-- `animate_geometry_keyframes(..., interpolation="linear")` takes arbitrary keyframes and does not lift. The precomputed animation of colored polygons raises a `ValueError` for keyframes with different numbers of vertices; the other animations resample the rings by index, which misaligns the vertices. Give the keyframes equal vertex sets first.
-
-`Cartogram.lift_geometries(geometries)` lifts the geometries of the input, or of a snapshot, to the vertices and ring structure of the returned geometries, for example to animate between the input and the result with the lifted input as a keyframe:
-
-```python
-start = cartogram.lift_geometries(gdf.geometry)
-keyframes = [gdf.assign(geometry=start), cartogram.to_geodataframe()]
-anim = animate_geometry_keyframes(keyframes, interpolation="linear", facecolor="population")
-```
-
-`align_vertices(sources)` gives the outputs of several morphs of the same input (for example the same map with the values of different years) one vertex set. Every vertex of an output has a position along the rings of the input, which the vertex lineage gives; the result has, in every ring, the vertices at the union of the positions of all sources. Each output is re-sampled at these positions along its own segments, so its shape, area and validity are unchanged and only vertices on its own segments are added. A source is a `Cartogram` (a morph of the input itself) or a `CartogramWorkflow` (a ladder or a chain of refinements, which start from the output of the one before and are followed through all levels). Sources without a lineage (`validity="check"`) can be mixed with others. The sources must have the same number of geometries, parts, rings and input vertices per ring.
-
-```python
-from carto_flow.flow_cartogram import align_vertices
-
-options = MorphOptions(validity="repair-crossings")
-a = create_flow_cartogram(gdf, "pop_2010", options=options)
-b = create_flow_cartogram(gdf, "pop_2020", options=options)
-keyframes = [gdf.assign(geometry=geometry) for geometry in align_vertices([a, b])]
-anim = animate_geometry_keyframes(keyframes, interpolation="linear", facecolor="population")
-```
-
-The test detects crossings of segments only. A region that remains invalid is listed in `Cartogram.invalid_regions`: a fold that the flow itself creates (splitting does not remove it), zero-width features of the input, or a hole that leaves its shell without crossing it. The cap on inserted vertices can also leave regions invalid (see above).
-
-### Memory budget
-
-The check stores the velocity fields of the windows of a span, as float32: a field has two components of `nx * ny` cells, `2 * 4 * nx * ny` bytes (22 MB on the 2048 by 1408 cells of the finest grid of the US county examples, 32 MB on 2048 by 2048 cells). `validity_memory_mb` (default 128, in units of 2**20 bytes) is the budget for them. `validity_repair_every` and `validity_memory_mb` apply to `"repair-crossings"` only; with `"check"` they are validated and unused.
-
-- When the stored fields have reached the budget at the start of a window, the span ends early: the crossing test and the repair run then, although `validity_repair_every` windows have not passed, the stored fields are released and a new span starts. The number of windows between two checks is the smaller of `validity_repair_every` and the number of fields that reach the budget, so it is shorter than `validity_repair_every` on a fine grid or with a small budget.
-- A window's field is always stored. The memory of the check is therefore bounded by the budget plus one field plus one copy of the coordinates, whatever `recompute_every` and `validity_repair_every` are.
-- Short spans cost time, because every check tests all segments. A check after one or two windows also finds crossings that the next window would remove, which costs accuracy and time. A budget that holds only one or two fields of the finest grid is not useful; for `validity_repair_every` windows per span the budget has to be at least `validity_repair_every` times the field size (320 MB for 10 fields of 32 MB), or `validity_repair_every` has to be lowered to what the budget holds.
-
-### Cap on inserted vertices
-
-The number of vertices that a run inserts is capped at `max(5000, n // 100)`, with `n` the number of input vertices; this is independent of the memory budget. A crossing that the flow itself creates (a fold) is found again by every check and splitting does not remove it, so without the cap the insertions would not end. When a check would exceed the cap, it stops before that round and the run warns. The run then continues as with `"check"`: no further fields are stored, no further check or repair runs, and the polygons that are invalid at the end are listed in `Cartogram.invalid_regions`.
+The methods, their diagrams, the memory budget, the vertex lineage and the animation of outputs with inserted vertices are described in [Output Validity](flow-cartogram-validity.md).
 
 ---
 

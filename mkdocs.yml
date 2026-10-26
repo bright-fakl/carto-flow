@@ -129,6 +129,7 @@ nav:
     - Overview: explanations/index.md
     - Flow Cartogram:
         - Algorithm: explanations/flow-cartogram-algorithm.md
+        - Output Validity: explanations/flow-cartogram-validity.md
         - History and Snapshot System: explanations/flow-cartogram-history.md
         - Workflow System: explanations/flow-cartogram-workflow.md
         - Performance: explanations/performance.ipynb

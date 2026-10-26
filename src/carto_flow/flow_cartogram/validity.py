@@ -132,6 +132,53 @@ class VertexLineage:
     n_input: int
     rounds: tuple[InsertionRound | RemovalRound, ...] = field(default_factory=tuple)
 
+    def to_dict(self) -> dict:
+        """The lineage as a JSON-compatible dictionary (see :meth:`from_dict`).
+
+        A removal round stores the indices of the vertices it removes, which are few, rather than those it keeps.
+        """
+        counts = self._counts()
+        rounds: list[dict] = []
+        for r, before in zip(self.rounds, counts, strict=False):
+            if isinstance(r, InsertionRound):
+                rounds.append({
+                    "type": "insert",
+                    "iteration": int(r.iteration),
+                    "new_index": np.asarray(r.new_index).tolist(),
+                    "left": np.asarray(r.left).tolist(),
+                    "fraction": np.asarray(r.fraction, dtype=float).tolist(),
+                })
+            else:
+                removed = np.setdiff1d(np.arange(before), r.kept_index)
+                rounds.append({"type": "remove", "iteration": int(r.iteration), "removed_index": removed.tolist()})
+        return {"version": 1, "n_input": int(self.n_input), "rounds": rounds}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> VertexLineage:
+        """Rebuild a lineage from the output of :meth:`to_dict`."""
+        if data.get("version") != 1:
+            raise ValueError(f"Unsupported vertex lineage version: {data.get('version')!r}")
+        n = int(data["n_input"])
+        rounds: list[InsertionRound | RemovalRound] = []
+        for r in data["rounds"]:
+            if r["type"] == "insert":
+                new_index = np.asarray(r["new_index"], dtype=np.int64)
+                fraction = r["fraction"]
+                rounds.append(
+                    InsertionRound(
+                        new_index=new_index,
+                        left=np.asarray(r["left"], dtype=np.int64),
+                        fraction=np.asarray(fraction, dtype=float) if isinstance(fraction, list) else float(fraction),
+                        iteration=int(r["iteration"]),
+                    )
+                )
+                n += len(new_index)
+            else:
+                kept = np.setdiff1d(np.arange(n), np.asarray(r["removed_index"], dtype=np.int64))
+                rounds.append(RemovalRound(kept_index=kept, iteration=int(r["iteration"])))
+                n = len(kept)
+        return cls(n_input=int(data["n_input"]), rounds=tuple(rounds))
+
     def _counts(self) -> list[int]:
         """Number of vertices of the input and after each round."""
         counts = [self.n_input]

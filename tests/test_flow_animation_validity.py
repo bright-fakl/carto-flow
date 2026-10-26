@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import json
 
 import geopandas as gpd
 import matplotlib
@@ -483,3 +484,69 @@ class TestQuadtreeAlignment:
         assert levels[1].n_input == levels[0].n_vertices
         aligned = align_vertices(workflows)
         check_aligned([w[-1].get_geometry() for w in workflows], aligned)
+
+
+# ----------------------------------------------------------------------------
+# save_cartogram / load_cartogram keep the vertex lineage
+# ----------------------------------------------------------------------------
+
+
+def same_rounds(a, b):
+    assert a.n_input == b.n_input
+    assert [type(r) for r in a.rounds] == [type(r) for r in b.rounds]
+    for x, y in zip(a.rounds, b.rounds, strict=True):
+        assert x.iteration == y.iteration
+        if isinstance(x, InsertionRound):
+            np.testing.assert_array_equal(x.new_index, y.new_index)
+            np.testing.assert_array_equal(x.left, y.left)
+            np.testing.assert_array_equal(x.fraction, y.fraction)
+        else:
+            np.testing.assert_array_equal(x.kept_index, y.kept_index)
+
+
+class TestSerialization:
+    def test_the_lineage_round_trips_through_json(self, quadtree):
+        # a quadtree lineage has insertion and removal rounds; a scalar and an array fraction
+        lineage = quadtree[2].vertex_lineage
+        mixed = VertexLineage(
+            n_input=lineage.n_input,
+            rounds=(
+                *lineage.rounds,
+                InsertionRound(
+                    new_index=np.array([0, 3]), left=np.array([0, 1]), fraction=np.array([0.25, 0.5]), iteration=999
+                ),
+            ),
+        )
+        restored = VertexLineage.from_dict(json.loads(json.dumps(mixed.to_dict())))
+        same_rounds(mixed, restored)
+        assert restored.n_vertices == mixed.n_vertices
+
+    @pytest.mark.parametrize("name", ["grown", "quadtree"])
+    def test_a_loaded_cartogram_lifts_and_aligns_like_the_original(self, name, grown, quadtree, tmp_path):
+        polygons, result = (grown[0], grown[2]) if name == "grown" else (quadtree[0], quadtree[2])
+        path = tmp_path / "c.json"
+        result.save(path)
+        loaded = type(result).load(path)
+        same_rounds(result.vertex_lineage, loaded.vertex_lineage)
+        coords = shapely.get_coordinates(np.asarray(polygons, dtype=object))
+        np.testing.assert_array_equal(loaded.lift_coordinates(coords), result.lift_coordinates(coords))
+
+    def test_a_loaded_cartogram_aligns_with_another(self, pair, tmp_path):
+        _, a, b, _ = pair
+        for name, cartogram in (("a", a), ("b", b)):
+            cartogram.save(tmp_path / f"{name}.json")
+        loaded = [type(a).load(tmp_path / f"{name}.json") for name in "ab"]
+        got = align_vertices(loaded)
+        want = align_vertices([a, b])
+        for g, w in zip(got, want, strict=True):
+            assert count(g) == count(w)
+
+    def test_files_without_a_lineage_load_without_one(self, pair, tmp_path):
+        plain = pair[3]
+        plain.save(tmp_path / "p.json")
+        assert plain.vertex_lineage is None
+        assert type(plain).load(tmp_path / "p.json").vertex_lineage is None
+
+    def test_an_unknown_version_raises(self):
+        with pytest.raises(ValueError, match="version"):
+            VertexLineage.from_dict({"version": 2, "n_input": 3, "rounds": []})

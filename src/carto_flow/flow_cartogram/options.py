@@ -356,7 +356,7 @@ class MorphOptions:
     - ``"check"`` (default): the validity is only checked. At the end of the run the returned (best) iterate is
       tested; the invalid regions are listed in ``Cartogram.invalid_regions`` and the run warns. The geometry is not
       changed and no vertex is inserted: the output has the vertices of the input.
-    - ``"repair-crossings"``: validated windows. Every ``validity_check_every`` windows (a window is the span of
+    - ``"repair-crossings"``: validated windows. Every ``validity_repair_every`` windows (a window is the span of
       iterations between two recomputes of the velocity field) and at the end of the run, a crossing test finds the
       crossing segments. Each is split at the midpoint of its chord at the start of the span, and the new vertex is
       moved through the recorded steps of the span, so it lies on the path the flow gives it. The new segments are
@@ -389,7 +389,7 @@ class MorphOptions:
     36 bytes per vertex. The snapshots of ``snapshot_every`` keep the vertices they had when recorded.
     """
 
-    validity_check_every: int = 10
+    validity_repair_every: int = 10
     """Windows between two crossing tests with ``validity="repair-crossings"``; not used by ``"repair-quadtree"``.
 
     A longer span costs fewer tests and stores more fields; the memory budget ``validity_memory_mb`` can end a span
@@ -404,19 +404,19 @@ class MorphOptions:
     The field of every window of a span is stored as float32, two components of ``nx * ny`` cells: ``2 * 4 * nx *
     ny`` bytes. A grid of 2048 by 2048 cells takes 32 MB per field, and the 2048 by 1408 cells of the finest grid of
     the US county examples 22 MB. When the stored fields have reached this size at the start of a window, the span
-    ends early: the crossing test and the repair run then, although ``validity_check_every`` windows have not passed,
+    ends early: the crossing test and the repair run then, although ``validity_repair_every`` windows have not passed,
     the stored fields are released and a new span starts. The number of windows between two checks is thus the
-    smaller of ``validity_check_every`` and the number of fields that reach the budget, ``ceil(validity_memory_mb /
-    field size)``: shorter than ``validity_check_every`` on a fine grid or with a small value.
+    smaller of ``validity_repair_every`` and the number of fields that reach the budget, ``ceil(validity_memory_mb /
+    field size)``: shorter than ``validity_repair_every`` on a fine grid or with a small value.
 
     A window's field is always stored, so the memory of the check is bounded by this value plus one field plus one
-    copy of the coordinates, whatever ``recompute_every`` and ``validity_check_every`` are.
+    copy of the coordinates, whatever ``recompute_every`` and ``validity_repair_every`` are.
 
     Short spans cost time, because every check tests all segments. A check after every window or two can also find
     crossings that the next window would remove, which costs accuracy and time. A value that holds only one or two
-    fields of the finest grid is therefore not useful: for ``validity_check_every`` windows between checks choose at
-    least ``validity_check_every`` times the field size (320 MB for 10 fields of 32 MB), or lower
-    ``validity_check_every`` to what the memory holds.
+    fields of the finest grid is therefore not useful: for ``validity_repair_every`` windows between checks choose at
+    least ``validity_repair_every`` times the field size (320 MB for 10 fields of 32 MB), or lower
+    ``validity_repair_every`` to what the memory holds.
 
     The value is validated but unused with ``validity="check"`` and ``validity="repair-quadtree"``, which store no
     fields.
@@ -605,7 +605,7 @@ class MorphOptions:
             "stall_patience",
             "stall_min_efficiency",
             "validity",
-            "validity_check_every",
+            "validity_repair_every",
             "validity_memory_mb",
             "recompute_on_rise",
             "error_floor",
@@ -724,9 +724,9 @@ class MorphOptions:
         elif field_name == "validity":
             if value not in VALIDITY_VALUES:
                 return "validity must be one of " + ", ".join(f'"{v}"' for v in VALIDITY_VALUES)
-        elif field_name == "validity_check_every":
+        elif field_name == "validity_repair_every":
             if not isinstance(value, int) or isinstance(value, bool) or value < 1:
-                return "validity_check_every must be a positive integer"
+                return "validity_repair_every must be a positive integer"
         elif field_name == "validity_memory_mb":
             if not isinstance(value, int | float) or isinstance(value, bool) or not value > 0:
                 return "validity_memory_mb must be a positive number"

@@ -4,7 +4,7 @@ Validated windows: output polygons that do not self-intersect.
 Vertices move individually through the velocity field, so a segment between two vertices is not the image of the
 segment, and where a polygon is squeezed into a strip narrower than the vertex spacing the segments cross. Inside a
 window (the iterations between two recomputes of the field) the field is fixed, so every vertex moves independently of
-all others. At the end of a span of ``validity_check_every`` windows, :class:`ValidatedWindows`
+all others. At the end of a span of ``validity_repair_every`` windows, :class:`ValidatedWindows`
 
 1. finds the crossing segments (:mod:`carto_flow.geo_utils.crossings`),
 2. splits each of them at the midpoint of its chord at the start of the span (the two rings of a shared boundary get

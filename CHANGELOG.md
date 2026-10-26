@@ -45,13 +45,13 @@ Releases before 2.0.0 have no changelog entry; see the
   run it first and take `validate=False` to skip it.
 - **`MorphOptions(validity="repair-crossings")` keeps the flow cartogram's output polygons from self-intersecting.** Vertices move
   individually, so a region squeezed into a strip narrower than the vertex spacing ends with crossing boundary segments. Every
-  `validity_check_every` windows (default 10; a window is the span between two recomputes of the velocity field) and when the
+  `validity_repair_every` windows (default 10; a window is the span between two recomputes of the velocity field) and when the
   run ends, a crossing test over all regions finds the crossing segments. Each is split at the midpoint of its chord at the start
   of the span, and the new vertex is moved through the recorded steps of the span, so it lies on the path the flow gives it; the
   new segments are tested again for at most 14 rounds. No input vertex is moved or removed, the two sides of a shared boundary
   get identical vertices, and the returned best iterate is checked as well. The fields of a span are stored as float32 and a span
   ends early when they reach `validity_memory_mb` (default 128 MB; the memory of the check is bounded by this value plus one field,
-  independent of `recompute_every` and `validity_check_every`; both options apply to `"repair-crossings"` only). The output has more vertices than the
+  independent of `recompute_every` and `validity_repair_every`; both options apply to `"repair-crossings"` only). The output has more vertices than the
   input: `Cartogram.vertex_lineage` records the insertions and `Cartogram.lift_coordinates` lifts the coordinates of the input, or
   of an earlier snapshot, to the vertex set of the returned geometries. Regions that stay invalid (a fold of the flow itself,
   zero-width features, a hole that leaves its shell) are listed in `Cartogram.invalid_regions`. The number of inserted vertices is capped
@@ -68,7 +68,7 @@ Releases before 2.0.0 have no changelog entry; see the
   inversion that survives is counted and reported with a warning at the end of the run. Inserted vertices that lie on the chord of
   their neighbors are removed again when the chord crosses no segment and no small ring lies within the tolerance (a heuristic that
   looks at rings of at most 64 vertices). No input vertex is moved or removed; the output has more vertices than with
-  `validity="repair-crossings"` and the method takes more time. It stores no velocity fields, so `validity_check_every` and
+  `validity="repair-crossings"` and the method takes more time. It stores no velocity fields, so `validity_repair_every` and
   `validity_memory_mb` apply to `"repair-crossings"` only. `Cartogram.vertex_lineage` now records removals as well as insertions
   (`RemovalRound`), `VertexLineage.lift` takes a `state` when a vertex count is shared by two states of the run, and the returned
   best iterate keeps its own vertex set, with the lineage ending at it.

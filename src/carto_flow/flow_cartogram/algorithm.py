@@ -405,7 +405,7 @@ def morph_geometries(
     # Validity method (validity="repair-crossings" or "repair-quadtree"; remove this and the calls of `windows` below to disable)
     windows: ValidityMethod | None = None
     if options.validity == VALIDITY_REPAIR_CROSSINGS:
-        windows = ValidatedWindows(options.validity_check_every, options.validity_memory_mb, len(flat_geoms.coords))
+        windows = ValidatedWindows(options.validity_repair_every, options.validity_memory_mb, len(flat_geoms.coords))
     elif options.validity == VALIDITY_REPAIR_QUADTREE:
         windows = QuadtreeWindows(len(flat_geoms.coords))
 

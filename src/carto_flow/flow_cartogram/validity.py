@@ -1,10 +1,12 @@
 """
 Validated windows: output polygons that do not self-intersect.
 
-Vertices move individually through the velocity field, so a segment between two vertices is not the image of the
-segment, and where a polygon is squeezed into a strip narrower than the vertex spacing the segments cross. Inside a
-window (the iterations between two recomputes of the field) the field is fixed, so every vertex moves independently of
-all others. At the end of a span of ``validity_repair_every`` windows, :class:`ValidatedWindows`
+Before the morph a boundary segment is a straight line between two vertices. The flow moves every point of that line,
+not only the two vertices, and the points end up on a curve. The morph moves only the vertices and draws a straight
+line (the chord) between their new positions, so the chord can differ from the curve that the boundary would follow,
+and where a polygon is squeezed into a strip narrower than the vertex spacing the chords cross. Inside a window (the
+iterations between two recomputes of the field) the field is fixed, so every vertex moves independently of all
+others. At the end of a span of ``validity_repair_every`` windows, :class:`ValidatedWindows`
 
 1. finds the crossing segments (:mod:`carto_flow.geo_utils.crossings`),
 2. splits each of them at the midpoint of its chord at the start of the span (the two rings of a shared boundary get

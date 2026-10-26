@@ -19,6 +19,8 @@ Releases before 2.0.0 have no changelog entry; see the
   tolerance is the same area at every level. Default 0 (off).
 - **A stalled morph says how to continue.** `CartogramWorkflow.morph` and `morph_multiresolution` warn when the run ends
   stalled: `workflow.morph(stall_patience=None, n_iter=N)` continues from the best iterate with the stall rule off.
+- **A `PlotStyle` can be saved and loaded.** `PlotStyle.to_dict` / `from_dict` and `PlotStyle.save` / `load` (JSON) make styles
+  portable; a colormap is stored by name or, if matplotlib does not have it, as its colors.
 - **`Cartogram.save` and `Cartogram.load` keep the vertex lineage** of `validity="repair-crossings"` and `"repair-quadtree"` runs, so a loaded
   cartogram can lift coordinates and take part in `align_vertices`. Files saved earlier load without a lineage.
 - **`max_segment_length` densifies the boundaries of the geometry loaders at load time.** `load_us_census`, `load_world` and
@@ -220,6 +222,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **The overlay colors of `PlotStyle.dark()` differ under red-green color vision deficiency.** The series, accent, positive and highlight colors changed slightly (`#85b7e0`, `#facc38`, `#54d497`, `#bf9cfc`).
 - **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,
   which put each square in a lattice cell: with the default `size_normalization="max"` the squares covered 15 % of the
   geometry area and none of the neighboring squares touched. It now uses `PackingLayout(shape="square")` with

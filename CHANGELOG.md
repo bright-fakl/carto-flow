@@ -214,6 +214,7 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Changed
 
+- **The overlay colors of `PlotStyle.dark()` differ under red-green color vision deficiency.** The series, accent, positive and highlight colors changed slightly (`#85b7e0`, `#facc38`, `#54d497`, `#bf9cfc`).
 - **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,
   which put each square in a lattice cell: with the default `size_normalization="max"` the squares covered 15 % of the
   geometry area and none of the neighboring squares touched. It now uses `PackingLayout(shape="square")` with

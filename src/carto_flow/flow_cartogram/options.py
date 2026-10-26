@@ -267,18 +267,19 @@ class MorphOptions:
     """
 
     area_tol_cells: float = 0.0
-    """Absolute area tolerance, in cells of the grid, that excuses a region from the relative tolerances.
+    """Stops the morph early once small regions are as close to their target as this many cells of area.
 
     A region whose area differs from its target by at most ``area_tol_cells`` cells (``dx * dy`` of the grid of the
     run) counts as on target, whatever its relative error: the condition for a region is ``relative error < max_tol``
-    OR ``area difference <= area_tol_cells`` cells. A region of a few cells cannot be resolved much better than the
-    grid, so its relative error can stay large while the region is as close as the grid allows. The excused regions
-    count as on target in the convergence test, in the stall rule and in the choice of the best iterate; the reported
-    errors (``mean_error_pct``, ``max_error_pct``, the convergence history and the snapshot errors) are the true
-    relative errors. ``Cartogram.n_unresolved`` counts the excused regions whose relative error is not below
-    ``max_tol``. ``0`` (default) turns the tolerance off. In a multiresolution morph the tolerance is the same area at
-    every level, ``area_tol_cells`` cells of the finest grid, so a coarse level is not excused further than the finest
-    level could resolve.
+    OR ``area difference <= area_tol_cells`` cells. Use it when a small absolute size is good enough for the small
+    regions even if their relative error is large. It does not make the result more accurate: it lets the convergence
+    test pass earlier, so the morph ends with ``CONVERGED`` while excused regions may still be far off in relative
+    terms. The excused regions count as on target in the convergence test, in the stall rule and in the choice of the
+    best iterate; the reported errors (``mean_error_pct``, ``max_error_pct``, the convergence history and the snapshot
+    errors) are the true relative errors. ``Cartogram.n_unresolved`` counts the excused regions whose relative error is
+    not below ``max_tol``. ``0`` (default) turns the tolerance off. In a multiresolution morph the tolerance is the
+    same area at every level, ``area_tol_cells`` cells of the finest grid, so a coarse level is not stopped earlier
+    than the finest level could resolve.
     """
 
     density_rasterization: str = "exact"

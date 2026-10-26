@@ -277,8 +277,7 @@ class CartogramWorkflow:
                 f"The morph stalled after {result.niterations} iterations (mean error {errors.mean_error_pct:.2g} %, "
                 f"max {errors.max_error_pct:.3g} %). The regions that are still off may keep improving: "
                 "workflow.morph(stall_patience=None, n_iter=N) continues from the best iterate with the stall rule "
-                "off and runs N more iterations; other options (a finer grid=, a looser max_tol=, "
-                "area_tol_cells=) can be passed in the same call.",
+                "off and runs N more iterations; other options (a finer grid=, a looser max_tol=) can be passed in the same call.",
                 UserWarning,
                 stacklevel=3,
             )

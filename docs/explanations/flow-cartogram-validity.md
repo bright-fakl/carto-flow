@@ -167,6 +167,8 @@ The output of both repair methods has more vertices than the input. `Cartogram.v
 
 The lineage of a `"repair-quadtree"` run ends at the returned best iterate: the vertex set and the lineage are reset to those of the best iterate when the run returns it. A snapshot recorded after the best iterate is not a state of the lineage and cannot be lifted.
 
+`Cartogram.save` stores the lineage and `Cartogram.load` restores it, so a loaded cartogram lifts the input (the source geometries it also stores) to its vertex set and can be aligned with other cartograms. A file saved without a lineage loads with `vertex_lineage = None`. A file stores only the best iterate, so a loaded cartogram has no other snapshots to lift.
+
 ![A polyline with six vertices, the same polyline lifted to nine vertices, and the final state with nine vertices and the paths that a linear interpolation takes](../generated/diagrams/validity-lift.svg)
 
 *Figure 7. Lifting a state to the final vertex set. Left: a state with six vertices. Middle: the vertices that later rounds inserted are added between their parents (here at fraction 0.5) (the second round splits a segment that the first round created); the polyline is unchanged. Right: the final state has the same vertices; the lines connect each vertex of the lifted state with its final position.*

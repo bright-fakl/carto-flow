@@ -11,6 +11,8 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`Cartogram.save` and `Cartogram.load` keep the vertex lineage** of `validity="repair-crossings"` and `"repair-quadtree"` runs, so a loaded
+  cartogram can lift coordinates and take part in `align_vertices`. Files saved earlier load without a lineage.
 - **`max_segment_length` densifies the boundaries of the geometry loaders at load time.** `load_us_census`, `load_world` and
   `load_us_states` take `max_segment_length`: no straight segment of the result exceeds it, and the two sides of a shared
   boundary get identical vertices. The unit is the one of the CRS: meters for the census data, degrees for the world and

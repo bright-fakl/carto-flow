@@ -51,7 +51,8 @@ def save_cartogram(
 ) -> None:
     """Save a Cartogram to JSON format.
 
-    Saves geometries, source data, error metrics, and convergence history
+    Saves geometries, source data, error metrics, convergence history and, for
+    ``validity="repair-crossings"`` or ``"repair-quadtree"``, the vertex lineage
     so the Cartogram can be fully restored with load_cartogram() /
     Cartogram.load().
 
@@ -112,6 +113,10 @@ def save_cartogram(
             "log_errors": errors.log_errors.tolist(),
             "errors_pct": errors.errors_pct.tolist(),
         }
+
+    # Vertex lineage of validity="repair-*" runs
+    if cartogram.vertex_lineage is not None:
+        data["vertex_lineage"] = cartogram.vertex_lineage.to_dict()
 
     # Source GeoDataFrame — original geometries + attribute columns
     if cartogram._source_gdf is not None:
@@ -251,6 +256,12 @@ def load_cartogram(path: str | Path) -> "Cartogram":
     except ValueError:
         status = MorphStatus.COMPLETED
 
+    vertex_lineage = None
+    if "vertex_lineage" in data:
+        from .validity import VertexLineage
+
+        vertex_lineage = VertexLineage.from_dict(data["vertex_lineage"])
+
     return Cartogram(
         snapshots=history,
         convergence=conv,
@@ -261,6 +272,7 @@ def load_cartogram(path: str | Path) -> "Cartogram":
         grid=grid,
         _source_gdf=source_gdf,
         _value_column=data.get("value_column"),
+        vertex_lineage=vertex_lineage,
     )
 
 

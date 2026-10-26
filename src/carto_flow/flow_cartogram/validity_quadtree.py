@@ -5,9 +5,8 @@ A window is the span of iterations between two recomputes of the velocity field.
 quadtree is built from the density (:mod:`carto_flow.flow_cartogram.quadtree_mesh`), every leaf is triangulated as a
 fan, and vertices are inserted where the boundaries of the regions cross an edge of the mesh, so that every segment lies
 inside one triangle. During the window only the nodes of the mesh are advected through the velocity field; a vertex
-keeps its barycentric coordinates in its triangle and moves with the affine map of the triangle. A segment inside one
-triangle stays a straight segment inside the image of the triangle, and the map is injective as long as no triangle
-inverts, so no two segments cross during the window.
+keeps its barycentric coordinates in its triangle and moves with the affine map of the triangle. A segment inside one triangle stays a straight segment inside the triangle after the map, and no two points end up at
+the same place as long as no triangle inverts, so no two segments cross during the window.
 
 The mesh is kept for the following windows and rebuilt when a fan inverted and was repaired, or when the area of a
 triangle fell below a fraction of its area at construction.
@@ -368,7 +367,7 @@ class QuadtreeWindows(ValidityMethod):
         """End of the run: report inversions that the repair could not remove."""
         if self.n_unresolved:
             warnings.warn(
-                f"validity='quadtree': {self.n_unresolved} iterations ended with an inverted mesh triangle that "
+                f"validity='repair-quadtree': {self.n_unresolved} iterations ended with an inverted mesh triangle that "
                 f"could not be repaired; the output may contain invalid polygons.",
                 UserWarning,
                 stacklevel=2,

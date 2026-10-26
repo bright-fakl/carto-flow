@@ -717,9 +717,9 @@ def _encode_rc(key: str, value: Any) -> Any:
 
 def _decode_rc(key: str, value: Any) -> Any:
     if isinstance(value, Mapping) and _CYCLER_KEY in value:
-        import cycler
+        from matplotlib.rcsetup import cycler
 
-        return cycler.cycler(**value[_CYCLER_KEY])
+        return cycler(**value[_CYCLER_KEY])
     return value
 
 

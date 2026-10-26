@@ -36,12 +36,14 @@ if TYPE_CHECKING:
 
 VALIDITY_CHECK = "check"
 VALIDITY_REPAIR_CROSSINGS = "repair-crossings"
-VALIDITY_VALUES = (VALIDITY_CHECK, VALIDITY_REPAIR_CROSSINGS)
+VALIDITY_REPAIR_QUADTREE = "repair-quadtree"
+VALIDITY_VALUES = (VALIDITY_CHECK, VALIDITY_REPAIR_CROSSINGS, VALIDITY_REPAIR_QUADTREE)
 """The values of ``MorphOptions.validity``; mutually exclusive."""
 
 __all__ = [
     "VALIDITY_CHECK",
     "VALIDITY_REPAIR_CROSSINGS",
+    "VALIDITY_REPAIR_QUADTREE",
     "VALIDITY_VALUES",
     "MorphOptions",
     "MorphOptionsConsistencyError",
@@ -363,6 +365,17 @@ class MorphOptions:
       test covers all regions together, so overlaps between neighbors are repaired too. The returned (best) iterate
       is tested as well. Regions that remain invalid, such as zero-width features of the input, are listed in
       ``Cartogram.invalid_regions``.
+    - ``"repair-quadtree"``: quadtree windows, after Miaji et al., arXiv:2511.08121. At every recompute of the velocity field a graded quadtree is built from the
+      density and its leaves are triangulated. Vertices are inserted where the region boundaries cross an edge of
+      the triangulation, so that every segment lies inside one triangle. During the window only the nodes of the
+      mesh are advected through the field, and the vertices move with the piecewise-affine map of the triangles, so
+      segments cannot cross as long as no triangle inverts. A leaf whose triangles invert is repaired. The mesh is
+      kept for the following windows and rebuilt after a repair or when a triangle has been squeezed to a small
+      fraction of its area. At each rebuild, inserted vertices that lie on the chord of their neighbors are removed
+      if the chord crosses no other segment. No input vertex is moved or removed. The output has more vertices than
+      the input and than with ``"repair-crossings"``, and ``Cartogram.vertex_lineage`` records insertions and
+      removals. It takes more time than ``"repair-crossings"``. Prefer it for input whose segments are much longer
+      than the grid cells, where the crossing test of ``"repair-crossings"`` cannot catch the crossings.
 
     With ``"repair-crossings"`` the number of vertices that a run inserts is capped at ``max(5000, n // 100)``, with
     ``n`` the number of input vertices. A crossing that the flow itself creates (a fold) is found again by every
@@ -372,12 +385,12 @@ class MorphOptions:
     listed in ``Cartogram.invalid_regions``.
 
     The check of ``"repair-crossings"`` stores the velocity fields of a span (float32, bounded by
-    ``validity_memory_mb``) and one copy of the coordinates. The snapshots of ``snapshot_every`` keep the vertices
-    they had when recorded.
+    ``validity_memory_mb``) and one copy of the coordinates; ``"repair-quadtree"`` stores no field, only the mesh and
+    36 bytes per vertex. The snapshots of ``snapshot_every`` keep the vertices they had when recorded.
     """
 
     validity_repair_every: int = 10
-    """Windows between two crossing tests with ``validity="repair-crossings"``.
+    """Windows between two crossing tests with ``validity="repair-crossings"``; not used by ``"repair-quadtree"``.
 
     A longer span costs fewer tests and stores more fields; the memory budget ``validity_memory_mb`` can end a span
     earlier. A test after every window finds crossings that disappear by themselves in the next window and costs
@@ -405,7 +418,8 @@ class MorphOptions:
     least ``validity_repair_every`` times the field size (320 MB for 10 fields of 32 MB), or lower
     ``validity_repair_every`` to what the memory holds.
 
-    The value is validated but unused with ``validity="check"``.
+    The value is validated but unused with ``validity="check"`` and ``validity="repair-quadtree"``, which store no
+    fields.
     """
 
     def get_grid(self, bounds: tuple[float, float, float, float]) -> "Grid":

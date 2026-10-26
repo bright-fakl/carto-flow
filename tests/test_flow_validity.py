@@ -93,10 +93,10 @@ class TestOptions:
         assert options.validity_repair_every == 10
         assert options.validity_memory_mb == 128.0
 
-    @pytest.mark.parametrize("value", ["check", "repair-crossings"])
+    @pytest.mark.parametrize("value", ["check", "repair-crossings", "repair-quadtree"])
     def test_the_values_are_accepted(self, value):
         assert MorphOptions(validity=value).validity == value
-        assert VALIDITY_VALUES == ("check", "repair-crossings")
+        assert VALIDITY_VALUES == ("check", "repair-crossings", "repair-quadtree")
 
     def test_other_options_are_accepted(self):
         options = MorphOptions(validity="repair-crossings", validity_repair_every=1, validity_memory_mb=0.5)
@@ -104,7 +104,7 @@ class TestOptions:
 
     @pytest.mark.parametrize("value", ["none", "windows", "quadtree", "Check", ""])
     def test_removed_and_unknown_values_are_rejected_with_the_valid_ones(self, value):
-        with pytest.raises(MorphOptionsValidationError, match=r'one of "check", "repair-crossings"'):
+        with pytest.raises(MorphOptionsValidationError, match=r'one of "check", "repair-crossings", "repair-quadtree"'):
             MorphOptions(validity=value)
 
     @pytest.mark.parametrize("name", ["validity_repair_every", "validity_memory_mb"])
@@ -118,7 +118,7 @@ class TestOptions:
     @pytest.mark.parametrize(
         ("name", "value"),
         [
-            ("validity", "windows"),
+            ("validity", "mosaic"),
             ("validity", True),
             ("validity", None),
             ("validity_repair_every", 0),

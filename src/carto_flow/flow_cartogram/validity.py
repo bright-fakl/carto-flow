@@ -18,12 +18,20 @@ others. At the end of a span of ``validity_repair_every`` windows, :class:`Valid
 No input vertex is moved or removed. Every insertion round is recorded in a :class:`VertexLineage`, which lifts
 coordinates of an earlier state to the vertex set of the final geometry.
 
+The morph loop talks to a validity method through the hooks of :class:`ValidityMethod`; the other method,
+:class:`carto_flow.flow_cartogram.validity_quadtree.QuadtreeWindows`, implements the same hooks and records insertions
+and removals in the same lineage.
+
 Classes
 -------
 InsertionRound
     The vertices inserted in one round.
+RemovalRound
+    The vertices kept in one round that removed vertices.
 VertexLineage
-    The insertion rounds of a morph, with the lift of earlier coordinates.
+    The insertion and removal rounds of a morph, with the lift of earlier coordinates.
+ValidityMethod
+    The hooks of the morph loop; the defaults do nothing.
 ValidatedWindows
     The state of the check, owned by one call of the morph loop.
 """
@@ -45,7 +53,7 @@ if TYPE_CHECKING:
     from ..geo_utils.geometry import GeometryCoordinateInfo
     from .grid import Grid
 
-__all__ = ["InsertionRound", "ValidatedWindows", "VertexLineage"]
+__all__ = ["InsertionRound", "RemovalRound", "ValidatedWindows", "ValidityMethod", "VertexLineage"]
 
 MAX_ROUNDS = 14
 """Rounds of insertion and re-test of one check."""
@@ -71,46 +79,92 @@ class InsertionRound:
     left : np.ndarray
         For each inserted vertex, the index in the vertex set before the round of the left end point of the segment
         it splits. The right end point is ``left + 1``, in the same ring.
-    fraction : float
+    fraction : float or np.ndarray
         The vertex lies at ``(1 - fraction) * coords[left] + fraction * coords[left + 1]`` in every state of the
-        morph before the round.
+        morph before the round. One value for all vertices of the round, or one per vertex.
     iteration : int
         Number of iterations done when the round ran.
     """
 
     new_index: np.ndarray
     left: np.ndarray
-    fraction: float
+    fraction: float | np.ndarray
+    iteration: int
+
+
+@dataclass(frozen=True)
+class RemovalRound:
+    """
+    The vertices removed in one round.
+
+    Attributes
+    ----------
+    kept_index : np.ndarray
+        Indices in the vertex set before the round of the vertices that remain, ascending. The others are removed;
+        a removed vertex is never an input vertex.
+    iteration : int
+        Number of iterations done when the round ran.
+    """
+
+    kept_index: np.ndarray
     iteration: int
 
 
 @dataclass(frozen=True)
 class VertexLineage:
     """
-    The vertices inserted by validated windows, in the order of insertion.
+    The vertices inserted and removed by a validity method, in the order of the rounds.
 
-    A morph with ``validity="repair-crossings"`` can insert vertices into the segments of the geometries; none of the input
-    vertices moves or is removed. The lineage lifts the coordinates of a state with fewer vertices (the input, or a
-    snapshot recorded earlier in the run) to the vertex set of the returned geometry.
+    A morph with ``validity="repair-crossings"`` inserts vertices into the segments of the geometries. With
+    ``validity="repair-quadtree"`` it also removes inserted vertices that lie on the chord of their neighbors. None of the
+    input vertices moves or is removed, and the order of the vertices of a ring is kept. The lineage lifts the
+    coordinates of a state of the run (the input, or a snapshot recorded earlier) to the vertex set of the returned
+    geometry.
 
     Attributes
     ----------
     n_input : int
         Number of vertices (counting the closing vertex of every ring) of the geometries the morph started from.
-    rounds : tuple of InsertionRound
-        The insertion rounds in order. Every round adds at least one vertex, so the number of vertices identifies a
-        state in the run.
+    rounds : tuple of InsertionRound or RemovalRound
+        The rounds in order. A round changes the number of vertices.
     """
 
     n_input: int
-    rounds: tuple[InsertionRound, ...] = field(default_factory=tuple)
+    rounds: tuple[InsertionRound | RemovalRound, ...] = field(default_factory=tuple)
+
+    def _counts(self) -> list[int]:
+        """Number of vertices of the input and after each round."""
+        counts = [self.n_input]
+        for r in self.rounds:
+            counts.append(counts[-1] + len(r.new_index) if isinstance(r, InsertionRound) else len(r.kept_index))
+        return counts
 
     @property
     def n_vertices(self) -> int:
         """Number of vertices after the last round."""
-        return self.n_input + sum(len(r.new_index) for r in self.rounds)
+        return self._counts()[-1]
 
-    def lift(self, values: np.ndarray) -> np.ndarray:
+    def state_at(self, n_vertices: int, iteration: int) -> int:
+        """
+        The state of a snapshot with ``n_vertices`` vertices that was recorded after ``iteration`` iterations.
+
+        The number of vertices identifies the state, unless removals gave two states the same number: then it is
+        the last of them whose rounds all ran at or before the iteration. The result is the argument ``state`` of
+        :meth:`lift`.
+
+        Raises
+        ------
+        ValueError
+            If no state of the run has that many vertices (at that iteration).
+        """
+        states = [s for s, count in enumerate(self._counts()) if count == n_vertices]
+        if len(states) > 1:
+            states = [s for s in states if all(r.iteration <= iteration for r in self.rounds[:s])][-1:]
+        if not states:
+            raise ValueError(f"{n_vertices} vertices is not a state of this run at iteration {iteration}")
+        return states[0]
+
+    def lift(self, values: np.ndarray, state: int | None = None) -> np.ndarray:
         """
         Lift values at the vertices of an earlier state to the vertices after the last round.
 
@@ -121,32 +175,51 @@ class VertexLineage:
             ``shapely.get_coordinates`` of the geometries (a ring list with the closing vertex of every ring),
             for example coordinates of shape (n, 2). The number of vertices must be ``n_input`` or the number after
             one of the rounds.
+        state : int, optional
+            Number of rounds that the state of ``values`` has seen (0 for the input). Only needed when the number of
+            vertices does not identify the state: after removals, two states of the run can have the same number of
+            vertices.
 
         Returns
         -------
         np.ndarray
             The values at all vertices after the last round: the old values at the old vertices and, at each
-            inserted vertex, the interpolation between the values at the end points of the segment it splits
-            (recursively when a round splits a segment that an earlier round created).
+            inserted vertex, the interpolation between the values at the end points of the segment it lies on
+            (recursively when a round splits a segment that an earlier round created). Vertices removed by a round
+            are dropped.
 
         Raises
         ------
         ValueError
-            If the number of vertices is not that of a state of the run.
+            If the number of vertices is not that of a state of the run, or identifies more than one state and
+            ``state`` is not given.
         """
         values = np.asarray(values)
-        counts = [self.n_input]
-        for r in self.rounds:
-            counts.append(counts[-1] + len(r.new_index))
+        counts = self._counts()
         n = len(values)
-        if n not in counts:
-            raise ValueError(f"{n} vertices is not a state of this run (states have {sorted(set(counts))} vertices)")
-        for r in self.rounds[counts.index(n) :]:
+        if state is None:
+            states = [i for i, count in enumerate(counts) if count == n]
+            if not states:
+                raise ValueError(
+                    f"{n} vertices is not a state of this run (states have {sorted(set(counts))} vertices)"
+                )
+            if len(states) > 1:
+                raise ValueError(f"{n} vertices is the size of the states {states} of this run: pass state")
+            state = states[0]
+        elif not 0 <= state < len(counts) or counts[state] != n:
+            raise ValueError(f"{n} vertices is not the state {state} of this run")
+        for r in self.rounds[state:]:
+            if isinstance(r, RemovalRound):
+                values = values[r.kept_index]
+                continue
             lifted = np.empty((len(values) + len(r.new_index), *values.shape[1:]), dtype=np.result_type(values, float))
             is_new = np.zeros(len(lifted), bool)
             is_new[r.new_index] = True
             lifted[~is_new] = values
-            lifted[r.new_index] = (1.0 - r.fraction) * values[r.left] + r.fraction * values[r.left + 1]
+            fraction = np.asarray(r.fraction, dtype=float)
+            if fraction.ndim:
+                fraction = fraction.reshape(-1, *([1] * (values.ndim - 1)))
+            lifted[r.new_index] = (1.0 - fraction) * values[r.left] + fraction * values[r.left + 1]
             values = lifted
         return values
 
@@ -234,6 +307,56 @@ def _diverging(flagged: list[int]) -> bool:
     return len(last) > GROWTH_ROUNDS and all(b >= GROWTH_FACTOR * a for a, b in pairwise(last))
 
 
+class ValidityMethod:
+    """
+    The hooks that the morph loop calls on a validity method.
+
+    The defaults do nothing, so a method implements the hooks it needs. The loop calls, in this order, once per
+    window: :meth:`begin_window` (before the density is computed), :meth:`set_density` and :meth:`add_field`; once
+    per iteration: :meth:`record_step` and, if :attr:`displaces_geometry`, :meth:`displace` in place of the
+    displacement of the geometry coordinates; :meth:`mark_best` when an iteration becomes the best iterate;
+    :meth:`restore_best` when the run returns an earlier best iterate; :meth:`finish` when the run ends.
+    """
+
+    displaces_geometry = False
+    """True if :meth:`displace` moves the geometry coordinates instead of the loop."""
+
+    def begin_window(
+        self, geoms: GeometryCoordinateInfo, grid: Grid, best_state: tuple | None, iteration: int
+    ) -> tuple | None:
+        """Start of a window, before the density is computed; returns the best state."""
+        return best_state
+
+    def set_density(self, rho: np.ndarray) -> None:
+        """The density the field of the window is computed from."""
+
+    def add_field(self, vx: np.ndarray, vy: np.ndarray) -> None:
+        """The field of the window that :meth:`begin_window` opened."""
+
+    def record_step(self, dt: float) -> None:
+        """The step size of an iteration taken with the current field."""
+
+    def displace(self, grid: Grid, vx: np.ndarray, vy: np.ndarray, dt: float) -> np.ndarray:
+        """New geometry coordinates after one step with the field (when :attr:`displaces_geometry`)."""
+        raise NotImplementedError
+
+    def mark_best(self) -> None:
+        """The state after the last step is the best iterate."""
+
+    def restore_best(self, geoms: GeometryCoordinateInfo, coords: np.ndarray) -> None:
+        """The run returns the best iterate, whose coordinates are ``coords``: put its vertex set on ``geoms``."""
+
+    def finish(
+        self, geoms: GeometryCoordinateInfo, grid: Grid, best_state: tuple | None, iteration: int
+    ) -> tuple | None:
+        """End of the run; returns the best state."""
+        return best_state
+
+    def lineage(self) -> VertexLineage:
+        """The insertions and removals of the run."""
+        raise NotImplementedError
+
+
 class _Window:
     """The field of one window (float32 by default) and the step sizes taken with it."""
 
@@ -249,7 +372,7 @@ class _Window:
         return self.vx.nbytes + self.vy.nbytes
 
 
-class ValidatedWindows:
+class ValidatedWindows(ValidityMethod):
     """
     The validity check of a morph with ``validity="repair-crossings"``.
 

@@ -50,10 +50,11 @@ from .history import (
     ConvergenceHistory,
     History,
 )
-from .options import MorphOptions, MorphStatus
+from .options import VALIDITY_REPAIR_CROSSINGS, MorphOptions, MorphStatus
 from .recompute import score_rose, should_recompute
 from .stall import StallMonitor, cycle_length, region_size
 from .stepsize import DEAD_BAND_FRACTION, StepController
+from .validity import ValidatedWindows
 from .velocity import VelocityComputerFFTW
 
 __all__ = [
@@ -400,6 +401,13 @@ def morph_geometries(
     # Resolve grid using options
     grid = options.get_grid(options._calculate_bounds_from_geometries(geometries))
 
+    # Validated windows (validity="repair-crossings"; remove this and the calls of `windows` below to disable)
+    windows = (
+        ValidatedWindows(options.validity_repair_every, options.validity_memory_mb, len(flat_geoms.coords))
+        if options.validity == VALIDITY_REPAIR_CROSSINGS
+        else None
+    )
+
     # Warn if input geometries have segments too long for the grid to bend.
     # This algorithm moves vertices, not edges, so a straight segment with no
     # interior vertices cannot bend during the morph. It does not mutate
@@ -568,7 +576,10 @@ def morph_geometries(
             # from_ragged_array rebuilds all geometries in a single C-level
             # call (~1 ms) vs the Python-loop reconstruct_geometries (~13 ms).
             # Offsets (topology) were computed once in unpack_geometries and
-            # remain valid because morphing changes coordinate values only.
+            # remain valid because morphing changes coordinate values only
+            # (validated windows insert vertices and update them).
+            if windows is not None:
+                best_state = windows.begin_window(flat_geoms, grid, best_state, step)
             if _pt is not None:
                 _t0 = _time.perf_counter()
             current_geoms = list(
@@ -627,6 +638,9 @@ def morph_geometries(
             vx *= vmax_scale
             vy *= vmax_scale
 
+            if windows is not None:
+                windows.add_field(vx, vy)
+
             # 1e. Divergence of the field, for the area scaling of the landmarks
             if landmark_log_scaling is not None or coords_log_scaling is not None or probe_log_scaling is not None:
                 landmark_div = field_divergence(vx, vy, grid.dx, grid.dy)
@@ -649,6 +663,8 @@ def morph_geometries(
         dt_prime = options.dt * step_controller.current(step) * min(grid.dx, grid.dy) / max_v
         step_moved = options.dt * step_controller.current(step) * min(grid.dx, grid.dy) / typical_size
         since_recompute += 1
+        if windows is not None:
+            windows.record_step(dt_prime)
 
         # 2a. Displace geometry coordinates using the velocity field
         flat_geoms.coords = displace_coords_numba(
@@ -765,6 +781,8 @@ def morph_geometries(
         if score < best_score:
             best_score = score
             best_step = step
+            if windows is not None:
+                windows.mark_best()
             best_state = (
                 flat_geoms.coords.copy(),
                 flat_landmarks_geoms.coords.copy() if flat_landmarks_geoms is not None else None,
@@ -788,6 +806,15 @@ def morph_geometries(
             if (step + 1) == options.n_iter
             else MorphStatus.RUNNING
         )
+
+        # Validated windows: a run that ends here is checked and repaired, the best iterate too, whatever the
+        # position in the span. The repair changes the areas slightly.
+        if windows is not None and (converged or stalled or (step + 1) == options.n_iter):
+            best_state = windows.finish(flat_geoms, grid, best_state, step + 1)
+            current_areas = flat_geoms.compute_areas(use_parallel=False)
+            error_metrics = compute_error_metrics(current_areas, target_areas, eps=error_eps)
+            if best_step == step and best_state is not None:
+                best_state = (*best_state[:3], current_areas.copy(), error_metrics, *best_state[5:])
 
         # 4. Create snapshot data at appropriate iterations
         # We save snapshots at the final iteration (when the algorithm has converged, stalled, or reached the maximum number
@@ -833,6 +860,10 @@ def morph_geometries(
         ) = best_state
         flat_geoms.coords = b_coords
         flat_geoms.invalidate_cache()
+        if windows is not None:
+            # the vertices inserted after the best iterate changed its areas
+            b_areas = flat_geoms.compute_areas(use_parallel=False)
+            b_errors = compute_error_metrics(b_areas, target_areas, eps=error_eps)
         if b_landmarks is not None and flat_landmarks_geoms is not None:
             flat_landmarks_geoms.coords = b_landmarks
             landmark_log_scaling = b_log_scaling
@@ -888,6 +919,7 @@ def morph_geometries(
         internals=internals,
         benchmark=_pt,
         invalid_regions=invalid_regions,
+        vertex_lineage=windows.lineage() if windows is not None else None,
     )
     if _pt is not None:
         _pt.status = str(status)

@@ -58,6 +58,7 @@ nav:
             - Density: reference/flow_cartogram/density.md
             - Velocity: reference/flow_cartogram/velocity.md
             - Displacement: reference/flow_cartogram/displacement.md
+            - Validity: reference/flow_cartogram/validity.md
             - Anisotropy: reference/flow_cartogram/anisotropy.md
         - Analysis:
             - History: reference/flow_cartogram/history.md
@@ -66,6 +67,7 @@ nav:
         - Output:
             - Visualization: reference/flow_cartogram/visualization.md
             - Animation: reference/flow_cartogram/animation.md
+            - Alignment: reference/flow_cartogram/alignment.md
             - Serialization: reference/flow_cartogram/serialization.md
     - Proportional Cartogram:
         - Overview: reference/proportional_cartogram/index.md
@@ -125,6 +127,7 @@ nav:
     - Overview: explanations/index.md
     - Flow Cartogram:
         - Algorithm: explanations/flow-cartogram-algorithm.md
+        - Output Validity: explanations/flow-cartogram-validity.md
         - History and Snapshot System: explanations/flow-cartogram-history.md
         - Workflow System: explanations/flow-cartogram-workflow.md
         - Performance: explanations/performance.ipynb

@@ -34,7 +34,15 @@ if TYPE_CHECKING:
     from .anisotropy import VelocityModulator
     from .density import DensityModulator
 
+VALIDITY_CHECK = "check"
+VALIDITY_REPAIR_CROSSINGS = "repair-crossings"
+VALIDITY_VALUES = (VALIDITY_CHECK, VALIDITY_REPAIR_CROSSINGS)
+"""The values of ``MorphOptions.validity``; mutually exclusive."""
+
 __all__ = [
+    "VALIDITY_CHECK",
+    "VALIDITY_REPAIR_CROSSINGS",
+    "VALIDITY_VALUES",
     "MorphOptions",
     "MorphOptionsConsistencyError",
     "MorphOptionsError",
@@ -335,6 +343,71 @@ class MorphOptions:
     a cycle of 10 iterations at the default ``dt`` of 0.2 on regions of 8 cells has to improve by 1%.
     """
 
+    # Validity of the output polygons
+    validity: str = VALIDITY_CHECK
+    """What the morph does about output polygons that self-intersect.
+
+    Vertices move individually through the velocity field, so where a region is squeezed into a strip narrower
+    than the vertex spacing, the segments of its boundary can cross and the output polygon is invalid. The values
+    are mutually exclusive.
+
+    - ``"check"`` (default): the validity is only checked. At the end of the run the returned (best) iterate is
+      tested; the invalid regions are listed in ``Cartogram.invalid_regions`` and the run warns. The geometry is not
+      changed and no vertex is inserted: the output has the vertices of the input.
+    - ``"repair-crossings"``: validated windows. Every ``validity_repair_every`` windows (a window is the span of
+      iterations between two recomputes of the velocity field) and at the end of the run, a crossing test finds the
+      crossing segments. Each is split at the midpoint of its chord at the start of the span, and the new vertex is
+      moved through the recorded steps of the span, so it lies on the path the flow gives it. The new segments are
+      tested again, for at most 14 rounds. No input vertex is moved or removed, the output has more vertices than
+      the input, and ``Cartogram.vertex_lineage`` maps the vertices of earlier states to those of the output. The
+      test covers all regions together, so overlaps between neighbors are repaired too. The returned (best) iterate
+      is tested as well. Regions that remain invalid, such as zero-width features of the input, are listed in
+      ``Cartogram.invalid_regions``.
+
+    With ``"repair-crossings"`` the number of vertices that a run inserts is capped at ``max(5000, n // 100)``, with
+    ``n`` the number of input vertices. A crossing that the flow itself creates (a fold) is found again by every
+    check and splitting does not remove it, so without the cap the insertions would not end. When a check would
+    exceed the cap, it stops before that round, the run warns, and the run continues as with ``"check"``: no
+    further fields are stored, no further check or repair runs, and the polygons that are invalid at the end are
+    listed in ``Cartogram.invalid_regions``.
+
+    The check of ``"repair-crossings"`` stores the velocity fields of a span (float32, bounded by
+    ``validity_memory_mb``) and one copy of the coordinates. The snapshots of ``snapshot_every`` keep the vertices
+    they had when recorded.
+    """
+
+    validity_repair_every: int = 10
+    """Windows between two crossing tests with ``validity="repair-crossings"``.
+
+    A longer span costs fewer tests and stores more fields; the memory budget ``validity_memory_mb`` can end a span
+    earlier. A test after every window finds crossings that disappear by themselves in the next window and costs
+    accuracy and time, so the default of 10 windows is suitable for most inputs. The value is validated but unused
+    with ``validity="check"``.
+    """
+
+    validity_memory_mb: float = 128.0
+    """Memory budget in MB (2**20 bytes) for the velocity fields that ``validity="repair-crossings"`` stores.
+
+    The field of every window of a span is stored as float32, two components of ``nx * ny`` cells: ``2 * 4 * nx *
+    ny`` bytes. A grid of 2048 by 2048 cells takes 32 MB per field, and the 2048 by 1408 cells of the finest grid of
+    the US county examples 22 MB. When the stored fields have reached this size at the start of a window, the span
+    ends early: the crossing test and the repair run then, although ``validity_repair_every`` windows have not passed,
+    the stored fields are released and a new span starts. The number of windows between two checks is thus the
+    smaller of ``validity_repair_every`` and the number of fields that reach the budget, ``ceil(validity_memory_mb /
+    field size)``: shorter than ``validity_repair_every`` on a fine grid or with a small value.
+
+    A window's field is always stored, so the memory of the check is bounded by this value plus one field plus one
+    copy of the coordinates, whatever ``recompute_every`` and ``validity_repair_every`` are.
+
+    Short spans cost time, because every check tests all segments. A check after every window or two can also find
+    crossings that the next window would remove, which costs accuracy and time. A value that holds only one or two
+    fields of the finest grid is therefore not useful: for ``validity_repair_every`` windows between checks choose at
+    least ``validity_repair_every`` times the field size (320 MB for 10 fields of 32 MB), or lower
+    ``validity_repair_every`` to what the memory holds.
+
+    The value is validated but unused with ``validity="check"``.
+    """
+
     def get_grid(self, bounds: tuple[float, float, float, float]) -> "Grid":
         """Get the Grid object for computation with clear precedence.
 
@@ -517,6 +590,9 @@ class MorphOptions:
             "adaptive_dt",
             "stall_patience",
             "stall_min_efficiency",
+            "validity",
+            "validity_repair_every",
+            "validity_memory_mb",
             "recompute_on_rise",
             "error_floor",
             "density_rasterization",
@@ -630,6 +706,16 @@ class MorphOptions:
         elif field_name == "stall_min_efficiency":
             if not isinstance(value, int | float) or isinstance(value, bool) or value < 0:
                 return "stall_min_efficiency must be a non-negative number"
+
+        elif field_name == "validity":
+            if value not in VALIDITY_VALUES:
+                return "validity must be one of " + ", ".join(f'"{v}"' for v in VALIDITY_VALUES)
+        elif field_name == "validity_repair_every":
+            if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+                return "validity_repair_every must be a positive integer"
+        elif field_name == "validity_memory_mb":
+            if not isinstance(value, int | float) or isinstance(value, bool) or not value > 0:
+                return "validity_memory_mb must be a positive number"
 
         # Outer-boundary distortion reduction options
         elif field_name == "adaptive_dt" and not isinstance(value, bool):

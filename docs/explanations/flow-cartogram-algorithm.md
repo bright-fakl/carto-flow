@@ -228,6 +228,19 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 
 ---
 
+## Output Validity
+
+<a id="memory-budget"></a>
+
+The morph moves the vertices and draws a straight line (a chord) between their new positions. Where a region is squeezed into a strip narrower than the vertex spacing, the chords of its boundary can cross although the boundary itself does not, and the output polygon is invalid. `MorphOptions.validity` sets what the morph does about it; the values are mutually exclusive:
+
+- `"check"` (default): the validity is only checked. At the end of the run the returned best iterate is tested, the invalid regions are listed in `Cartogram.invalid_regions` and the run warns. The geometry is not changed and no vertex is inserted.
+- `"repair-crossings"`: a crossing test and a local repair (validated windows). Every `validity_repair_every` windows the crossing segments are split and the new vertices are moved along their flow paths. `validity_memory_mb` bounds the memory of the stored velocity fields, and the number of inserted vertices is capped.
+
+The methods, their diagrams, the memory budget, the vertex lineage and the animation of outputs with inserted vertices are described in [Output Validity](flow-cartogram-validity.md).
+
+---
+
 ## MorphOptions
 
 `MorphOptions` ([options.py](https://github.com/bright-fakl/carto-flow/blob/main/src/carto_flow/flow_cartogram/options.py)) is a validated dataclass that controls all algorithm parameters.
@@ -245,6 +258,9 @@ Both are defined as abstract base classes in [anisotropy.py](https://github.com/
 | `max_tol` | 0.1 | Convergence threshold for max area error (fraction) |
 | `stall_patience` | 4 | Stall after N consecutive cycles (windows) without progress; `None` = disabled |
 | `stall_min_efficiency` | 0.05 | Relative improvement of a violated component's cycle minimum per unit of distance moved (relative to the region size) that counts as progress |
+| `validity` | `"check"` | `"check"`: the validity of the output is only checked and invalid regions are listed in `Cartogram.invalid_regions`; `"repair-crossings"`: validated windows, a crossing test and repair that keep the output polygons from self-intersecting (see [Output Validity](#output-validity)) |
+| `validity_repair_every` | 10 | Windows between two crossing tests with `validity="repair-crossings"` (unused with `"check"`) |
+| `validity_memory_mb` | 128 | Memory budget for the stored velocity fields; a span ends early when they reach it, with `validity="repair-crossings"` (see [Memory budget](#memory-budget); unused with `"check"`) |
 | `grid` | 256 | Grid points on the longest axis (int or `(nx, ny)`); `GridSpec(size, margin, square)` for one grid with margin and squareness; `LadderSpec(min_resolution, levels, margin, square)` or `"auto"` for a ladder of resolutions; a prebuilt `Grid`; `None` = 100 |
 | `grid_size`, `grid_margin`, `grid_square` | `None` | Deprecated; `grid_size` is an alias of `grid`, and margin (0.5) and squareness (`False`) belong in a `GridSpec` or `LadderSpec` |
 | `Dx`, `Dy` | 1.0 | Anisotropy factors for the FFT solver |
@@ -277,7 +293,7 @@ All three converge on the bundled states and congressional districts. None conve
 
 **Iterative approximation.** The algorithm does not solve the equilibrium condition exactly in one step. Convergence is reached after many iterations, and the result depends on `dt`, `n_iter`, `mean_tol`, and `max_tol`. Tight tolerances may require many iterations; loose tolerances may leave visible residual errors.
 
-**Vertex density.** Because the algorithm displaces vertices rather than edges, a straight segment with no interior vertices cannot bend during the morph, and the straight edges between sparse vertices cross where a polygon is narrow once the flow has stretched them. Coverage-simplified input (e.g. `simplify_coverage` at a coarse tolerance) can leave segments many grid cells long, which stalls convergence. `morph_geometries` warns when the longest input segment exceeds 4 grid cells. A segment also grows with its region: the length of a segment scales with the square root of the ratio of the region's target area to its current area. A flow cartogram or a ladder (`create_flow_cartogram`, `CartogramWorkflow`) therefore warns up front when more than 0.5 % of the segments are expected to exceed 4 cells of the finest grid once their regions are enlarged, and the warning gives the `max_segment_length` that keeps the largest enlargement within 4 cells. Densify first with `carto_flow.geo_utils.densify_coverage` if you see either warning. The bundled states do not trigger it; the bundled districts and counties (densified to 5 km) do, and densifying them to 1 km (`load_us_census(max_segment_length=1000)`) lowers the number of invalid output polygons and the error of the coarse levels.
+**Vertex density.** Because the algorithm displaces vertices rather than edges, a straight segment with no interior vertices cannot bend during the morph, and the straight edges between sparse vertices cross where a polygon is narrow once the flow has stretched them. Coverage-simplified input (e.g. `simplify_coverage` at a coarse tolerance) can leave segments many grid cells long, which stalls convergence. `morph_geometries` warns when the longest input segment exceeds 4 grid cells. A segment also grows with its region: the length of a segment scales with the square root of the ratio of the region's target area to its current area. A flow cartogram or a ladder (`create_flow_cartogram`, `CartogramWorkflow`) therefore warns up front when more than 0.5 % of the segments are expected to exceed 4 cells of the finest grid once their regions are enlarged, and the warning gives the `max_segment_length` that keeps the largest enlargement within 4 cells. Densify first with `carto_flow.geo_utils.densify_coverage` if you see either warning; `validity="repair-crossings"` repairs the crossings that remain (see [Output Validity](#output-validity)). The bundled states do not trigger it; the bundled districts and counties (densified to 5 km) do, and densifying them to 1 km (`load_us_census(max_segment_length=1000)`) lowers the number of invalid output polygons and the error of the coarse levels.
 
 ---
 

@@ -27,6 +27,10 @@ compute_complex_polygon_areas_numba
     Parallel area computation for polygons with holes.
 find_adjacent_pairs
     Find touching geometry pairs using buffered intersection.
+find_crossing_segments
+    Mask of the segments of a set of rings that cross another segment.
+find_crossing_pairs
+    The pairs of crossing segments of a set of rings.
 validate_geometries
     Check the input of a cartogram for invalid geometries, bad values and coverage problems.
 repair_polygons
@@ -100,6 +104,7 @@ from .contiguity import (
     repair_contiguity,
     repair_group_assignment,
 )
+from .crossings import find_crossing_pairs, find_crossing_segments
 from .explode import explode_geodataframe
 from .geometry import (
     # Classes
@@ -134,6 +139,8 @@ __all__ = [
     "densify_coverage",
     "explode_geodataframe",
     "find_adjacent_pairs",
+    "find_crossing_pairs",
+    "find_crossing_segments",
     "prescale_connected_components",
     "reconstruct_geometries",
     "reconstruct_geometry",

@@ -673,7 +673,7 @@ def _decode_palettes(data: Mapping[str, Any]) -> Palettes:
     unknown = set(data) - names
     if unknown:
         raise ValueError(f"unknown palette keys {sorted(unknown)}; the fields are {sorted(names)}")
-    fields = {k: (tuple(v) if k == "sequential_range" else _decode_palette(v)) for k, v in data.items()}
+    fields: dict[str, Any] = {k: (tuple(v) if k == "sequential_range" else _decode_palette(v)) for k, v in data.items()}
     return Palettes(**fields)
 
 
@@ -853,10 +853,10 @@ def _dark() -> PlotStyle:
         reference_facecolor="#2a3037",
         reference_edgecolor=surface,
         reference_linewidth=0.5,
-        series_color="#6cb4ee",
-        accent_color="#ffd23f",
-        positive_color="#4cc38a",
-        highlight_color="#c792ea",
+        series_color="#85b7e0",
+        accent_color="#facc38",
+        positive_color="#54d497",
+        highlight_color="#bf9cfc",
     )
 
 

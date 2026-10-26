@@ -1,8 +1,8 @@
 """Accessibility of the built-in palettes: color vision deficiency and contrast of the overlay colors.
 
 Color vision deficiency is simulated with the matrices of Machado, Oliveira and Fernandes (2009) at full severity, in
-linear RGB; distances are CIE76 color differences. The thresholds are the properties the palettes have. The cases that
-fail are marked ``xfail(strict=True)`` so that a change of the palette that fixes one shows up as a failed test.
+linear RGB; distances are CIE76 color differences. The thresholds are the properties the palettes have. The case that
+fails is marked ``xfail(strict=True)`` so that a change of the palette that fixes one shows up as a failed test.
 """
 
 import itertools
@@ -102,23 +102,9 @@ class TestBuiltinPalettes:
         style = STYLES[name]()
         assert contrast(to_rgb(getattr(style, overlay)), to_rgb(style.reference_facecolor)) >= 2.0
 
-    def test_overlay_colors_differ_under_tritanopia(self, name):
-        style = STYLES[name]()
-        assert min_pair_distance([to_rgb(getattr(style, o)) for o in OVERLAYS], "tritan") >= 10
 
-
-def overlay_distance(name, vision):
+@pytest.mark.parametrize("name", STYLES)
+@pytest.mark.parametrize("vision", ["protan", "deutan", "tritan"])
+def test_overlay_colors_differ_under_color_vision_deficiency(name, vision):
     style = STYLES[name]()
-    return min_pair_distance([to_rgb(getattr(style, o)) for o in OVERLAYS], vision)
-
-
-@pytest.mark.parametrize("vision", ["protan", "deutan"])
-class TestOverlayColorsUnderRedGreenDeficiency:
-    def test_default(self, vision):
-        assert overlay_distance("default", vision) >= 10
-
-    @pytest.mark.xfail(
-        strict=True, reason="the overlay colors of the dark style are close under protanopia and deuteranopia"
-    )
-    def test_dark(self, vision):
-        assert overlay_distance("dark", vision) >= 10
+    assert min_pair_distance([to_rgb(getattr(style, o)) for o in OVERLAYS], vision) >= 12

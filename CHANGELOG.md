@@ -11,6 +11,8 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **A `PlotStyle` can be saved and loaded.** `PlotStyle.to_dict` / `from_dict` and `PlotStyle.save` / `load` (JSON) make styles
+  portable; a colormap is stored by name or, if matplotlib does not have it, as its colors.
 - **`Cartogram.save` and `Cartogram.load` keep the vertex lineage** of `validity="repair-crossings"` and `"repair-quadtree"` runs, so a loaded
   cartogram can lift coordinates and take part in `align_vertices`. Files saved earlier load without a lineage.
 - **`max_segment_length` densifies the boundaries of the geometry loaders at load time.** `load_us_census`, `load_world` and

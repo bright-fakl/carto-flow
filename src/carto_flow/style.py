@@ -26,9 +26,11 @@ import contextvars
 import dataclasses
 import functools
 import inspect
+import json
 import math
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import matplotlib as mpl
@@ -309,6 +311,73 @@ class PlotStyle:
             rc = dict(mpl.rc_params_from_file(name_or_path, use_default_template=False))
         return cls(rc=rc, **fields)
 
+    # ------------------------------------------------------------------ persistence
+
+    def to_dict(self) -> dict[str, Any]:
+        """The style as a JSON-compatible dictionary (see :meth:`from_dict`).
+
+        Only the fields that are set are written. A colormap is written by name when matplotlib has it under that name,
+        otherwise as its list of colors (a continuous colormap as 256 samples, so a reloaded custom colormap is a
+        sampled copy). An ``axes.prop_cycle`` of ``rc`` is written as its lists of values.
+
+        Raises
+        ------
+        TypeError
+            If a value cannot be written as JSON, for example an ``rc`` value that is an object.
+        """
+        data: dict[str, Any] = {"version": _FORMAT_VERSION}
+        if self.rc:
+            data["rc"] = {key: _encode_rc(key, value) for key, value in self.rc.items()}
+        palettes = _encode_palettes(self.palettes)
+        if palettes:
+            data["palettes"] = palettes
+        if self.channels:
+            data["channels"] = {name: _encode_channel(channel) for name, channel in self.channels.items()}
+        for f in dataclasses.fields(self):
+            if f.name in ("rc", "palettes", "channels"):
+                continue
+            value = getattr(self, f.name)
+            if value is not None:
+                data[f.name] = list(value) if isinstance(value, tuple) else value
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> PlotStyle:
+        """The style of a dictionary written by :meth:`to_dict`.
+
+        Raises
+        ------
+        ValueError
+            If the version is not supported, a key is not a field of the style, or a value is invalid.
+        """
+        data = dict(data)
+        version = data.pop("version", _FORMAT_VERSION)
+        if version != _FORMAT_VERSION:
+            raise ValueError(f"unsupported style format version {version!r}; this version reads {_FORMAT_VERSION}")
+        names = {f.name for f in dataclasses.fields(cls)}
+        unknown = set(data) - names
+        if unknown:
+            raise ValueError(f"unknown style keys {sorted(unknown)}; the fields are {sorted(names)}")
+        fields: dict[str, Any] = {}
+        if "rc" in data:
+            fields["rc"] = {key: _decode_rc(key, value) for key, value in data.pop("rc").items()}
+        if "palettes" in data:
+            fields["palettes"] = _decode_palettes(data.pop("palettes"))
+        if "channels" in data:
+            fields["channels"] = {name: _decode_channel(channel) for name, channel in data.pop("channels").items()}
+        if "hatch_cycle" in data:
+            data["hatch_cycle"] = tuple(data["hatch_cycle"])
+        return cls(**fields, **data)
+
+    def save(self, path: str | Path) -> None:
+        """Write the style to a JSON file (see :meth:`to_dict`)."""
+        Path(path).write_text(json.dumps(self.to_dict(), indent=2) + "\n")
+
+    @classmethod
+    def load(cls, path: str | Path) -> PlotStyle:
+        """Read a style from a JSON file written by :meth:`save`; ``register_style`` makes it selectable by name."""
+        return cls.from_dict(json.loads(Path(path).read_text()))
+
     @classmethod
     def classic(cls) -> PlotStyle:
         """The look before styles: nothing is set, matplotlib and the library defaults apply."""
@@ -548,6 +617,110 @@ class PlotStyle:
 
 
 # ---------------------------------------------------------------------- helpers
+
+
+_FORMAT_VERSION = 1
+_COLORMAP_KEY = "$colormap"
+_CYCLER_KEY = "$cycler"
+
+
+def _encode_colormap(cmap: Colormap) -> str | dict[str, Any]:
+    """A colormap as its name if matplotlib has it, else as its colors."""
+    registered = mpl.colormaps.get(cmap.name)
+    probe = np.linspace(0.0, 1.0, 17)
+    if registered is not None and np.allclose(registered(probe), cmap(probe)):
+        return cmap.name
+    colors = getattr(cmap, "colors", None)
+    if colors is None:
+        colors = cmap(np.linspace(0.0, 1.0, 256))
+    return {_COLORMAP_KEY: {"name": cmap.name, "colors": [to_hex(c) for c in colors]}}
+
+
+def _decode_colormap(data: Mapping[str, Any]) -> Colormap:
+    from matplotlib.colors import ListedColormap
+
+    spec = data[_COLORMAP_KEY]
+    return ListedColormap(spec["colors"], name=spec.get("name", "custom"))
+
+
+def _encode_palette(value: Any) -> Any:
+    if isinstance(value, Colormap):
+        return _encode_colormap(value)
+    if isinstance(value, Mapping):
+        return {str(k): to_hex(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [to_hex(c) for c in value]
+    return value
+
+
+def _decode_palette(value: Any) -> Any:
+    if isinstance(value, Mapping) and _COLORMAP_KEY in value:
+        return _decode_colormap(value)
+    return value
+
+
+def _encode_palettes(palettes: Palettes) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    for f in dataclasses.fields(palettes):
+        value = getattr(palettes, f.name)
+        if value is not None:
+            data[f.name] = list(value) if f.name == "sequential_range" else _encode_palette(value)
+    return data
+
+
+def _decode_palettes(data: Mapping[str, Any]) -> Palettes:
+    names = {f.name for f in dataclasses.fields(Palettes)}
+    unknown = set(data) - names
+    if unknown:
+        raise ValueError(f"unknown palette keys {sorted(unknown)}; the fields are {sorted(names)}")
+    fields = {k: (tuple(v) if k == "sequential_range" else _decode_palette(v)) for k, v in data.items()}
+    return Palettes(**fields)
+
+
+def _encode_channel(channel: Channel) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    if channel.value is not None:
+        data["value"] = list(channel.value) if isinstance(channel.value, tuple) else channel.value
+    if channel.palettes is not None:
+        data["palettes"] = _encode_palettes(channel.palettes)
+    if channel.range is not None:
+        data["range"] = list(channel.range)
+    if channel.scale is not None:
+        data["scale"] = channel.scale
+    return data
+
+
+def _decode_channel(data: Mapping[str, Any]) -> Channel:
+    unknown = set(data) - {"value", "palettes", "range", "scale"}
+    if unknown:
+        raise ValueError(f"unknown channel keys {sorted(unknown)}")
+    value = data.get("value")
+    return Channel(
+        value=tuple(value) if isinstance(value, list) else value,
+        palettes=_decode_palettes(data["palettes"]) if "palettes" in data else None,
+        range=tuple(data["range"]) if "range" in data else None,
+        scale=data.get("scale"),
+    )
+
+
+def _encode_rc(key: str, value: Any) -> Any:
+    if key == "axes.prop_cycle":
+        return {_CYCLER_KEY: {k: list(v) for k, v in value.by_key().items()}}
+    if isinstance(value, np.generic):
+        value = value.item()
+    if isinstance(value, (tuple, list)):
+        return [_encode_rc(key, v) for v in value]
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    raise TypeError(f"rc[{key!r}] = {value!r} cannot be written as JSON")
+
+
+def _decode_rc(key: str, value: Any) -> Any:
+    if isinstance(value, Mapping) and _CYCLER_KEY in value:
+        import cycler
+
+        return cycler.cycler(**value[_CYCLER_KEY])
+    return value
 
 
 def _merge_palettes(base: Palettes, other: Palettes | None) -> Palettes:

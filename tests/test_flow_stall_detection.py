@@ -78,6 +78,7 @@ class TestBestIterate:
         "mean_tol": 0.001,
         "max_tol": 0.002,
         "stall_patience": None,
+        "stall_lagging": False,  # these tests are of the best iterate by the mean and max ratios
     }
 
     def test_iteration_cap_returns_best_iterate(self, states):
@@ -471,9 +472,9 @@ class TestRequiredImprovementFollowsTheStep:
         first = {}
 
         class Spy(StallMonitor):
-            def update(self, step, mean_ratio, max_ratio, moved):
+            def update(self, step, mean_ratio, max_ratio, moved, *args):
                 first.setdefault(self.cycle, moved)
-                return super().update(step, mean_ratio, max_ratio, moved)
+                return super().update(step, mean_ratio, max_ratio, moved, *args)
 
         monkeypatch.setattr(algorithm, "StallMonitor", Spy)
         moved = {}

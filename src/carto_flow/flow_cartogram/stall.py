@@ -35,6 +35,9 @@ class StallMonitor:
     minimum is still above 1 and lower than that component's best over the
     earlier cycles by at least the fraction ``min_efficiency * moved`` of that best, where ``moved`` is the distance
     the boundaries moved in the cycle relative to the size of the regions.
+    A third component, the lagging error, is judged the same way when ``update`` is given it: the total of the log2
+    errors of the regions that are above the tolerance, in excess of it. It follows the regions that are still
+    off, which the mean (dominated by regions that are already close) and the max (held by one region) do not.
     A cycle is progress if any component counts. Improvements of a satisfied
     component, and a component that regressed above 1 after having been
     satisfied, do not count. The run is stalled after ``patience`` consecutive
@@ -57,19 +60,25 @@ class StallMonitor:
         self.cycle = cycle
         self.best_mean = float("inf")
         self.best_max = float("inf")
+        self.best_lag = float("inf")
         self.cycles_without_progress = 0
         self._cur_mean = float("inf")
         self._cur_max = float("inf")
+        self._cur_lag = float("inf")
         self._cur_moved = 0.0
 
-    def update(self, step: int, mean_ratio: float, max_ratio: float, moved: float) -> bool:
+    def update(self, step: int, mean_ratio: float, max_ratio: float, moved: float, lag: float | None = None) -> bool:
         """Record iteration ``step`` (0-based), in which the boundaries moved ``moved``; return True if the run is stalled.
 
         ``moved`` is the distance of the iteration divided by the size of the regions (see ``region_size``).
+        ``lag`` is the lagging error of the iteration (0 when no region is above the tolerance); None leaves the
+        component out.
         """
         self._cur_mean = min(self._cur_mean, mean_ratio)
         self._cur_max = min(self._cur_max, max_ratio)
         self._cur_moved += moved
+        if lag is not None:
+            self._cur_lag = min(self._cur_lag, lag)
         if (step + 1) % self.cycle != 0:
             return False
 
@@ -77,9 +86,12 @@ class StallMonitor:
         progress = (self._cur_mean > 1.0 and self._cur_mean < self.best_mean * keep) or (
             self._cur_max > 1.0 and self._cur_max < self.best_max * keep
         )
+        if self._cur_lag > 0.0 and self._cur_lag < self.best_lag * keep:
+            progress = True
         self.best_mean = min(self.best_mean, self._cur_mean)
         self.best_max = min(self.best_max, self._cur_max)
-        self._cur_mean = self._cur_max = float("inf")
+        self.best_lag = min(self.best_lag, self._cur_lag)
+        self._cur_mean = self._cur_max = self._cur_lag = float("inf")
         self._cur_moved = 0.0
         self.cycles_without_progress = 0 if progress else self.cycles_without_progress + 1
         return (

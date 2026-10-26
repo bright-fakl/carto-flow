@@ -347,3 +347,61 @@ def test_sqrt_scale():
 
     assert isinstance(PlotStyle().norm([1, 5], scale="sqrt"), PowerNorm)
     assert PlotStyle(color_scale="sqrt").color_scale == "sqrt"
+
+
+class TestPersistence:
+    @pytest.mark.parametrize("name", ["default", "dark", "classic"])
+    def test_builtin_styles_round_trip(self, name):
+        import json
+
+        style = {"default": PlotStyle.default, "dark": PlotStyle.dark, "classic": PlotStyle.classic}[name]()
+        assert PlotStyle.from_dict(json.loads(json.dumps(style.to_dict()))) == style
+
+    def test_a_file_round_trip_keeps_channels_ranges_and_palettes(self, tmp_path):
+        style = PlotStyle.default().copy_with(
+            hatch_cycle=("//", "xx"),
+            palettes=Palettes(sequential="magma", sequential_range=(0.1, 0.9), categorical={"a": "#ff0000"}),
+            channels={"alpha": Channel(value=0.5, range=(0.2, 1.0), scale="sqrt", palettes=Palettes(diverging="PuOr"))},
+        )
+        style.save(tmp_path / "s.json")
+        assert PlotStyle.load(tmp_path / "s.json") == style
+
+    def test_a_colormap_is_stored_by_name_or_by_colors(self):
+        from matplotlib.colors import LinearSegmentedColormap
+
+        named = PlotStyle(palettes=Palettes(sequential=matplotlib.colormaps["viridis"]))
+        assert named.to_dict()["palettes"]["sequential"] == "viridis"
+        custom = LinearSegmentedColormap.from_list("mine", ["#000000", "#ff0000"])
+        restored = PlotStyle.from_dict(PlotStyle(palettes=Palettes(sequential=custom)).to_dict())
+        np.testing.assert_allclose(
+            restored.palettes.sequential(np.linspace(0, 1, 9)), custom(np.linspace(0, 1, 9)), atol=2e-3
+        )
+
+    def test_a_style_sheet_with_a_prop_cycle_round_trips(self):
+        style = PlotStyle.from_mplstyle("ggplot")
+        restored = PlotStyle.from_dict(style.to_dict())
+        assert restored.rc["axes.prop_cycle"].by_key() == style.rc["axes.prop_cycle"].by_key()
+
+    def test_only_set_fields_are_written(self):
+        assert PlotStyle().to_dict() == {"version": 1}
+        assert PlotStyle(tick_format="si").to_dict() == {"version": 1, "tick_format": "si"}
+
+    def test_errors(self):
+        with pytest.raises(ValueError, match="unknown style keys"):
+            PlotStyle.from_dict({"version": 1, "colour_scale": "log"})
+        with pytest.raises(ValueError, match="version"):
+            PlotStyle.from_dict({"version": 2})
+        with pytest.raises(ValueError, match="unknown palette keys"):
+            PlotStyle.from_dict({"palettes": {"sequentail": "viridis"}})
+        with pytest.raises(ValueError, match="color_scale"):
+            PlotStyle.from_dict({"color_scale": "cubic"})
+        with pytest.raises(TypeError, match="rc"):
+            PlotStyle(rc={"axes.formatter.limits": object()}).to_dict()
+
+    def test_a_loaded_style_can_be_registered_and_selected(self, tmp_path):
+        PlotStyle.dark().save(tmp_path / "d.json")
+        register_style("from-file", PlotStyle.load(tmp_path / "d.json"))
+        try:
+            assert resolve_style("from-file") == PlotStyle.dark()
+        finally:
+            unregister_style("from-file")

@@ -898,7 +898,8 @@ def morph_geometries(
 
     snapshots.best_iteration = best_step + 1
     invalid_regions = _check_output(snapshots.get_snapshot(best_step + 1))
-    returned = snapshots.get_snapshot(best_step + 1).errors
+    returned_snapshot = snapshots.get_snapshot(best_step + 1)
+    returned = returned_snapshot.errors if returned_snapshot is not None else None
     n_unresolved = (
         count_unresolved(
             returned.log_errors, target_areas * 2.0**returned.log_errors, target_areas, abs_tol, log2_max_tol

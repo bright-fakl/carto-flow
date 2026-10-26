@@ -271,8 +271,8 @@ class CartogramWorkflow:
     @staticmethod
     def _warn_if_stalled(result: Cartogram) -> Cartogram:
         """Warn that a run ended as stalled and how to continue it; returns ``result``."""
-        if result.status == MorphStatus.STALLED:
-            errors = result.get_errors()
+        errors = result.get_errors()
+        if result.status == MorphStatus.STALLED and errors is not None:
             warnings.warn(
                 f"The morph stalled after {result.niterations} iterations (mean error {errors.mean_error_pct:.2g} %, "
                 f"max {errors.max_error_pct:.3g} %). The regions that are still off may keep improving: "

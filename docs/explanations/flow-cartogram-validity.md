@@ -94,6 +94,8 @@ The test detects crossings of segments only. A region that remains invalid is li
 
 `"repair-crossings"` finds crossings after they have happened and repairs them. `"repair-quadtree"` does not test for crossings. It changes how the vertices move: they are tied to a mesh of triangles, and only the mesh is advected. A segment inside one triangle stays a straight segment inside the triangle after the map, and segments in different triangles cannot cross as long as the triangles do not overlap.
 
+`"repair-quadtree"` is based on the line densification of Miaji et al. \[3\]: a graded quadtree is built from the density and triangulated, vertices are inserted where the boundaries cross the edges of the triangulation, and the vertices move with the piecewise-affine map of the triangles. This implementation differs from the published method in four ways. The mesh is built from the density at a recompute of the velocity field and kept for several windows. The leaves are triangulated as fans from a center point, not by a constrained Delaunay triangulation, and a fan that inverts is repaired by moving its center into the kernel of the leaf. The number of vertices is kept down by removing inserted vertices that are not needed, checked against crossings, not by a topology-preserving simplification of the whole geometry, so every input vertex stays. And the map is applied to the nodes of the time-stepped flow of this library, not to a density-equalizing map computed from the whole density in one step.
+
 ### The mesh
 
 1. **The quadtree.** The grid is padded to a square with a power of two cells per side. The square is a leaf. The leaf whose grid cells have the largest range of the density (maximum minus minimum) is split into four leaves, again and again, until the number of leaves reaches a budget of 1/64 of the number of grid cells (at least four leaves) or the density is constant in every leaf. Leaves are therefore small where the density has a large range, typically at the boundaries between regions of different density. The tree is then graded: neighboring leaves differ by at most one level.
@@ -211,3 +213,11 @@ anim = animate_geometry_keyframes(keyframes, interpolation="linear", facecolor="
 - `"repair-quadtree"` guarantees that segments do not cross only while no triangle is inverted. An inversion that the repair of the fan cannot remove is reported with a warning at the end of the run. The pruning test for foreign vertices looks at rings of at most 64 vertices.
 - The output has more vertices than the input. `"repair-crossings"` caps the number of vertices that a run inserts; `"repair-quadtree"` has no cap.
 - The figures of this page are drawn when the documentation is built by [make_validity_figures.py](https://github.com/bright-fakl/carto-flow/blob/main/docs/diagrams/make_validity_figures.py), which uses only NumPy and matplotlib. They apply the steps to a small analytic velocity field and do not call the library.
+
+## References
+
+\[2\] M. T. Gastner, V. Seguy, and P. More, "Fast flow-based algorithm for creating density-equalizing map projections," *Proc. Natl. Acad. Sci. U.S.A.*, vol. 115, no. 10, pp. E2156–E2164, 2018. DOI: [10.1073/pnas.1712674115](https://doi.org/10.1073/pnas.1712674115)
+
+\[3\] N. Z. Miaji, A. Singhania, M. E. Goh, C. Le, A. Tharatipyakul, and M. T. Gastner, "Topology-preserving line densification for creating contiguous cartograms," arXiv preprint, 2025. arXiv: [2511.08121](https://arxiv.org/abs/2511.08121)
+
+The numbering follows the reference list of the [algorithm page](flow-cartogram-algorithm.md#references).

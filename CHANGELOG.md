@@ -57,7 +57,7 @@ Releases before 2.0.0 have no changelog entry; see the
   zero-width features, a hole that leaves its shell) are listed in `Cartogram.invalid_regions`. The number of inserted vertices is capped
   at `max(5000, n // 100)` for `n` input vertices; when a check reaches the cap, the run warns and continues without repair. The
   default `validity="check"` only checks the validity of the output, as before, and changes nothing else. The crossing test is public as `carto_flow.geo_utils.find_crossing_segments` and `find_crossing_pairs`.
-- **`MorphOptions(validity="repair-quadtree")` keeps the flow cartogram's output polygons from self-intersecting with a piecewise-affine map.**
+- **`MorphOptions(validity="repair-quadtree")` keeps the flow cartogram's output polygons from self-intersecting with a piecewise-affine map.** The method is based on the line densification of Miaji et al. (arXiv:2511.08121).
   At every recompute of the velocity field (a window) a graded quadtree is built from the density and its leaves are triangulated as
   fans. Vertices are inserted where region boundaries cross an edge of the triangulation, so that every segment lies inside one
   triangle; during the window only the nodes of the mesh are advected through the field and the vertices move with the affine map of

@@ -365,7 +365,7 @@ class MorphOptions:
       test covers all regions together, so overlaps between neighbors are repaired too. The returned (best) iterate
       is tested as well. Regions that remain invalid, such as zero-width features of the input, are listed in
       ``Cartogram.invalid_regions``.
-    - ``"repair-quadtree"``: quadtree windows. At every recompute of the velocity field a graded quadtree is built from the
+    - ``"repair-quadtree"``: quadtree windows, after Miaji et al., arXiv:2511.08121. At every recompute of the velocity field a graded quadtree is built from the
       density and its leaves are triangulated. Vertices are inserted where the region boundaries cross an edge of
       the triangulation, so that every segment lies inside one triangle. During the window only the nodes of the
       mesh are advected through the field, and the vertices move with the piecewise-affine map of the triangles, so

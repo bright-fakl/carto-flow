@@ -1,6 +1,10 @@
 """
 Quadtree windows: output polygons that do not self-intersect, from a piecewise-affine map inside each window.
 
+The method is based on the line densification of Miaji et al., "Topology-preserving line densification for creating
+contiguous cartograms", arXiv:2511.08121. It differs in the triangulation (fans instead of a constrained Delaunay
+triangulation), in the reuse of the mesh over several windows, and in the removal of inserted vertices only.
+
 A window is the span of iterations between two recomputes of the velocity field. At the start of a window a graded
 quadtree is built from the density (:mod:`carto_flow.flow_cartogram.quadtree_mesh`), every leaf is triangulated as a
 fan, and vertices are inserted where the boundaries of the regions cross an edge of the mesh, so that every segment lies
@@ -98,6 +102,8 @@ _MIX2 = np.uint64(0x94D049BB133111EB)
 
 
 def _splitmix(z: np.ndarray) -> np.ndarray:
+    # The finalizer of SplitMix64: G. L. Steele Jr., D. Lea and C. H. Flood, "Fast splittable pseudorandom number
+    # generators", OOPSLA 2014; public domain C version by S. Vigna, https://prng.di.unimi.it/splitmix64.c
     z = (z ^ (z >> np.uint64(30))) * _MIX1
     z = (z ^ (z >> np.uint64(27))) * _MIX2
     return z ^ (z >> np.uint64(31))

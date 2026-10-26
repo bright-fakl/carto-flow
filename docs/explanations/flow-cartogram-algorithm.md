@@ -308,4 +308,7 @@ Reference implementation (C): [https://websites.umich.edu/~mejn/cart/](https://w
 DOI: [10.1073/pnas.1712674115](https://doi.org/10.1073/pnas.1712674115)
 Reference implementation (C): [github.com/Flow-Based-Cartograms/go\_cart](https://github.com/Flow-Based-Cartograms/go_cart)
 
+\[3\] N. Z. Miaji, A. Singhania, M. E. Goh, C. Le, A. Tharatipyakul, and M. T. Gastner, "Topology-preserving line densification for creating contiguous cartograms," arXiv preprint, 2025.
+arXiv: [2511.08121](https://arxiv.org/abs/2511.08121)
+
 carto-flow implements the method of \[1\]. The 2018 algorithm \[2\] replaces the iterative density rasterization with a prescribed linear density path `ρ(t) = (1-t)·ρ₀ + t·ρ̄`, which eliminates re-rasterization at each step and is approximately 40× faster in practice.

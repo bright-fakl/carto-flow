@@ -57,6 +57,8 @@ Builds a dyadic grid hierarchy with `levels` grids and runs one morphing pass pe
 
 `morph()` runs the same ladder when `grid` in the options is a `LadderSpec` or `"auto"`. `min_resolution="auto"` and `levels="auto"` choose the ladder from the data (see [Choosing the resolution](flow-cartogram-algorithm.md#choosing-the-resolution)). Before the first pass, the workflow warns when the coarsest grid cannot resolve the smallest target region or when many regions are below one cell at the finest grid.
 
+A pass that ends `STALLED` can be continued without starting over: `workflow.morph(stall_patience=None, n_iter=N)` takes the best iterate of the last result as input, keeps the previous options except for the overrides, runs again (a different `grid` is allowed) and appends the new `Cartogram`. `CartogramWorkflow.morph` and `morph_multiresolution` warn when the last pass stalled and name this call.
+
 `prescale_components` is applied only at the first (coarsest) level; subsequent levels disable it automatically to avoid rescaling already-morphed geometry.
 
 ### Access and State Management

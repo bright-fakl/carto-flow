@@ -10,6 +10,9 @@ Functions
 ---------
 compute_error_metrics
     Compute error metrics based on log2 ratio of current to target areas.
+effective_log_errors, count_unresolved
+    The errors the convergence test sees when regions within an absolute area tolerance are excused, and the regions
+    that are excused although their relative error exceeds the tolerance.
 """
 
 from dataclasses import dataclass
@@ -19,6 +22,8 @@ import numpy as np
 __all__ = [
     "MorphErrors",
     "compute_error_metrics",
+    "count_unresolved",
+    "effective_log_errors",
 ]
 
 
@@ -95,3 +100,26 @@ def compute_error_metrics(current_areas: np.ndarray, target_areas: np.ndarray, e
         mean_error_pct=mean_error_pct,
         max_error_pct=max_error_pct,
     )
+
+
+def effective_log_errors(
+    log_errors: np.ndarray, current_areas: np.ndarray, target_areas: np.ndarray, abs_tol: float
+) -> np.ndarray:
+    """Log2 errors with the regions within the absolute area tolerance set to zero.
+
+    A region is within the tolerance when ``|current - target| <= abs_tol`` (in the units of the areas). With
+    ``abs_tol`` 0 the errors are returned unchanged.
+    """
+    if abs_tol <= 0:
+        return log_errors
+    return np.where(np.abs(current_areas - target_areas) <= abs_tol, 0.0, log_errors)
+
+
+def count_unresolved(
+    log_errors: np.ndarray, current_areas: np.ndarray, target_areas: np.ndarray, abs_tol: float, log2_max_tol: float
+) -> int:
+    """Number of regions within the absolute area tolerance whose relative error is not below the tolerance."""
+    if abs_tol <= 0:
+        return 0
+    excused = np.abs(current_areas - target_areas) <= abs_tol
+    return int(np.count_nonzero(excused & (np.abs(log_errors) >= log2_max_tol)))

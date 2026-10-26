@@ -43,7 +43,7 @@ from .displacement import (
     max_abs_velocity,
     max_velocity_magnitude,
 )
-from .errors import compute_error_metrics
+from .errors import compute_error_metrics, count_unresolved, effective_log_errors
 from .history import (
     CartogramInternalsSnapshot,
     CartogramSnapshot,
@@ -517,6 +517,15 @@ def morph_geometries(
     # Internally we check if |log2(current/target)| < log2(1 + tolerance)
     log2_mean_tol = np.log2(1.0 + options.mean_tol)
     log2_max_tol = np.log2(1.0 + options.max_tol)
+    # Absolute area tolerance (in the units of the geometries); regions within it count as on target
+    abs_tol = options.area_tol_cells * grid.dx * grid.dy
+
+    def _convergence_errors(errors, areas):
+        """Mean and max log error that the convergence test, the score and the stall rule see."""
+        if abs_tol <= 0:
+            return errors.mean_log_error, errors.max_log_error
+        effective = np.abs(effective_log_errors(errors.log_errors, areas, target_areas, abs_tol))
+        return float(effective.mean()), float(effective.max())
 
     status = MorphStatus.ORIGINAL
 
@@ -544,7 +553,8 @@ def morph_geometries(
     if options.adaptive_dt:
         # Score of the starting geometries, for the first steps of a run that starts near the target.
         _e0 = compute_error_metrics(flat_geoms.compute_areas(use_parallel=False), target_areas, eps=error_eps)
-        step_controller.score = max(_e0.mean_log_error / log2_mean_tol, _e0.max_log_error / log2_max_tol)
+        _mean0, _max0 = _convergence_errors(_e0, flat_geoms.compute_areas(use_parallel=False))
+        step_controller.score = max(_mean0 / log2_mean_tol, _max0 / log2_max_tol)
 
     def _snapshot(iteration, errors, areas):
         """Snapshot of the current state of geometries, landmarks and coords."""
@@ -775,8 +785,7 @@ def morph_geometries(
         convergence.add(step + 1, error_metrics)
 
         # Use structured errors for convergence check
-        max_error = error_metrics.max_log_error
-        mean_error = error_metrics.mean_log_error
+        mean_error, max_error = _convergence_errors(error_metrics, current_areas)
 
         # Check convergence using log2-converted thresholds
         converged = mean_error < log2_mean_tol and max_error < log2_max_tol
@@ -889,6 +898,14 @@ def morph_geometries(
 
     snapshots.best_iteration = best_step + 1
     invalid_regions = _check_output(snapshots.get_snapshot(best_step + 1))
+    returned = snapshots.get_snapshot(best_step + 1).errors
+    n_unresolved = (
+        count_unresolved(
+            returned.log_errors, target_areas * 2.0**returned.log_errors, target_areas, abs_tol, log2_max_tol
+        )
+        if returned is not None
+        else 0
+    )
     if internals is not None:
         # The field that produced the best iterate is the last one computed at or before it.
         recorded = [snap.iteration for snap in internals.snapshots if snap.iteration <= best_step + 1]
@@ -927,6 +944,7 @@ def morph_geometries(
         internals=internals,
         benchmark=_pt,
         invalid_regions=invalid_regions,
+        n_unresolved=n_unresolved,
         vertex_lineage=windows.lineage() if windows is not None else None,
     )
     if _pt is not None:

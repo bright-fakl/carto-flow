@@ -11,6 +11,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **`MorphOptions.area_tol_cells` excuses regions of a few cells from the relative tolerances.** A region whose area is within
+  that many grid cells of its target counts as on target in the convergence test, the stall rule and the choice of the best
+  iterate (the condition is `relative error < max_tol` OR `area difference <= area_tol_cells` cells); the reported errors
+  stay the relative errors, and `Cartogram.n_unresolved` counts the excused regions above `max_tol`. In a multiresolution
+  morph the tolerance is the same area at every level. Default 0 (off).
+- **A stalled morph says how to continue.** `CartogramWorkflow.morph` and `morph_multiresolution` warn when the run ends
+  stalled: `workflow.morph(stall_patience=None, n_iter=N)` continues from the best iterate with the stall rule off.
 - **`Cartogram.save` and `Cartogram.load` keep the vertex lineage** of `validity="repair-crossings"` and `"repair-quadtree"` runs, so a loaded
   cartogram can lift coordinates and take part in `align_vertices`. Files saved earlier load without a lineage.
 - **`max_segment_length` densifies the boundaries of the geometry loaders at load time.** `load_us_census`, `load_world` and

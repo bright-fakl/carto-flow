@@ -235,7 +235,7 @@ Vertices move individually through the velocity field, so the straight segment b
 - `"check"` (default): the validity is only checked. At the end of the run the returned best iterate is tested, the invalid regions are listed in `Cartogram.invalid_regions` and the run warns. The geometry is not changed and no vertex is inserted.
 - `"repair-crossings"`: a crossing test and a local repair (validated windows), described below.
 
-A window is the span of iterations between two recomputes of the velocity field (`recompute_every`). Inside a window the field is fixed, so every vertex moves independently of all others, and the path of a vertex through the window is known. A span of `validity_check_every` windows (default 10) is checked at its end:
+A window is the span of iterations between two recomputes of the velocity field (`recompute_every`). Inside a window the field is fixed, so every vertex moves independently of all others, and the path of a vertex through the window is known. A span of `validity_repair_every` windows (default 10) is checked at its end:
 
 1. A crossing test finds the segments that cross another segment. It covers all regions together, so a region that overlaps a neighbor is found as well as a self-intersection. Segments that share an end point, touch, or are identical (the two sides of a shared boundary) do not count.
 2. Every crossing segment is split at the midpoint of its chord at the start of the span. The two regions of a shared boundary get identical new vertices, and the original vertices are neither moved nor removed.
@@ -277,11 +277,11 @@ The test detects crossings of segments only. A region that remains invalid is li
 
 ### Memory budget
 
-The check stores the velocity fields of the windows of a span, as float32: a field has two components of `nx * ny` cells, `2 * 4 * nx * ny` bytes (22 MB on the 2048 by 1408 cells of the finest grid of the US county examples, 32 MB on 2048 by 2048 cells). `validity_memory_mb` (default 128, in units of 2**20 bytes) is the budget for them. `validity_check_every` and `validity_memory_mb` apply to `"repair-crossings"` only; with `"check"` they are validated and unused.
+The check stores the velocity fields of the windows of a span, as float32: a field has two components of `nx * ny` cells, `2 * 4 * nx * ny` bytes (22 MB on the 2048 by 1408 cells of the finest grid of the US county examples, 32 MB on 2048 by 2048 cells). `validity_memory_mb` (default 128, in units of 2**20 bytes) is the budget for them. `validity_repair_every` and `validity_memory_mb` apply to `"repair-crossings"` only; with `"check"` they are validated and unused.
 
-- When the stored fields have reached the budget at the start of a window, the span ends early: the crossing test and the repair run then, although `validity_check_every` windows have not passed, the stored fields are released and a new span starts. The number of windows between two checks is the smaller of `validity_check_every` and the number of fields that reach the budget, so it is shorter than `validity_check_every` on a fine grid or with a small budget.
-- A window's field is always stored. The memory of the check is therefore bounded by the budget plus one field plus one copy of the coordinates, whatever `recompute_every` and `validity_check_every` are.
-- Short spans cost time, because every check tests all segments. A check after one or two windows also finds crossings that the next window would remove, which costs accuracy and time. A budget that holds only one or two fields of the finest grid is not useful; for `validity_check_every` windows per span the budget has to be at least `validity_check_every` times the field size (320 MB for 10 fields of 32 MB), or `validity_check_every` has to be lowered to what the budget holds.
+- When the stored fields have reached the budget at the start of a window, the span ends early: the crossing test and the repair run then, although `validity_repair_every` windows have not passed, the stored fields are released and a new span starts. The number of windows between two checks is the smaller of `validity_repair_every` and the number of fields that reach the budget, so it is shorter than `validity_repair_every` on a fine grid or with a small budget.
+- A window's field is always stored. The memory of the check is therefore bounded by the budget plus one field plus one copy of the coordinates, whatever `recompute_every` and `validity_repair_every` are.
+- Short spans cost time, because every check tests all segments. A check after one or two windows also finds crossings that the next window would remove, which costs accuracy and time. A budget that holds only one or two fields of the finest grid is not useful; for `validity_repair_every` windows per span the budget has to be at least `validity_repair_every` times the field size (320 MB for 10 fields of 32 MB), or `validity_repair_every` has to be lowered to what the budget holds.
 
 ### Cap on inserted vertices
 
@@ -307,7 +307,7 @@ The number of vertices that a run inserts is capped at `max(5000, n // 100)`, wi
 | `stall_patience` | 4 | Stall after N consecutive cycles (windows) without progress; `None` = disabled |
 | `stall_min_efficiency` | 0.05 | Relative improvement of a violated component's cycle minimum per unit of distance moved (relative to the region size) that counts as progress |
 | `validity` | `"check"` | `"check"`: the validity of the output is only checked and invalid regions are listed in `Cartogram.invalid_regions`; `"repair-crossings"`: validated windows, a crossing test and repair that keep the output polygons from self-intersecting (see [Output Validity](#output-validity)) |
-| `validity_check_every` | 10 | Windows between two crossing tests with `validity="repair-crossings"` (unused with `"check"`) |
+| `validity_repair_every` | 10 | Windows between two crossing tests with `validity="repair-crossings"` (unused with `"check"`) |
 | `validity_memory_mb` | 128 | Memory budget for the stored velocity fields; a span ends early when they reach it, with `validity="repair-crossings"` (see [Memory budget](#memory-budget); unused with `"check"`) |
 | `grid` | 256 | Grid points on the longest axis (int or `(nx, ny)`); `GridSpec(size, margin, square)` for one grid with margin and squareness; `LadderSpec(min_resolution, levels, margin, square)` or `"auto"` for a ladder of resolutions; a prebuilt `Grid`; `None` = 100 |
 | `grid_size`, `grid_margin`, `grid_square` | `None` | Deprecated; `grid_size` is an alias of `grid`, and margin (0.5) and squareness (`False`) belong in a `GridSpec` or `LadderSpec` |

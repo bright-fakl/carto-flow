@@ -45,13 +45,13 @@ Releases before 2.0.0 have no changelog entry; see the
   run it first and take `validate=False` to skip it.
 - **`MorphOptions(validity="repair-crossings")` keeps the flow cartogram's output polygons from self-intersecting.** Vertices move
   individually, so a region squeezed into a strip narrower than the vertex spacing ends with crossing boundary segments. Every
-  `validity_check_every` windows (default 10; a window is the span between two recomputes of the velocity field) and when the
+  `validity_repair_every` windows (default 10; a window is the span between two recomputes of the velocity field) and when the
   run ends, a crossing test over all regions finds the crossing segments. Each is split at the midpoint of its chord at the start
   of the span, and the new vertex is moved through the recorded steps of the span, so it lies on the path the flow gives it; the
   new segments are tested again for at most 14 rounds. No input vertex is moved or removed, the two sides of a shared boundary
   get identical vertices, and the returned best iterate is checked as well. The fields of a span are stored as float32 and a span
   ends early when they reach `validity_memory_mb` (default 128 MB; the memory of the check is bounded by this value plus one field,
-  independent of `recompute_every` and `validity_check_every`; both options apply to `"repair-crossings"` only). The output has more vertices than the
+  independent of `recompute_every` and `validity_repair_every`; both options apply to `"repair-crossings"` only). The output has more vertices than the
   input: `Cartogram.vertex_lineage` records the insertions and `Cartogram.lift_coordinates` lifts the coordinates of the input, or
   of an earlier snapshot, to the vertex set of the returned geometries. Regions that stay invalid (a fold of the flow itself,
   zero-width features, a hole that leaves its shell) are listed in `Cartogram.invalid_regions`. The number of inserted vertices is capped

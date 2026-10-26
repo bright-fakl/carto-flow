@@ -90,7 +90,7 @@ class TestOptions:
     def test_defaults(self):
         options = MorphOptions()
         assert options.validity == "check"
-        assert options.validity_check_every == 10
+        assert options.validity_repair_every == 10
         assert options.validity_memory_mb == 128.0
 
     @pytest.mark.parametrize("value", ["check", "repair-crossings"])
@@ -99,17 +99,17 @@ class TestOptions:
         assert VALIDITY_VALUES == ("check", "repair-crossings")
 
     def test_other_options_are_accepted(self):
-        options = MorphOptions(validity="repair-crossings", validity_check_every=1, validity_memory_mb=0.5)
-        assert options.copy_with(validity_check_every=3).validity_check_every == 3
+        options = MorphOptions(validity="repair-crossings", validity_repair_every=1, validity_memory_mb=0.5)
+        assert options.copy_with(validity_repair_every=3).validity_repair_every == 3
 
     @pytest.mark.parametrize("value", ["none", "windows", "quadtree", "Check", ""])
     def test_removed_and_unknown_values_are_rejected_with_the_valid_ones(self, value):
         with pytest.raises(MorphOptionsValidationError, match=r'one of "check", "repair-crossings"'):
             MorphOptions(validity=value)
 
-    @pytest.mark.parametrize("name", ["validity_check_every", "validity_memory_mb"])
+    @pytest.mark.parametrize("name", ["validity_repair_every", "validity_memory_mb"])
     def test_the_budget_options_are_validated_but_unused_with_check(self, name):
-        value = {"validity_check_every": 3, "validity_memory_mb": 0.5}[name]
+        value = {"validity_repair_every": 3, "validity_memory_mb": 0.5}[name]
         options = MorphOptions(validity="check", **{name: value})
         assert getattr(options, name) == value
         with pytest.raises(MorphOptionsValidationError, match=name):
@@ -121,9 +121,9 @@ class TestOptions:
             ("validity", "windows"),
             ("validity", True),
             ("validity", None),
-            ("validity_check_every", 0),
-            ("validity_check_every", 2.5),
-            ("validity_check_every", True),
+            ("validity_repair_every", 0),
+            ("validity_repair_every", 2.5),
+            ("validity_repair_every", True),
             ("validity_memory_mb", 0),
             ("validity_memory_mb", -1.0),
             ("validity_memory_mb", "128"),
@@ -434,7 +434,7 @@ class TestMorph:
         if invalid_count(baseline) == 0:
             pytest.skip("the run without the option is valid for this seed on this platform (the scene is chaotic)")
         assert invalid_count(baseline) >= 1
-        _, repaired = morph(seed, validity="repair-crossings", validity_check_every=10_000)
+        _, repaired = morph(seed, validity="repair-crossings", validity_repair_every=10_000)
         expected = {"n_iter": "COMPLETED", "converged": "CONVERGED", "stalled": "STALLED"}[how]
         assert repaired.status.name == expected
         assert repaired.vertex_lineage.rounds
@@ -442,7 +442,7 @@ class TestMorph:
 
     def test_the_returned_best_iterate_is_checked_when_it_is_not_the_last(self):
         _, baseline = morph(ENDS["stalled"])
-        _, repaired = morph(ENDS["stalled"], validity="repair-crossings", validity_check_every=10_000)
+        _, repaired = morph(ENDS["stalled"], validity="repair-crossings", validity_repair_every=10_000)
         assert repaired.best_iteration < repaired.niterations
         assert invalid_count(repaired) <= invalid_count(baseline)
         # the errors of the snapshot are those of the geometry it holds
@@ -515,22 +515,22 @@ class TestMorph:
             return spies[-1], result
 
         # a budget below one field: the span ends after every window although 10,000 windows are allowed
-        tiny, _ = run(validity_check_every=10_000, validity_memory_mb=1e-6)
+        tiny, _ = run(validity_repair_every=10_000, validity_memory_mb=1e-6)
         field = tiny.peak_field_bytes
         assert field > 0
         assert tiny.n_windows > 3
         assert tiny.n_checks == tiny.n_windows  # one at the start of every window but the first, and the last
         # the memory is the budget plus one field: one field here
         # a budget of 2.5 fields stores three
-        three, _ = run(validity_check_every=10_000, validity_memory_mb=2.5 * field / 2**20)
+        three, _ = run(validity_repair_every=10_000, validity_memory_mb=2.5 * field / 2**20)
         assert three.peak_field_bytes == 3 * field
         assert three.n_checks == -(-three.n_windows // 3)
         # a large budget and a long span: only the check at the end of the run
-        large, _ = run(validity_check_every=10_000, validity_memory_mb=1024.0)
+        large, _ = run(validity_repair_every=10_000, validity_memory_mb=1024.0)
         assert large.n_checks == 1
         assert large.peak_field_bytes == large.n_windows * field
-        # the span is also limited by validity_check_every
-        short, _ = run(validity_check_every=2, validity_memory_mb=1024.0)
+        # the span is also limited by validity_repair_every
+        short, _ = run(validity_repair_every=2, validity_memory_mb=1024.0)
         assert short.n_checks == -(-short.n_windows // 2)
 
     def test_check_interval_options_have_no_effect_with_check(self, monkeypatch):
@@ -540,7 +540,7 @@ class TestMorph:
             raise AssertionError("ValidatedWindows is used with validity='check'")
 
         monkeypatch.setattr(algorithm, "ValidatedWindows", forbidden)
-        _, result = morph(11, validity="check", validity_check_every=1, validity_memory_mb=1e-6)
+        _, result = morph(11, validity="check", validity_repair_every=1, validity_memory_mb=1e-6)
         assert result.vertex_lineage is None
 
     def test_lift_coordinates_gives_the_final_vertex_set_and_the_same_rings(self):

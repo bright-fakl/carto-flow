@@ -403,7 +403,7 @@ def morph_geometries(
 
     # Validated windows (validity="repair-crossings"; remove this and the calls of `windows` below to disable)
     windows = (
-        ValidatedWindows(options.validity_check_every, options.validity_memory_mb, len(flat_geoms.coords))
+        ValidatedWindows(options.validity_repair_every, options.validity_memory_mb, len(flat_geoms.coords))
         if options.validity == VALIDITY_REPAIR_CROSSINGS
         else None
     )

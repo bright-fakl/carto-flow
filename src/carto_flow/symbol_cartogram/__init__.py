@@ -95,8 +95,6 @@ Utilities
 ---------
 compute_symbol_sizes
     Compute symbol sizes from data values.
-generate_grid
-    Generate a regular grid of cells.
 compute_adjacency
     Compute adjacency matrix from polygon geometries.
 create_circle, create_square, create_hexagon
@@ -120,7 +118,6 @@ Using a preset:
 
 from .adjacency import compute_adjacency
 from .api import create_layout, create_symbol_cartogram
-from .grid import compute_grid_symbol_size, generate_grid
 from .layouts import (
     AlgorithmMetrics,
     CentroidLayout,
@@ -197,7 +194,6 @@ from .tiling import (
     IsohedralTiling,
     QuadrilateralTiling,
     SquareTiling,
-    TileAdjacencyType,
     TileTransform,
     Tiling,
     TilingResult,
@@ -256,7 +252,6 @@ __all__ = [
     "SymbolShape",
     "SymbolSpec",
     "SymbolsPlotResult",
-    "TileAdjacencyType",
     "TileSymbol",
     "TileTransform",
     "Tiling",
@@ -268,7 +263,6 @@ __all__ = [
     "TriangleTiling",
     "centroid_cartogram",
     "compute_adjacency",
-    "compute_grid_symbol_size",
     "compute_symbol_sizes",
     "create_circle",
     "create_hexagon",
@@ -279,7 +273,6 @@ __all__ = [
     "demers_cartogram",
     "dorling_cartogram",
     "dorling_grouped_cartogram",
-    "generate_grid",
     "geographic_cartogram",
     "geographic_grouped_cartogram",
     "get_layout",

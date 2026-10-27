@@ -223,6 +223,7 @@ version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "geopandas" },
+    { name = "isotile" },
     { name = "joblib" },
     { name = "matplotlib" },
     { name = "numba" },
@@ -234,7 +235,6 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "shapely" },
-    { name = "tactile" },
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
@@ -275,6 +275,7 @@ dev = [
 requires-dist = [
     { name = "censusdis", marker = "extra == 'data'", specifier = ">=1.2.4" },
     { name = "geopandas", specifier = ">=1.0.1" },
+    { name = "isotile", git = "https://github.com/bright-fakl/isotile?rev=392484c254d44af317a24dcea69bd8dcf44a83fc" },
     { name = "joblib", specifier = ">=1.5.2" },
     { name = "matplotlib", specifier = ">=3.9.4" },
     { name = "numba", specifier = ">=0.60.0" },
@@ -284,7 +285,6 @@ requires-dist = [
     { name = "pyfftw", specifier = ">=0.14.0" },
     { name = "scipy", specifier = ">=1.13.1" },
     { name = "shapely", specifier = ">=2.1.0" },
-    { name = "tactile", specifier = ">=0.1.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
     { name = "typing-extensions", specifier = ">=4.0.0" },
 ]
@@ -1402,6 +1402,17 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7c/1a/3c8edc664e06e6bd06cce40c6b22da5f1429aa4224d0c590f3be21c91ead/isoduration-20.11.0.tar.gz", hash = "sha256:ac2f9015137935279eac671f94f89eb00584f940f5dc49462a0c4ee692ba1bd9", size = 11649 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/55/e5326141505c5d5e34c5e0935d2908a74e4561eca44108fbfb9c13d2911a/isoduration-20.11.0-py3-none-any.whl", hash = "sha256:b2904c2a4228c3d44f409c8ae8e2370eb21a26f7ac2ec5446df141dde3452042", size = 11321 },
+]
+
+[[package]]
+name = "isotile"
+version = "0.1.0.dev0"
+source = { git = "https://github.com/bright-fakl/isotile?rev=392484c254d44af317a24dcea69bd8dcf44a83fc#392484c254d44af317a24dcea69bd8dcf44a83fc" }
+dependencies = [
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "scipy", version = "1.16.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [[package]]
@@ -4130,14 +4141,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/28/e3/55dcc2cfbc3ca9c29519eb6884dd1415ecb53b0e934862d3559ddcb7e20b/stack_data-0.6.3.tar.gz", hash = "sha256:836a778de4fec4dcd1dcd89ed8abff8a221f58308462e1c4aa2a3cf30148f0b9", size = 44707 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f1/7b/ce1eafaf1a76852e2ec9b22edecf1daa58175c090266e9f6c64afcd81d91/stack_data-0.6.3-py3-none-any.whl", hash = "sha256:d5558e0c25a4cb0853cddad3d77da9891a08cb85dd9f9f91b9f8cd66e511e695", size = 24521 },
-]
-
-[[package]]
-name = "tactile"
-version = "0.1.0"
-source = { registry = "https://pypi.org/simple" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a2/34/ca61edccb2f9e41296101e2e2bb8534d6860c06d8bb7127ca56b2965c30e/tactile-0.1.0-py3-none-any.whl", hash = "sha256:086d47829ff57793557e170cd4792839b07fab188a2aaf55e76171688d916ae2", size = 24701 },
 ]
 
 [[package]]

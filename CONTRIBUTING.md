@@ -128,7 +128,9 @@ Before you submit a pull request, check that it meets these guidelines:
 3. If the change can alter cartogram output, or otherwise needs a visual review, add a report page to the
    [carto-flow-dev](https://github.com/bright-fakl/carto-flow-dev) repository (published at
    <https://bright-fakl.github.io/carto-flow-dev/>) and link it from the pull request.
-   Its README describes the page format and how to build the index with `scripts/build_visual_checks_index.py`.
+   The report pages and the index builder live in that repository. Its README describes the page format
+   and how to rebuild the index: run `python3 scripts/build_visual_checks_index.py` from a clone of
+   <https://github.com/bright-fakl/carto-flow-dev>.
 
 # Releasing
 

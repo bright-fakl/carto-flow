@@ -119,7 +119,7 @@ def svg_open(vb: tuple[float, float, float, float], title: str) -> str:
     x, y, w, h = vb
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{x:.2f} {y:.2f} {w:.2f} {h:.2f}" '
-        f'role="img" aria-label="{title}"><title>{title}</title>'
+        f'width="{w:.0f}" height="{h:.0f}" role="img" aria-label="{title}"><title>{title}</title>'
     )
 
 

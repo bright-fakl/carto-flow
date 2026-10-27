@@ -1,0 +1,6 @@
+/* Show the logo variant that matches the active color scheme (see docs/overrides/partials/logo.html).
+   Material sets `display: block` on `.md-logo img` (specificity 0,2,1), so the selectors include `.md-logo`. */
+[data-md-color-scheme="default"] .md-logo .cf-logo--dark,
+[data-md-color-scheme="slate"] .md-logo .cf-logo--light {
+  display: none;
+}

@@ -1,4 +1,9 @@
-# carto-flow
+<h1 align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/bright-fakl/carto-flow/main/docs/assets/logo/wordmark-dark.svg">
+    <img src="https://raw.githubusercontent.com/bright-fakl/carto-flow/main/docs/assets/logo/wordmark-light.svg" alt="carto-flow" height="72">
+  </picture>
+</h1>
 
 [![Release](https://img.shields.io/github/v/release/bright-fakl/carto-flow)](https://github.com/bright-fakl/carto-flow/releases)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/bright-fakl/carto-flow/main.yml?branch=main&label=build)](https://github.com/bright-fakl/carto-flow/actions/workflows/main.yml)

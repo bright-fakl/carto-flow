@@ -21,6 +21,8 @@ jobs:
         env:
           GH_TOKEN: ${{ env.DISPATCH_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
           gh api -X POST repos/bright-fakl/carto-flow-dev/dispatches \
-            -f event_type=pr-closed -F "client_payload[pr]=$PR_NUMBER"
+            -f event_type=pr-closed -F "client_payload[pr]=$PR_NUMBER" \
+            -f "client_payload[repo]=$REPO"

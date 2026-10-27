@@ -150,6 +150,7 @@ nav:
         - Contiguity Repair: explanations/voronoi-cartogram-contiguity.md
   - Changelog: changelog.md
   - Migrating to 2.0: migrating-to-2.0.md
+  - Logo and Branding: branding.md
 
 hooks:
   - docs/hooks/quiet_third_party.py
@@ -225,6 +226,8 @@ theme:
   icon:
     repo: fontawesome/brands/github
   custom_dir: docs/overrides
+  logo: assets/logo/mark-light.svg
+  favicon: assets/logo/favicon.svg
 
 extra:
   social:
@@ -236,6 +239,7 @@ extra:
 
 extra_css:
   - stylesheets/jupyter.css
+  - stylesheets/logo.css
 
 extra_javascript:
   - javascripts/mathjax-config.js

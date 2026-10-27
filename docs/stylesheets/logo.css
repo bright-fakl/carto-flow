@@ -1,0 +1,5 @@
+/* Show the logo variant that matches the active color scheme (see docs/overrides/partials/logo.html). */
+[data-md-color-scheme="default"] .cf-logo--dark,
+[data-md-color-scheme="slate"] .cf-logo--light {
+  display: none;
+}

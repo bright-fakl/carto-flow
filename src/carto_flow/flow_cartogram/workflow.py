@@ -265,8 +265,23 @@ class CartogramWorkflow:
         effective_options = self._effective_options(options, overrides)
         spec = effective_options.grid_spec
         if isinstance(spec, LadderSpec):
-            return self._run_ladder(spec, effective_options)
-        return self._morph(effective_options, check=True)
+            return self._warn_if_stalled(self._run_ladder(spec, effective_options))
+        return self._warn_if_stalled(self._morph(effective_options, check=True))
+
+    @staticmethod
+    def _warn_if_stalled(result: Cartogram) -> Cartogram:
+        """Warn that a run ended as stalled and how to continue it; returns ``result``."""
+        errors = result.get_errors()
+        if result.status == MorphStatus.STALLED and errors is not None:
+            warnings.warn(
+                f"The morph stalled after {result.niterations} iterations (mean error {errors.mean_error_pct:.2g} %, "
+                f"max {errors.max_error_pct:.3g} %). The regions that are still off may keep improving: "
+                "workflow.morph(stall_patience=None, n_iter=N) continues from the best iterate with the stall rule "
+                "off and runs N more iterations; other options (a finer grid=, a looser max_tol=) can be passed in the same call.",
+                UserWarning,
+                stacklevel=3,
+            )
+        return result
 
     def _effective_options(self, options: MorphOptions | None, overrides: dict) -> MorphOptions:
         """Options of a pass: the given ones, or the previous ones with the overrides applied."""
@@ -390,7 +405,7 @@ class CartogramWorkflow:
         ...     print(cartogram.status, cartogram.get_errors().mean_error_pct)
         """
         spec = LadderSpec(min_resolution, levels, margin, square)
-        return self._run_ladder(spec, options)
+        return self._warn_if_stalled(self._run_ladder(spec, options))
 
     def _run_ladder(self, spec: LadderSpec, options: MorphOptions | list[MorphOptions] | None) -> Cartogram:
         """Run the levels of ``spec`` from coarse to fine, one pass each, ending at the first converged level.
@@ -435,6 +450,8 @@ class CartogramWorkflow:
                     break
                 level_options.n_iter = remaining  # type: ignore[union-attr]
             level_options.grid = grid  # type: ignore[union-attr]
+            # the same area at every level: area_tol_cells counts cells of the finest grid
+            level_options.area_tol_cells *= (grids[-1].dx * grids[-1].dy) / (grid.dx * grid.dy)  # type: ignore[union-attr]
             level_options.progress_message = (  # type: ignore[union-attr]
                 f"{'Refining' if self.is_morphed else 'Morphing'} with {grid.sx}x{grid.sy} grid"
             )

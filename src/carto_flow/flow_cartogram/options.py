@@ -266,6 +266,22 @@ class MorphOptions:
     multiresolution morph. ``0`` disables the floor (a zero area then gives an infinite error).
     """
 
+    area_tol_cells: float = 0.0
+    """Stops the morph early once small regions are as close to their target as this many cells of area.
+
+    A region whose area differs from its target by at most ``area_tol_cells`` cells (``dx * dy`` of the grid of the
+    run) counts as on target, whatever its relative error: the condition for a region is ``relative error < max_tol``
+    OR ``area difference <= area_tol_cells`` cells. Use it when a small absolute size is good enough for the small
+    regions even if their relative error is large. It does not make the result more accurate: it lets the convergence
+    test pass earlier, so the morph ends with ``CONVERGED`` while excused regions may still be far off in relative
+    terms. The excused regions count as on target in the convergence test, in the stall rule and in the choice of the
+    best iterate; the reported errors (``mean_error_pct``, ``max_error_pct``, the convergence history and the snapshot
+    errors) are the true relative errors. ``Cartogram.n_unresolved`` counts the excused regions whose relative error is
+    not below ``max_tol``. ``0`` (default) turns the tolerance off. In a multiresolution morph the tolerance is the
+    same area at every level, ``area_tol_cells`` cells of the finest grid, so a coarse level is not stopped earlier
+    than the finest level could resolve.
+    """
+
     density_rasterization: str = "exact"
     """How the density is rasterized onto the grid.
 
@@ -330,6 +346,9 @@ class MorphOptions:
     ``Cartogram.best_iteration``).
 
     If None, stall detection is disabled and the algorithm runs until convergence or ``n_iter``.
+
+    A stalled morph can be continued with ``CartogramWorkflow.morph(stall_patience=None, n_iter=N)``: the next pass
+    starts from the best iterate, with the previous options and the given overrides.
     """
 
     stall_min_efficiency: float = 0.05
@@ -609,6 +628,7 @@ class MorphOptions:
             "validity_memory_mb",
             "recompute_on_rise",
             "error_floor",
+            "area_tol_cells",
             "density_rasterization",
             "parallel_fft",
             "parallel_density",
@@ -714,6 +734,9 @@ class MorphOptions:
         elif field_name == "error_floor":
             if not isinstance(value, int | float) or isinstance(value, bool) or not 0 <= value < 1:
                 return "error_floor must be a number in [0, 1)"
+        elif field_name == "area_tol_cells":
+            if not isinstance(value, int | float) or isinstance(value, bool) or value < 0:
+                return "area_tol_cells must be a non-negative number"
         elif field_name == "recompute_on_rise":
             if value is not None and (not isinstance(value, int | float) or isinstance(value, bool) or value < 0):
                 return "recompute_on_rise must be a non-negative number or None"

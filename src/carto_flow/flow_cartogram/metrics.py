@@ -117,7 +117,9 @@ def validate_result(result: "Cartogram") -> QualityReport:
 
     # Check convergence status
     if hasattr(result, "status") and str(result.status.value) == "stalled":
-        warnings.append("Algorithm stalled before convergence")
+        warnings.append(
+            "Algorithm stalled before convergence; workflow.morph(stall_patience=None, n_iter=N) continues from the best iterate"
+        )
 
     return QualityReport(
         is_valid=is_valid,

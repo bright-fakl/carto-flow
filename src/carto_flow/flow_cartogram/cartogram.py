@@ -95,6 +95,9 @@ class Cartogram:
         boundary). ``get_geometry`` and ``to_geodataframe`` return the computed geometries, which keep
         the vertices of the input (with ``validity="repair-crossings"`` or ``"repair-quadtree"``: the vertices of the input and the
         inserted ones), unless ``repair=True``.
+    n_unresolved : int
+        Number of regions that ``MorphOptions.area_tol_cells`` excuses although their relative error is not below
+        ``max_tol``; 0 when the tolerance is off.
     vertex_lineage : VertexLineage or None
         With ``validity="repair-crossings"`` or ``"repair-quadtree"``, the vertices that the morph inserted into the segments of the
         geometries, and with ``"repair-quadtree"`` the inserted vertices it removed again (``None`` otherwise).
@@ -130,6 +133,7 @@ class Cartogram:
     internals: Optional["History[CartogramInternalsSnapshot]"] = None
     benchmark: Optional["Benchmark"] = None
     invalid_regions: tuple[int, ...] = ()
+    n_unresolved: int = 0
     vertex_lineage: Optional["VertexLineage"] = None
 
     # Source references for GeoDataFrame reconstruction (not shown in repr)

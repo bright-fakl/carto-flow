@@ -10,7 +10,7 @@ Functions
 ---------
 compute_error_metrics
     Compute error metrics based on log2 ratio of current to target areas.
-effective_log_errors, count_unresolved
+lagging_error, effective_log_errors, count_unresolved
     The errors the convergence test sees when regions within an absolute area tolerance are excused, and the regions
     that are excused although their relative error exceeds the tolerance.
 """
@@ -24,6 +24,7 @@ __all__ = [
     "compute_error_metrics",
     "count_unresolved",
     "effective_log_errors",
+    "lagging_error",
 ]
 
 
@@ -123,3 +124,16 @@ def count_unresolved(
         return 0
     excused = np.abs(current_areas - target_areas) <= abs_tol
     return int(np.count_nonzero(excused & (np.abs(log_errors) >= log2_max_tol)))
+
+
+def lagging_error(log_errors: np.ndarray, log2_max_tol: float, log2_mean_tol: float) -> float:
+    """Total log2 error above the tolerances, the measure of how far a run is from converging.
+
+    The sum over the regions of the absolute log2 error in excess of ``log2_max_tol``, plus, when the mean error
+    exceeds ``log2_mean_tol``, the excess of the mean times the number of regions. It is 0 when the convergence test
+    passes, is smooth in the errors (a region crossing the tolerance changes it by a small amount), and does not depend
+    on one region the way the max does.
+    """
+    errors = np.abs(log_errors)
+    mean_excess = max(0.0, float(errors.mean()) - log2_mean_tol)
+    return float(np.maximum(errors - log2_max_tol, 0.0).sum() + len(errors) * mean_excess)

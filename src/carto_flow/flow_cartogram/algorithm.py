@@ -43,7 +43,7 @@ from .displacement import (
     max_abs_velocity,
     max_velocity_magnitude,
 )
-from .errors import compute_error_metrics, count_unresolved, effective_log_errors
+from .errors import compute_error_metrics, count_unresolved, effective_log_errors, lagging_error
 from .history import (
     CartogramInternalsSnapshot,
     CartogramSnapshot,
@@ -793,8 +793,14 @@ def morph_geometries(
         rose = score_rose(score, prev_score, options.recompute_on_rise)
         prev_score = score
         step_controller.update(error_metrics.log_errors, score)
-        if score < best_score:
-            best_score = score
+        lag = None
+        best_key = score
+        if options.wait_for_lagging_regions:
+            effective = effective_log_errors(error_metrics.log_errors, current_areas, target_areas, abs_tol)
+            lag = lagging_error(effective, log2_max_tol, log2_mean_tol)
+            best_key = lag
+        if best_key < best_score:
+            best_score = best_key
             best_step = step
             if windows is not None:
                 windows.mark_best()
@@ -809,7 +815,7 @@ def morph_geometries(
                 probe_xy.copy() if probe_xy is not None else None,
                 probe_log_scaling.copy() if probe_log_scaling is not None else None,
             )
-        stalled = stall_monitor.update(step, mean_error / log2_mean_tol, max_error / log2_max_tol, step_moved)
+        stalled = stall_monitor.update(step, mean_error / log2_mean_tol, max_error / log2_max_tol, step_moved, lag)
         n_done = step + 1
 
         status = (

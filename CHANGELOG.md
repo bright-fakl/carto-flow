@@ -11,6 +11,13 @@ Releases before 2.0.0 have no changelog entry; see the
 
 ### Added
 
+- **The stall rule follows the regions that are still above the tolerance (`MorphOptions.wait_for_lagging_regions`, default True).** The
+  mean error is dominated by regions that are already close and the max by one region, so a group of lagging regions could
+  improve steadily while the run was ended as stalled. A third component of the rule judges the lagging error (the total log2
+  error of the regions in excess of `max_tol`, plus the excess of the mean over `mean_tol` times the number of regions), and
+  the best iterate is the one with the lowest lagging error. A run whose lagging regions stop improving still stalls and
+  `n_iter` bounds the run. In a multiresolution morph with one set of options only the finest level follows the lagging
+  regions. `wait_for_lagging_regions=False` restores the earlier rule.
 - **`MorphOptions.area_tol_cells` stops a morph early when small regions are small enough in absolute terms.** A region whose
   area is within that many grid cells of its target counts as on target in the convergence test, the stall rule and the choice
   of the best iterate (the condition is `relative error < max_tol` OR `area difference <= area_tol_cells` cells). It is not an

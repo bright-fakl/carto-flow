@@ -351,6 +351,20 @@ class MorphOptions:
     starts from the best iterate, with the previous options and the given overrides.
     """
 
+    wait_for_lagging_regions: bool = True
+    """Whether the run keeps going while the regions that are still above the tolerance improve.
+
+    The mean error is dominated by the regions that are already close and the max error is held by one region, so a
+    group of lagging regions can improve steadily without either moving enough to count as progress. With True a
+    third component of the stall rule judges the lagging error (the total log2 error of the regions in excess of
+    ``max_tol``, plus the excess of the mean over ``mean_tol`` times the number of regions) the same way as the mean
+    and the max, and the best iterate is the one with the lowest lagging error instead of the lowest of the mean and
+    max ratios. A run whose lagging regions have stopped improving still stalls, and ``n_iter`` still bounds the run.
+    In a multiresolution morph with one set of options only the finest level follows the lagging regions, so
+    that the coarse levels, whose smallest regions cannot be resolved, do not use the iterations of the finest one.
+    With False the rule judges the mean and the max only.
+    """
+
     stall_min_efficiency: float = 0.05
     """Improvement of a cycle minimum per unit of distance moved that counts as progress (see ``stall_patience``).
 
@@ -622,6 +636,7 @@ class MorphOptions:
             "prescale_coords",
             "adaptive_dt",
             "stall_patience",
+            "wait_for_lagging_regions",
             "stall_min_efficiency",
             "validity",
             "validity_repair_every",
@@ -740,6 +755,9 @@ class MorphOptions:
         elif field_name == "recompute_on_rise":
             if value is not None and (not isinstance(value, int | float) or isinstance(value, bool) or value < 0):
                 return "recompute_on_rise must be a non-negative number or None"
+        elif field_name == "wait_for_lagging_regions":
+            if not isinstance(value, bool):
+                return "wait_for_lagging_regions must be a bool"
         elif field_name == "stall_min_efficiency":
             if not isinstance(value, int | float) or isinstance(value, bool) or value < 0:
                 return "stall_min_efficiency must be a non-negative number"

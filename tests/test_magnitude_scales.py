@@ -287,8 +287,8 @@ class TestPreviewsAndTilings:
         assert matplotlib.colors.to_hex(plot.tiles.get_edgecolor()[0]) == "#123456"
         reds = tiling.plot(color_by="x", cmap="Reds", style="classic")
         assert np.allclose(plot.tiles.get_facecolor(), reds.tiles.get_facecolor())
-        aspect = tiling.plot(color_by="aspect", style=style)
-        hsv = tiling.plot(color_by="aspect", cmap="hsv", style="classic")
+        aspect = tiling.plot(color_by="rotation", style=style)
+        hsv = tiling.plot(color_by="rotation", cmap="hsv", style="classic")
         assert np.allclose(aspect.tiles.get_facecolor(), hsv.tiles.get_facecolor())
 
     def test_tile_outline_and_prototile(self):

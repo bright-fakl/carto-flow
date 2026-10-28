@@ -33,7 +33,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import isotile as _isotile
 import numpy as np
@@ -227,11 +227,15 @@ class TilingResult:
         ----------
         ax : matplotlib.axes.Axes, optional
             Axes to draw on. A new figure is created if *ax* is ``None``.
-        color_by : {"uniform", "aspect", "index", "x", "y", "random"}
+        color_by : {"uniform", "aspect", "rotation", "index", "x", "y", "random"}
             Coloring scheme:
 
             * ``"uniform"`` — all tiles use *facecolor*.
-            * ``"aspect"`` — color by tile rotation angle (0–360 → cmap).
+            * ``"aspect"`` — color by the aspect of the tile, its index within the
+              cell of the tiling (``aspect / n_aspects`` → cmap). Needs
+              ``tile_set``; raises ``ValueError`` if it is ``None``. A tiling
+              with one aspect has one color.
+            * ``"rotation"`` — color by tile rotation angle (0–360 → cmap).
             * ``"index"`` — color by tile index (0…n−1 → cmap).
             * ``"x"`` — color by tile centroid x coordinate (normalized).
             * ``"y"`` — color by tile centroid y coordinate (normalized).
@@ -243,7 +247,7 @@ class TilingResult:
             style, else ``"#333333"``.
         cmap : str, optional
             Matplotlib cmap name used in the other modes. Default: the cyclic colormap of the style for ``"aspect"``
-            and the sequential colormap for the rest, else ``"tab10"``.
+            and ``"rotation"`` and the sequential colormap for the rest, else ``"tab10"``.
         alpha : float
             Tile fill transparency.
         linewidth : float
@@ -273,10 +277,16 @@ class TilingResult:
         else:
             fig = ax.get_figure()
 
-        _CMAP_MODES = {"aspect", "index", "x", "y", "random"}
+        _CMAP_MODES = {"aspect", "rotation", "index", "x", "y", "random"}
         if color_by not in _CMAP_MODES | {"uniform"}:
             raise ValueError(
-                f"Unknown color_by={color_by!r}. Choose from 'uniform', 'aspect', 'index', 'x', 'y', 'random'."
+                f"Unknown color_by={color_by!r}. "
+                "Choose from 'uniform', 'aspect', 'rotation', 'index', 'x', 'y', 'random'."
+            )
+        if color_by == "aspect" and self.tile_set is None:
+            raise ValueError(
+                "color_by='aspect' needs the tile set of the tiling, which this TilingResult does not have "
+                "(it was loaded from a file or rotated). Use color_by='rotation' instead."
             )
 
         st = resolve_style()
@@ -288,13 +298,17 @@ class TilingResult:
         colormap = (
             plt.get_cmap(cmap)
             if cmap is not None
-            else st.colormap("cyclic" if color_by == "aspect" else "sequential") or plt.get_cmap("tab10")
+            else st.colormap("cyclic" if color_by in ("aspect", "rotation") else "sequential") or plt.get_cmap("tab10")
         )
 
         coords = [list(zip(*p.exterior.xy, strict=False)) for p in self.polygons]
         if color_by == "uniform":
             colors = [facecolor] * n
         elif color_by == "aspect":
+            tile_set = cast("TileSet", self.tile_set)  # checked above
+            n_aspects = tile_set.tiling.type.n_aspects
+            colors = [mcolors.to_hex(colormap(int(a) / n_aspects)) for a in tile_set.aspect]
+        elif color_by == "rotation":
             colors = [mcolors.to_hex(colormap((tr.rotation % 360) / 360.0)) for tr in self.transforms]
         elif color_by == "index":
             colors = [mcolors.to_hex(colormap(i / max(n - 1, 1))) for i in range(n)]

@@ -55,6 +55,11 @@ The breaking changes below make the next release 3.0.0.
   `list_presets`, `to_dict`, `from_dict`, `save`, `load` and `plot_prototile` remain and call isotile; `plot_prototile` draws with
   isotile's plot and no longer colors the edges by the categorical colors of the style.
 
+- **`TilingResult.plot(color_by="aspect")` colors by the aspect of the tile.** It colored by the rotation angle. The aspect is the
+  index of the tile within the cell of the tiling (`aspect / n_aspects` on the cyclic colormap), so a square or hexagon tiling has
+  one color. `color_by="rotation"` is the former behavior. `color_by="aspect"` raises `ValueError` for a result without a tile set
+  (loaded from a file or rotated).
+
 ### Added
 
 - **`TilingResult.tile_set`** is the `isotile.TileSet` of the generated tiles (cell and aspect of each tile, the tiling), in the order

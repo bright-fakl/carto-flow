@@ -13,6 +13,8 @@ Tests cover:
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
 from shapely.affinity import scale as shapely_scale
@@ -989,3 +991,49 @@ class TestSerialization:
         assert written["version"] == "1.1"
         assert set(written["edge_curve_modes"]) == set(written["edge_curves"])
         assert "edge_curves" not in IsohedralTiling(4).to_dict()
+
+
+class TestPlotColorBy:
+    @pytest.fixture(autouse=True)
+    def _agg(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        yield
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
+    def test_aspect_colors_by_the_aspect_index(self):
+        import matplotlib.pyplot as plt
+
+        result = IsohedralTiling(2).generate(BOUNDS, n_tiles=60)
+        plot = result.plot(color_by="aspect", cmap="hsv")
+        n_aspects = result.tile_set.tiling.type.n_aspects
+        expected = np.array([plt.get_cmap("hsv")(int(a) / n_aspects) for a in result.tile_set.aspect])
+        np.testing.assert_allclose(plot.tiles.get_facecolor()[:, :3], expected[:, :3], atol=1e-2)
+        assert len({tuple(c) for c in plot.tiles.get_facecolor().round(3)}) == n_aspects
+
+    def test_single_aspect_tiling_has_one_color(self):
+        plot = SquareTiling().generate(BOUNDS, n_tiles=16).plot(color_by="aspect")
+        assert len({tuple(c) for c in plot.tiles.get_facecolor().round(3)}) == 1
+
+    def test_rotation_colors_by_the_rotation_angle(self):
+        import matplotlib.pyplot as plt
+
+        result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=40)
+        plot = result.plot(color_by="rotation", cmap="hsv")
+        expected = np.array([plt.get_cmap("hsv")((t.rotation % 360) / 360.0) for t in result.transforms])
+        np.testing.assert_allclose(plot.tiles.get_facecolor()[:, :3], expected[:, :3], atol=1e-2)
+
+    @pytest.mark.parametrize("how", ["rotate", "no_tile_set"])
+    def test_aspect_without_a_tile_set_raises(self, how):
+        result = SquareTiling().generate(BOUNDS, n_tiles=16)
+        result = result.rotate(30.0) if how == "rotate" else dataclasses.replace(result, tile_set=None)
+        with pytest.raises(ValueError, match="tile set"):
+            result.plot(color_by="aspect")
+        assert result.plot(color_by="rotation") is not None
+
+    def test_unknown_mode_lists_the_modes(self):
+        with pytest.raises(ValueError, match="rotation"):
+            SquareTiling().generate(BOUNDS, n_tiles=16).plot(color_by="spin")

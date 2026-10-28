@@ -302,6 +302,8 @@ large tile count would otherwise have to borrow tiles from its neighbors' space.
 | `extra_tile_rings` | `int` | `1` | Rings of adjacent tiles added to each component's pool as reserve. |
 | `min_overlap_frac` | `float` | `0.1` | Minimum tile/union overlap for a tile to count as core. |
 | `min_one_tile_per_region` | `bool` | `False` | Give a component with no tiles of its own the free cells that overlap it most, so its regions are drawn. |
+| `rotation` | `float` | `0.0` | Rotation of the tile lattice in degrees, counter-clockwise, about the center of the covered region. |
+| `offset` | `tuple[float, float]` | `(0.0, 0.0)` | Shift of the lattice in multiples of its two translation vectors; periodic (see [Tiling System](tiling-system.md)). |
 
 ### `HungarianOptions`
 

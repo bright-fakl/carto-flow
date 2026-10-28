@@ -9,7 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ...options import SymbolOrientation, SymbolShape
-from ..base import Layout, _apply_kwargs_to_options
+from ..base import Layout, _apply_kwargs_to_options, _orient_tiling, _validate_lattice_options
 from ..data_prep import LayoutData
 from ..layout_result import LayoutResult, Transform
 
@@ -91,8 +91,18 @@ class GridBasedLayoutOptions:
         How symbols are oriented relative to their tile. ``UPRIGHT`` keeps
         symbols axis-aligned; ``WITH_TILE`` rotates/flips with the tile.
     rotation : float
-        Rotation angle for the entire tiling grid in degrees (counter-clockwise).
-        Default: 0.0 (no rotation).
+        Rotation of the tile lattice in degrees, counter-clockwise, about the
+        center of the region that the tiles cover. The tiles cover the region
+        whatever the angle. Default: 0.0.
+    offset : tuple of float
+        Shift of the tile lattice as ``(u, v)``, in multiples of the two
+        translation vectors of the lattice (see
+        :meth:`~carto_flow.symbol_cartogram.Tiling.with_offset`): for the
+        square tiling the tile sides along the x and y axes, for the hexagon
+        tiling two vectors between neighboring tile centers, 60 degrees
+        apart. The lattice turns with ``rotation``. The offset is periodic: a
+        component that changes by 1 gives the same tiles. Default:
+        ``(0.0, 0.0)``, the lattice anchored at the center of the region.
 
     """
 
@@ -110,9 +120,11 @@ class GridBasedLayoutOptions:
     symbol_shape: SymbolShape | None = None
     symbol_orientation: SymbolOrientation = SymbolOrientation.UPRIGHT
     rotation: float = 0.0
+    offset: tuple[float, float] = (0.0, 0.0)
 
     def validate(self) -> None:
         """Validate options."""
+        _validate_lattice_options(self.rotation, self.offset)
         if self.origin_weight < 0:
             raise ValueError("origin_weight must be >= 0")
         if self.neighbor_weight < 0:
@@ -190,7 +202,7 @@ class GridBasedLayout(Layout):
         )
 
         # Resolve tiling
-        tiling = resolve_tiling(self._options.tiling)
+        tiling = _orient_tiling(resolve_tiling(self._options.tiling), self._options.rotation, self._options.offset)
 
         # Get canonical symbol for this tiling
         canonical = tiling.canonical_symbol()
@@ -240,10 +252,6 @@ class GridBasedLayout(Layout):
             bounds=bounds,
             tile_size=tile_size,
         )
-
-        # Apply rotation if specified
-        if self._options.rotation != 0.0:
-            tiling_result = tiling_result.rotate(self._options.rotation)
 
         # Run Hungarian assignment
         if data.source_indices is not None:

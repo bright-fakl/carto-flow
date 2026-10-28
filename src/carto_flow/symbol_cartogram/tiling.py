@@ -28,6 +28,7 @@ part of the interface.
 
 from __future__ import annotations
 
+import copy
 import math
 import re
 from abc import ABC, abstractmethod
@@ -153,7 +154,11 @@ class TilingResult:
         """Rotate all tile positions and orientations.
 
         Returns a new TilingResult with all tile centers rotated about the
-        origin and all tile rotations incremented by the given angle.
+        origin (0, 0) and all tile rotations incremented by the given angle.
+        The tiles are not regenerated, so a region that the tiles covered is
+        not covered afterwards, and a result far from the origin moves far.
+        To rotate the lattice about the center of a region and cover the region
+        exactly, use :meth:`Tiling.rotated` before :meth:`Tiling.generate`.
 
         Parameters
         ----------
@@ -421,7 +426,6 @@ class Tiling(ABC):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: AdjacencyKind = "edge",
-        compute_adjacency: bool = True,
     ) -> TilingResult:
         """Generate the tiles that cover the bounding box.
 
@@ -446,12 +450,6 @@ class Tiling(ABC):
         adjacency_type : {"edge", "vertex", "vertex-only"}
             Kind of ``adjacency``: tiles sharing an edge, tiles sharing an
             edge or a vertex, or tiles sharing only a vertex.
-        compute_adjacency : bool
-            Whether to compute the adjacency matrices at all. When False,
-            ``adjacency`` and ``vertex_adjacency`` on the returned
-            ``TilingResult`` are sparse matrices of the right shape without
-            stored entries. Use when only the tile polygons are needed, to skip the
-            most expensive part of tile generation.
 
         Returns
         -------
@@ -459,6 +457,57 @@ class Tiling(ABC):
 
         """
         ...
+
+    def rotated(self, angle: float) -> Tiling:
+        """A copy of this tiling whose lattice is rotated counter-clockwise by *angle* degrees.
+
+        The rotation is about the center of the region that :meth:`generate`
+        covers (the center of ``bounds`` expanded by ``margin``), not about
+        the origin, and the tiles cover the region exactly whatever the angle.
+        Tile transforms include the rotation. Rotations add up:
+        ``tiling.rotated(a).rotated(b)`` is ``tiling.rotated(a + b)``.
+
+        Parameters
+        ----------
+        angle : float
+            Angle in degrees, counter-clockwise.
+
+        Returns
+        -------
+        Tiling
+
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support rotated()")
+
+    def with_offset(self, offset: tuple[float, float]) -> Tiling:
+        """A copy of this tiling whose lattice is shifted by a fraction of its two translation vectors.
+
+        A lattice is invariant under shifts by whole multiples of its two
+        translation vectors, ``translation_u`` and ``translation_v`` of the
+        placed tiling (isotile). The tiling that :meth:`generate` places is
+        shifted by ``u * translation_u + v * translation_v`` for
+        ``offset=(u, v)``. For the square tiling these are the two sides of a
+        tile along x and y. For the hexagon tiling they are two of the vectors
+        between neighboring hexagon centers, 60 degrees apart, and for the
+        other tilings they are the translations of the tiling type. They turn
+        with :meth:`rotated`. Without an offset the lattice is anchored at the
+        center of the region.
+
+        The offset is periodic: ``(u + 1, v)`` and ``(u, v + 1)`` give the
+        same tiles as ``(u, v)``. The default ``(0, 0)`` leaves the tiling
+        unchanged.
+
+        Parameters
+        ----------
+        offset : tuple of float
+            ``(u, v)``, finite numbers.
+
+        Returns
+        -------
+        Tiling
+
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not support with_offset()")
 
     @property
     def _n_base_vertices(self) -> int | None:
@@ -723,12 +772,40 @@ def _tile_size_for_bounding_radius(unit_tile: Polygon, symbol_size: float, spaci
     return (symbol_size / radius) * (1 + spacing)
 
 
+def _finite_float(value: object, name: str) -> float:
+    """``float(value)`` if it is a finite real number, else ``ValueError``."""
+    try:
+        result = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a finite number, got {value!r}") from None
+    if not math.isfinite(result):
+        raise ValueError(f"{name} must be a finite number, got {value!r}")
+    return result
+
+
+def _validated_offset(offset: object) -> tuple[float, float]:
+    """``(u, v)`` as floats; ``ValueError`` unless it is a pair of finite numbers."""
+    try:
+        pair = list(offset)  # type: ignore[call-overload]
+    except TypeError:
+        pair = []
+    if len(pair) != 2:
+        raise ValueError(f"offset must be a pair (u, v) of finite numbers, got {offset!r}")
+    return _finite_float(pair[0], "offset[0]"), _finite_float(pair[1], "offset[1]")
+
+
 class _IsotileTiling(Tiling):
     """A :class:`Tiling` that is an ``isotile.IsohedralTiling`` with a size convention.
 
     The frame of the isotile tiling gives the orientation of the tiles; :meth:`generate` sets the scale and the
     position (``IsohedralTiling.fill_region``). ``tile_size`` is ``sqrt(tile area) / side_per_size``.
     """
+
+    #: Lattice offset (``with_offset``), in multiples of the two translation vectors of the placed tiling.
+    _offset: tuple[float, float] = (0.0, 0.0)
+    #: Rotation in degrees added by ``rotated``. ``canonical_tile`` stays the unrotated tile, so the rotation is part of
+    #: the tile transforms.
+    _rotation: float = 0.0
 
     def __init__(
         self,
@@ -745,6 +822,18 @@ class _IsotileTiling(Tiling):
         """The tile at ``tile_size`` 1, centered at its area centroid."""
         return self._unit_tile
 
+    def rotated(self, angle: float) -> Self:
+        angle = _finite_float(angle, "angle")
+        clone = copy.copy(self)
+        clone._iso = self._iso.rotated(angle)
+        clone._rotation = self._rotation + angle
+        return clone
+
+    def with_offset(self, offset: tuple[float, float]) -> Self:
+        clone = copy.copy(self)
+        clone._offset = _validated_offset(offset)
+        return clone
+
     def generate(
         self,
         bounds: tuple[float, float, float, float] = DEFAULT_BOUNDS,
@@ -752,32 +841,40 @@ class _IsotileTiling(Tiling):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: AdjacencyKind = "edge",
-        compute_adjacency: bool = True,
     ) -> TilingResult:
         bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
         if tile_size is None:
             tiles = self._iso.fill_region(bounds, n_tiles=n_tiles, margin=margin)
         else:
             tiles = self._iso.fill_region(bounds, tile_size=tile_size * self._side_per_size, margin=margin)
+        if self._offset != (0.0, 0.0):
+            # fill_region anchors the lattice at the center of the region; move it by the offset and cover the
+            # same region again.
+            placed = tiles.tiling
+            frame = np.array(placed.frame, dtype=float)
+            frame[:, 2] += self._offset[0] * np.asarray(placed.translation_u) + self._offset[1] * np.asarray(
+                placed.translation_v
+            )
+            x0, y0, x1, y1 = (float(b) for b in bounds)
+            dx, dy = (x1 - x0) * margin, (y1 - y0) * margin
+            tiles = placed.with_frame(frame).cover((x0 - dx, y0 - dy, x1 + dx, y1 + dy))
 
         polygons = tiles.polygons()
         centers = shapely.get_coordinates(shapely.centroid(np.asarray(polygons, dtype=object)))
-        rotation, flipped = _orientation(tiles.transforms)
+        orientation = tiles.transforms
+        if self._rotation != 0.0:
+            a = math.radians(self._rotation)
+            turn = np.array([[math.cos(a), -math.sin(a)], [math.sin(a), math.cos(a)]])
+            orientation = np.einsum("ij,njk->nik", turn, orientation)
+        rotation, flipped = _orientation(orientation)
         transforms = [
             TileTransform(center=(float(c[0]), float(c[1])), rotation=float(r), flipped=bool(f))
             for c, r, f in zip(centers, rotation, flipped, strict=True)
         ]
-        n = len(polygons)
-        adjacency: csr_array
-        vertex_adjacency: csr_array
-        if compute_adjacency:
-            adjacency = tiles.adjacency(adjacency_type)
-            vertex_adjacency = tiles.adjacency("vertex-only")
-            adjacency.sort_indices()
-            vertex_adjacency.sort_indices()
-        else:
-            adjacency = csr_array((n, n), dtype=bool)
-            vertex_adjacency = csr_array((n, n), dtype=bool)
+        adjacency = tiles.adjacency(adjacency_type)
+        vertex_adjacency = tiles.adjacency("vertex-only")
+        adjacency.sort_indices()
+        vertex_adjacency.sort_indices()
 
         # The scale of the placed tiling relative to this one gives the tile size; the area of the placed tiling would
         # lose precision far from the origin.

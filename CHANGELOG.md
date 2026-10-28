@@ -46,9 +46,10 @@ The breaking changes below make the next release 3.0.0.
   and a column of the matrix as a boolean mask (`values[adjacency[:, j]]`) raise or give a different result. Use
   `adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]` for the neighbors of tile `t`, `adjacency.nnz` for the
   number of entries, or call `toarray()`.
-  With `compute_adjacency=False` the matrices have shape `(n, n)` and no stored entries. A result loaded with
-  `SymbolCartogram.load` has an empty `adjacency`, as before. The file format of `save` and `load` does not change, and
-  files written by earlier versions load. The layouts give the same assignments as before.
+  A result loaded with `SymbolCartogram.load` has an empty `adjacency`, as before. The file format of `save` and `load`
+  does not change, and files written by earlier versions load. The layouts give the same assignments as before.
+- **`Tiling.generate` has no `compute_adjacency` parameter.** The adjacency matrices are always computed; from the lattice
+  table they cost about 3 ms at 10,000 tiles, 2 to 3 percent of `generate`. Remove the argument from calls.
 - **`generate_grid` and `compute_grid_symbol_size` are removed**, with `symbol_cartogram.grid`. `SquareTiling().generate(bounds, tile_size=...)`
   and `HexagonTiling().generate(...)` return the cells and their polygons.
 - **`IsohedralTiling` edge curves are validated.** A curve that makes the prototile self-intersecting raises `ValueError` naming
@@ -69,9 +70,20 @@ The breaking changes below make the next release 3.0.0.
   index of the tile within the cell of the tiling (`aspect / n_aspects` on the cyclic colormap), so a square or hexagon tiling has
   one color. `color_by="rotation"` is the former behavior. `color_by="aspect"` raises `ValueError` for a result without a tile set
   (loaded from a file or rotated).
+- **`GridBasedLayoutOptions.rotation` turns the tile lattice about the center of the region, and the tiles cover the region.**
+  It generated the tiles on the region and then rotated the tile result about the origin `(0, 0)`: the rotated tiles left the
+  corners of the region uncovered, and data far from the origin (projected coordinates) were moved away from their tiles. A layout
+  with `rotation` other than 0 gives other assignments than before. `rotation=0` gives the same tiles as without it.
+  `TilingResult.rotate` remains a utility about the origin.
 
 ### Added
 
+- **`rotation` and `offset` options of `GridBasedLayout` and `MosaicLayout`.** `rotation` is in degrees, counter-clockwise, about
+  the center of the covered region (the mosaic layout had no rotation). `offset=(u, v)` shifts the lattice by `u` and `v` times
+  its two translation vectors; it is periodic, and the default `(0, 0)` is the lattice anchored at the region center. The
+  mosaic calibration uses them in its trial and its final tilings.
+- **`Tiling.rotated(angle)` and `Tiling.with_offset((u, v))`** return a copy of a tiling with the lattice rotated about the
+  center of the region that `generate` covers, or shifted by a fraction of the translation vectors.
 - **`TilingResult.tile_set`** is the `isotile.TileSet` of the generated tiles (cell and aspect of each tile, the tiling), in the order
   of `polygons`. It is `None` after `TilingResult.rotate` and for a result loaded from a file.
 - **`IsohedralTiling.isotile`** is the underlying `isotile.IsohedralTiling`.

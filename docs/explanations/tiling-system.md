@@ -22,7 +22,7 @@ Five concrete tiling classes are provided, covering all regular and semi-regular
 | `QuadrilateralTiling` | the square root of the tile area | Any simple quadrilateral, convex or not; convenience constructors for parallelogram, rectangle, rhombus, trapezoid |
 | `IsohedralTiling` | the square root of the tile area | 81 Grünbaum–Shephard isohedral types with numeric parameters and customizable edge curves |
 
-All classes share the same `generate(bounds, n_tiles=None, tile_size=None, margin=0.1, adjacency_type="edge", compute_adjacency=True)` interface. Either the number of tiles or the tile size must be specified.
+All classes share the same `generate(bounds, n_tiles=None, tile_size=None, margin=0.1, adjacency_type="edge")` interface. Either the number of tiles or the tile size must be specified.
 
 ### Which tiles are returned
 
@@ -33,6 +33,17 @@ The lattice is anchored at the center of the expanded region and does not depend
 For tilings with curved edges the tiles are selected by their straight-edge outline, so a curve that bulges across the boundary of the region does not add a tile.
 
 The order of the tiles in `TilingResult` is not part of the interface, and neither is the start vertex of a tile polygon.
+
+### Rotation and offset of the lattice
+
+`Tiling.rotated(angle)` and `Tiling.with_offset((u, v))` return copies of a tiling whose lattice is turned or shifted. `generate` of the copy covers the region exactly, as it does without them.
+
+- `rotated(angle)` turns the lattice counter-clockwise by `angle` degrees about the center of the expanded region, not about the origin, so the result does not depend on where the data lie. The tile transforms contain the rotation, while `canonical_tile` is the unrotated tile. Rotations add up.
+- `with_offset((u, v))` moves the lattice by `u * translation_u + v * translation_v`, where `translation_u` and `translation_v` are the two translation vectors of the placed tiling (see `isotile.IsohedralTiling`). For `SquareTiling` they are the tile sides along x and y; for `HexagonTiling` two vectors between neighboring tile centers, 60 degrees apart; for the other tilings the translations of the tiling type. They turn with `rotated`. The offset is periodic: `(u + 1, v)` and `(u, v + 1)` give the tiles of `(u, v)`, so `(0.5, 0.5)` is the phase halfway between two lattice points in both directions. The default `(0, 0)` anchors the lattice at the center of the region.
+
+`TilingResult.rotate(angle)` is a separate utility: it turns existing tiles about the origin `(0, 0)` and does not generate new tiles, so a rotated result no longer covers the region.
+
+`GridBasedLayoutOptions` and `MosaicLayoutOptions` have the fields `rotation` (degrees) and `offset` (a pair of numbers), both applied to the tiling before it is generated. The mosaic calibration uses them for its trial tilings and for the final tiling. Both must be finite; `offset` must have exactly two components.
 
 ---
 
@@ -52,7 +63,7 @@ The order of the tiles in `TilingResult` is not part of the interface, and neith
 | `n_base_vertices` | int or None | Number of vertices of the prototile of an isohedral tiling |
 | `tile_set` | `isotile.TileSet` or None | The isotile tiles in the order of `polygons`, with the cell and aspect of each tile; `None` after `rotate` or when a result is loaded from a file |
 
-`adjacency_type` is `"edge"` (tiles that share an edge), `"vertex"` (tiles that share an edge or a vertex) or `"vertex-only"`. `vertex_adjacency` is always the vertex-only matrix. Adjacency comes from the lattice table of the tiling type, so it is exact for every tile shape, curved ones included. The matrices are symmetric and the column indices of every row are sorted, so the neighbors of tile `t` are `adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]`. The memory of a matrix grows with the number of tiles, not with its square. With `compute_adjacency=False` both matrices have the right shape and no stored entries. `SymbolCartogram.save` does not write the adjacency; a loaded result has an empty `adjacency` and `vertex_adjacency=None`, which is enough for plotting.
+`adjacency_type` is `"edge"` (tiles that share an edge), `"vertex"` (tiles that share an edge or a vertex) or `"vertex-only"`. `vertex_adjacency` is always the vertex-only matrix. Adjacency comes from the lattice table of the tiling type, so it is exact for every tile shape, curved ones included. The matrices are symmetric and the column indices of every row are sorted, so the neighbors of tile `t` are `adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]`. The memory of a matrix grows with the number of tiles, not with its square. `SymbolCartogram.save` does not write the adjacency; a loaded result has an empty `adjacency` and `vertex_adjacency=None`, which is enough for plotting.
 
 A tile with `flipped=True` is the canonical tile mirrored about the vertical axis, then rotated by `rotation` degrees, then moved to `center`.
 

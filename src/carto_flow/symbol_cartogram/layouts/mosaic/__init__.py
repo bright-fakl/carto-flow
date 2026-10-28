@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from ..base import Layout, _apply_kwargs_to_options
+from ..base import Layout, _apply_kwargs_to_options, _orient_tiling, _validate_lattice_options
 from ..data_prep import LayoutData
 from ..layout_result import LayoutResult, Transform
 
@@ -448,6 +448,20 @@ class MosaicLayoutOptions:
         either direction from the default, and the values that best match the
         map's silhouette also split regions. At 1.0 the layout degenerates.
         Default 0.1.
+    rotation : float
+        Rotation of the tile lattice in degrees, counter-clockwise, about the
+        center of the region that the tiles cover. The calibration and the
+        final tiling use the same rotation. Default 0.0.
+    offset : tuple of float
+        Shift of the tile lattice as ``(u, v)``, in multiples of the two
+        translation vectors of the lattice (see
+        :meth:`~carto_flow.symbol_cartogram.Tiling.with_offset`): for the
+        square tiling the tile sides along the x and y axes, for the hexagon
+        tiling two vectors between neighboring tile centers, 60 degrees
+        apart. The lattice turns with ``rotation``. The offset is periodic: a
+        component that changes by 1 gives the same tiles. The calibration and
+        the final tiling use the same offset. Default ``(0.0, 0.0)``, the
+        lattice anchored at the center of the study area.
     min_one_tile_per_region : bool
         Place a symbol for regions that sit on a land mass too small to win a
         tile of its own.  A region only gets tiles from the pool of its
@@ -474,9 +488,12 @@ class MosaicLayoutOptions:
     extra_tile_rings: int = 1
     min_overlap_frac: float = 0.1
     min_one_tile_per_region: bool = False
+    rotation: float = 0.0
+    offset: tuple[float, float] = (0.0, 0.0)
 
     def validate(self) -> None:
         """Validate options."""
+        _validate_lattice_options(self.rotation, self.offset)
         if self.tile_size is not None and self.tile_size <= 0:
             raise ValueError(f"tile_size must be positive, got {self.tile_size}")
         if not 0 <= self.spacing <= 1:
@@ -590,7 +607,7 @@ class MosaicLayout(Layout):
         comp_tree = STRtree(comp_union_list)
 
         # Step 3: Calibrate tiling
-        tiling_obj = resolve_tiling(opts.tiling)
+        tiling_obj = _orient_tiling(resolve_tiling(opts.tiling), opts.rotation, opts.offset)
         setup = calibrate_tiling(
             tiling_obj,
             working_union.bounds,

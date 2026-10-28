@@ -6,6 +6,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
 from scipy.sparse import csc_array, csr_array
+from scipy.sparse.csgraph import shortest_path
 from scipy.spatial.distance import cdist
 
 
@@ -550,7 +551,7 @@ def _fix_island_assignments(
 
 
 def _bfs_distance_matrix(adjacency: csr_array) -> NDArray[np.int32]:
-    """Compute all-pairs shortest-path distances on an adjacency graph via BFS.
+    """Compute all-pairs shortest-path distances (hop counts) on an adjacency graph.
 
     Parameters
     ----------
@@ -563,25 +564,9 @@ def _bfs_distance_matrix(adjacency: csr_array) -> NDArray[np.int32]:
         Shortest-path distances. Disconnected pairs get distance m (max).
 
     """
-    from collections import deque
-
     m = adjacency.shape[0]
-    nbrs = _lists(_canonical(adjacency))
-    dists = np.full((m, m), m, dtype=np.int32)
-    np.fill_diagonal(dists, 0)
-
-    for source in range(m):
-        queue = deque([source])
-        visited = np.zeros(m, dtype=bool)
-        visited[source] = True
-        while queue:
-            node = queue.popleft()
-            d = dists[source, node]
-            for nb in nbrs[node]:
-                if not visited[nb]:
-                    visited[nb] = True
-                    dists[source, nb] = d + 1
-                    queue.append(nb)
+    hops = shortest_path(_canonical(adjacency), method="D", directed=True, unweighted=True)
+    dists = np.where(np.isinf(hops), m, hops).astype(np.int32)
 
     return dists
 
@@ -752,19 +737,22 @@ def assign_to_grid_hungarian(
         # Tiles adjacent to each tile: the column of the matrix, as index lists
         vertex_cols = _lists(_canonical(vertex_adjacency, columns=True)) if vertex_adjacency is not None else None
         edge_cols = _lists(_canonical(tile_adjacency, columns=True)) if tile_adjacency is not None else None
-        edge_rows = _lists(_canonical(tile_adjacency)) if tile_adjacency is not None else None
+        edge_adj = _canonical(tile_adjacency) if tile_adjacency is not None else None
 
         # Pre-compute original direction angles for orientation cost
         if topology_weight > 0:
-            orig_angles = np.full((n, n), np.nan)
-            for i in range(n):
-                for j in range(n):
-                    if i != j and adjacency[i, j] > 0:
-                        # Skip within-group pairs: same source geometry → zero diff → degenerate angle
-                        if source_indices is not None and source_indices[i] == source_indices[j]:
-                            continue
-                        diff = centroids[j] - centroids[i]
-                        orig_angles[i, j] = np.arctan2(diff[1], diff[0])
+            diff = centroids[np.newaxis, :, :] - centroids[:, np.newaxis, :]
+            orig_angles = np.arctan2(diff[:, :, 1], diff[:, :, 0])
+            valid = adjacency > 0
+            np.fill_diagonal(valid, False)
+            # Skip within-group pairs: same source geometry → zero diff → degenerate angle
+            if source_indices is not None:
+                src = np.asarray(source_indices)
+                valid &= src[:, np.newaxis] != src[np.newaxis, :]
+            orig_angles[~valid] = np.nan
+
+        # Region pairs (i, j) with i a neighbor of j, as one index array per j
+        pair_rows = [np.flatnonzero((adjacency[:, j] > 0) & (np.arange(n) != j)) for j in range(n)]
 
         # Initial assignment: always use origin cost for a geographically
         # sensible starting point, even when origin_weight=0 in the final
@@ -779,67 +767,64 @@ def assign_to_grid_hungarian(
             neighbor_cost = np.zeros((n, m))
             orientation_cost = np.zeros((n, m))
 
-            for i in range(n):
-                for j in range(n):
-                    if i == j or adjacency[i, j] <= 0:
+            for j in range(n):
+                rows = pair_rows[j]
+                if len(rows) == 0:
+                    continue
+                j_cell = assignment[j]
+                w = adjacency[rows, j]
+
+                # Distance-scaled neighbor penalty (squared hops):
+                # Edge neighbors (hop 1) cost 0, hop 2 costs 1,
+                # hop 3 costs 4, hop 5 costs 16, etc.
+                # Not normalized by max — neighbor_weight directly
+                # controls the cost scale.
+                if neighbor_weight > 0:
+                    if bfs_dists is not None:
+                        raw = np.maximum(bfs_dists[:, j_cell] - 1, 0).astype(float)
+                        penalty = raw * raw
+                    else:
+                        penalty = np.ones(m)
+                    if vertex_cols is not None:
+                        penalty[vertex_cols[j_cell]] = 0.2
+                    if edge_cols is not None:
+                        penalty[edge_cols[j_cell]] = 0.0
+                    penalty[j_cell] = 0.0
+                    neighbor_cost[rows, :] += penalty[np.newaxis, :] * w[:, np.newaxis]
+
+                # Orientation: penalize angular error (skip within-group pairs — nan angle)
+                if topology_weight > 0:
+                    keep = ~np.isnan(orig_angles[rows, j])
+                    rows, w = rows[keep], w[keep]
+                    if len(rows) == 0:
                         continue
-                    j_cell = assignment[j]
-                    w = adjacency[i, j]
-
-                    # Distance-scaled neighbor penalty (squared hops):
-                    # Edge neighbors (hop 1) cost 0, hop 2 costs 1,
-                    # hop 3 costs 4, hop 5 costs 16, etc.
-                    # Not normalized by max — neighbor_weight directly
-                    # controls the cost scale.
-                    if neighbor_weight > 0:
-                        if bfs_dists is not None:
-                            raw = np.maximum(bfs_dists[:, j_cell] - 1, 0).astype(float)
-                            penalty = raw * raw
-                        else:
-                            penalty = np.ones(m)
-                        if vertex_cols is not None:
-                            penalty[vertex_cols[j_cell]] = 0.2
-                        if edge_cols is not None:
-                            penalty[edge_cols[j_cell]] = 0.0
-                        penalty[j_cell] = 0.0
-                        neighbor_cost[i, :] += penalty * w
-
-                    # Orientation: penalize angular error (skip within-group pairs — nan angle)
-                    if topology_weight > 0:
-                        orig_angle = orig_angles[i, j]
-                        if np.isnan(orig_angle):
-                            continue
-                        for k in range(m):
-                            diff = grid_centers[j_cell] - grid_centers[k]
-                            d = np.linalg.norm(diff)
-                            if d < 1e-12:
-                                # Same cell → max angular penalty
-                                orientation_cost[i, k] += w
-                            else:
-                                grid_angle = np.arctan2(diff[1], diff[0])
-                                # Angular error in [0, pi] → [0, 1]
-                                angle_err = abs(orig_angle - grid_angle)
-                                angle_err = min(angle_err, 2 * np.pi - angle_err)
-                                orientation_cost[i, k] += (angle_err / np.pi) * w
+                    diff = grid_centers[j_cell][np.newaxis, :] - grid_centers
+                    same_cell = np.sqrt(diff[:, 0] * diff[:, 0] + diff[:, 1] * diff[:, 1]) < 1e-12
+                    grid_angle = np.arctan2(diff[:, 1], diff[:, 0])
+                    # Angular error in [0, pi] → [0, 1]
+                    angle_err = np.abs(orig_angles[rows, j][:, np.newaxis] - grid_angle[np.newaxis, :])
+                    angle_err = np.minimum(angle_err, 2 * np.pi - angle_err)
+                    contribution = (angle_err / np.pi) * w[:, np.newaxis]
+                    # Same cell → max angular penalty
+                    contribution[:, same_cell] = w[:, np.newaxis]
+                    orientation_cost[rows, :] += contribution
 
             # Reverse neighbor penalty: for each candidate tile k, count
             # how many of k's tile-neighbors are occupied by regions
             # that are NOT geographic neighbors of region i.
-            if neighbor_weight > 0 and edge_rows is not None:
-                reverse_cost = np.zeros((n, m))
-                # Build tile→region lookup
+            if neighbor_weight > 0 and edge_adj is not None:
+                # occupied[r, k]: number of neighbors of tile k that region r occupies
                 tile_to_region = np.full(m, -1, dtype=int)
-                for r_idx in range(n):
-                    tile_to_region[assignment[r_idx]] = r_idx
-                for k in range(m):
-                    for t_nb in edge_rows[k]:
-                        j_region = tile_to_region[t_nb]
-                        if j_region < 0:
-                            continue
-                        # All regions not adjacent to j_region get penalty
-                        non_adj = adjacency[:, j_region] <= 0
-                        non_adj[j_region] = False
-                        reverse_cost[non_adj, k] += 1.0
+                tile_to_region[assignment] = np.arange(n)
+                nb_region = tile_to_region[edge_adj.indices]
+                tile_of_entry = np.repeat(np.arange(m), np.diff(edge_adj.indptr))
+                occ = nb_region >= 0
+                occupied = np.zeros((n, m))
+                np.add.at(occupied, (nb_region[occ], tile_of_entry[occ]), 1.0)
+                # non_adj[i, r]: region r is not a neighbor of region i
+                non_adj = adjacency <= 0
+                np.fill_diagonal(non_adj, False)
+                reverse_cost = non_adj.astype(float) @ occupied
             else:
                 reverse_cost = np.zeros((n, m))
 

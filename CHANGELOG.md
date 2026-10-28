@@ -547,6 +547,10 @@ The breaking changes below make the next release 3.0.0.
   adjacency). It now takes 0.12 s and 0.17 s. The grid and mosaic layouts with a curved tiling profit most (the mosaic layout of
   the 432 districts with `scalloped_hexagon`: minutes before, 5 s after). `generate` of the other four tilings with 5,000 tiles
   takes 0.04 to 0.06 s (0.12 to 0.28 s before), with adjacency of triangles and quadrilaterals 20 times faster.
+- **`GridBasedLayout` is about 60 times faster on large inputs.** The orientation and neighbor costs of the assignment were
+  computed in Python loops over every pair of adjacent regions and every tile. They are now array operations with the same
+  results: the layout of the 432 congressional districts with square or hexagon tiles takes 2 s instead of about 130 s, the
+  49 states 0.25 s instead of 1.7 s.
 
 ## [2.0.0] - 2026-09-24
 

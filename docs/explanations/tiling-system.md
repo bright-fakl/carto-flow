@@ -34,6 +34,17 @@ For tilings with curved edges the tiles are selected by their straight-edge outl
 
 The order of the tiles in `TilingResult` is not part of the interface, and neither is the start vertex of a tile polygon.
 
+### Rotation and offset of the lattice
+
+`Tiling.rotated(angle)` and `Tiling.with_offset((u, v))` return copies of a tiling whose lattice is turned or shifted. `generate` of the copy covers the region exactly, as it does without them.
+
+- `rotated(angle)` turns the lattice counter-clockwise by `angle` degrees about the center of the expanded region, not about the origin, so the result does not depend on where the data lie. The tile transforms contain the rotation, while `canonical_tile` is the unrotated tile. Rotations add up.
+- `with_offset((u, v))` moves the lattice by `u * translation_u + v * translation_v`, where `translation_u` and `translation_v` are the two translation vectors of the placed tiling (see `isotile.IsohedralTiling`). For `SquareTiling` they are the tile sides along x and y; for `HexagonTiling` two vectors between neighboring tile centers, 60 degrees apart; for the other tilings the translations of the tiling type. They turn with `rotated`. The offset is periodic: `(u + 1, v)` and `(u, v + 1)` give the tiles of `(u, v)`, so `(0.5, 0.5)` is the phase halfway between two lattice points in both directions. The default `(0, 0)` anchors the lattice at the center of the region.
+
+`TilingResult.rotate(angle)` is a separate utility: it turns existing tiles about the origin `(0, 0)` and does not generate new tiles, so a rotated result no longer covers the region.
+
+`GridBasedLayoutOptions` and `MosaicLayoutOptions` have the fields `rotation` (degrees) and `offset` (a pair of numbers), both applied to the tiling before it is generated. The mosaic calibration uses them for its trial tilings and for the final tiling. Both must be finite; `offset` must have exactly two components.
+
 ---
 
 ## TilingResult

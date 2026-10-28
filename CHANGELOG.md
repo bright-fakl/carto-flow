@@ -70,9 +70,20 @@ The breaking changes below make the next release 3.0.0.
   index of the tile within the cell of the tiling (`aspect / n_aspects` on the cyclic colormap), so a square or hexagon tiling has
   one color. `color_by="rotation"` is the former behavior. `color_by="aspect"` raises `ValueError` for a result without a tile set
   (loaded from a file or rotated).
+- **`GridBasedLayoutOptions.rotation` turns the tile lattice about the center of the region, and the tiles cover the region.**
+  It generated the tiles on the region and then rotated the tile result about the origin `(0, 0)`: the rotated tiles left the
+  corners of the region uncovered, and data far from the origin (projected coordinates) were moved away from their tiles. A layout
+  with `rotation` other than 0 gives other assignments than before. `rotation=0` gives the same tiles as without it.
+  `TilingResult.rotate` remains a utility about the origin.
 
 ### Added
 
+- **`rotation` and `offset` options of `GridBasedLayout` and `MosaicLayout`.** `rotation` is in degrees, counter-clockwise, about
+  the center of the covered region (the mosaic layout had no rotation). `offset=(u, v)` shifts the lattice by `u` and `v` times
+  its two translation vectors; it is periodic, and the default `(0, 0)` is the lattice anchored at the region center. The
+  mosaic calibration uses them in its trial and its final tilings.
+- **`Tiling.rotated(angle)` and `Tiling.with_offset((u, v))`** return a copy of a tiling with the lattice rotated about the
+  center of the region that `generate` covers, or shifted by a fraction of the translation vectors.
 - **`TilingResult.tile_set`** is the `isotile.TileSet` of the generated tiles (cell and aspect of each tile, the tiling), in the order
   of `polygons`. It is `None` after `TilingResult.rotate` and for a result loaded from a file.
 - **`IsohedralTiling.isotile`** is the underlying `isotile.IsohedralTiling`.

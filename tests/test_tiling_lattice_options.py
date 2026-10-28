@@ -1,19 +1,32 @@
-"""Rotation and offset of the tile lattice: ``Tiling.rotated`` and ``Tiling.with_offset``."""
+"""Rotation and offset of the tile lattice: ``Tiling.rotated``, ``Tiling.with_offset`` and the layout options.
+
+``rotation`` turns the lattice about the center of the region it covers, ``offset`` shifts it by a fraction of its two
+translation vectors. Both are shared by ``GridBasedLayout`` and ``MosaicLayout``.
+"""
 
 from __future__ import annotations
 
+import dataclasses
+
+import geopandas as gpd
 import numpy as np
 import pytest
 import shapely
 from shapely.geometry import box
 
 from carto_flow.symbol_cartogram import (
+    GridBasedLayout,
+    GridBasedLayoutOptions,
     HexagonTiling,
     IsohedralTiling,
+    MosaicLayout,
+    MosaicLayoutOptions,
     QuadrilateralTiling,
     SquareTiling,
     TriangleTiling,
 )
+from carto_flow.symbol_cartogram.layouts import prepare_layout_data
+from carto_flow.symbol_cartogram.layouts.mosaic._calibration import calibrate_tiling
 
 BOUNDS = (0.0, 0.0, 10.0, 6.0)
 TILINGS = {
@@ -29,6 +42,11 @@ def _centers(result) -> np.ndarray:
     """Tile centers sorted lexicographically, so that two results compare independent of tile order."""
     c = np.array([t.center for t in result.transforms])
     return c[np.lexsort((np.round(c[:, 1], 6), np.round(c[:, 0], 6)))]
+
+
+def _grid_gdf(cols: int, rows: int, x0: float = 0.0) -> gpd.GeoDataFrame:
+    geoms = [box(x0 + c, r, x0 + c + 1, r + 1) for r in range(rows) for c in range(cols)]
+    return gpd.GeoDataFrame({"tiles": [3 + (i % 3) for i in range(len(geoms))]}, geometry=geoms)
 
 
 @pytest.fixture(params=sorted(TILINGS))
@@ -200,3 +218,118 @@ class TestWithOffset:
         for offset in ([0.2, 0.4], np.array([0.2, 0.4])):
             b = tiling.with_offset(offset).generate(BOUNDS, tile_size=1.0)
             assert np.array_equal(_centers(a), _centers(b))
+
+
+@pytest.mark.parametrize("options_cls", [GridBasedLayoutOptions, MosaicLayoutOptions])
+class TestOptions:
+    def test_defaults(self, options_cls):
+        options = options_cls()
+        assert options.rotation == 0.0
+        assert options.offset == (0.0, 0.0)
+
+    def test_round_trip(self, options_cls):
+        options = options_cls(rotation=30.0, offset=(0.25, 0.75))
+        copy = dataclasses.replace(options)
+        assert copy == options
+        assert dataclasses.asdict(copy)["rotation"] == 30.0
+        assert dataclasses.asdict(copy)["offset"] == (0.25, 0.75)
+        changed = dataclasses.replace(options, rotation=10.0)
+        assert changed.offset == (0.25, 0.75)
+
+    @pytest.mark.parametrize("rotation", [np.nan, np.inf, -np.inf, "x", None])
+    def test_rejects_a_bad_rotation(self, options_cls, rotation):
+        with pytest.raises(ValueError, match="rotation"):
+            options_cls(rotation=rotation).validate()
+
+    @pytest.mark.parametrize("offset", [(np.nan, 0.0), (0.0, np.inf), (0.5,), (0.1, 0.2, 0.3), 0.5, "ab", None])
+    def test_rejects_a_bad_offset(self, options_cls, offset):
+        with pytest.raises(ValueError, match="offset"):
+            options_cls(offset=offset).validate()
+
+    def test_accepts_other_pairs(self, options_cls):
+        options_cls(rotation=-45, offset=[0.1, 0.2]).validate()
+        options_cls(offset=np.array([1.0, 2.0])).validate()
+
+
+class TestLayouts:
+    def test_layouts_validate_at_construction(self):
+        for cls in (GridBasedLayout, MosaicLayout):
+            with pytest.raises(ValueError, match="rotation"):
+                cls(rotation=float("nan"))
+            with pytest.raises(ValueError, match="offset"):
+                cls(offset=(0.0, 1.0, 2.0))
+
+    def test_unknown_names_still_fail(self):
+        with pytest.raises(TypeError, match="Unknown option"):
+            GridBasedLayout(rotate=30.0)
+
+    def test_grid_default_options_equal_explicit_defaults(self):
+        data = prepare_layout_data(_grid_gdf(4, 3))
+        a = GridBasedLayout(tiling="hexagon").compute(data, show_progress=False)
+        b = GridBasedLayout(tiling="hexagon", rotation=0.0, offset=(0.0, 0.0)).compute(data, show_progress=False)
+        assert np.array_equal(a.assignments, b.assignments)
+        assert a.tiling_result.n_tiles == b.tiling_result.n_tiles
+
+    def test_grid_rotation_covers_the_region_and_turns_the_tiles(self):
+        data = prepare_layout_data(_grid_gdf(4, 3))
+        result = GridBasedLayout(tiling="square", rotation=30.0).compute(data, show_progress=False)
+        tiles = result.tiling_result
+        assert np.allclose([t.rotation % 90.0 for t in tiles.transforms], 30.0, atol=1e-6)
+        region = box(*data.bounds)
+        assert region.difference(shapely.union_all(tiles.polygons)).area < 1e-9 * region.area
+
+    @pytest.mark.parametrize("tiling_name", ["square", "hexagon"])
+    @pytest.mark.parametrize(
+        "options", [{"rotation": 30.0}, {"offset": (0.5, 0.5)}, {"rotation": 20.0, "offset": (0.3, 0.1)}]
+    )
+    def test_grid_layout_does_not_depend_on_where_the_data_are(self, tiling_name, options):
+        """Rotation and offset are relative to the data: moving them 8e6 m east gives the same displacement."""
+        far = 8.0e6
+        near = _grid_gdf(5, 4)
+        shifted = _grid_gdf(5, 4, x0=far)
+        layout = GridBasedLayout(tiling=tiling_name, **options)
+        a = layout.compute(prepare_layout_data(near), show_progress=False)
+        b = layout.compute(prepare_layout_data(shifted), show_progress=False)
+        shift = np.array([far, 0.0])
+        assert np.allclose(a.positions + shift, b.positions, atol=1e-6)
+
+    @pytest.mark.parametrize("options", [{"rotation": 30.0}, {"offset": (0.5, 0.5)}])
+    def test_mosaic_uses_the_options_in_calibration_and_final_build(self, options):
+        gdf = _grid_gdf(4, 3)
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        result = MosaicLayout(tiling="square", morph=False, **options).compute(data, show_progress=False)
+        counts = np.bincount(result.source_indices, minlength=len(gdf))
+        assert np.array_equal(counts, gdf["tiles"].to_numpy())
+        tiles = result.tiling_result
+        # The lattice in the result is that of the oriented tiling: the same tile centers as a direct build of the
+        # oriented tiling with the same size, on the expanded bounds of the final build.
+        oriented = SquareTiling()
+        if "rotation" in options:
+            oriented = oriented.rotated(options["rotation"])
+            assert np.allclose([t.rotation % 90.0 for t in tiles.transforms], options["rotation"], atol=1e-6)
+        if "offset" in options:
+            oriented = oriented.with_offset(options["offset"])
+        buf = tiles.tile_size * 1.5
+        b = data.bounds
+        expanded = (b[0] - buf, b[1] - buf, b[2] + buf, b[3] + buf)
+        direct = oriented.generate(expanded, tile_size=tiles.tile_size)
+        assert np.allclose(_centers(direct), _centers(tiles), atol=1e-9)
+
+    def test_mosaic_calibration_trial_and_final_builds_share_the_lattice(self):
+        gdf = _grid_gdf(4, 3)
+        union = shapely.union_all(list(gdf.geometry))
+        oriented = SquareTiling().rotated(30.0).with_offset((0.4, 0.1))
+        setup = calibrate_tiling(oriented, union.bounds, union, target_count=int(gdf["tiles"].sum()))
+        assert abs(len(setup.core_set) - int(gdf["tiles"].sum())) <= 1
+        assert np.allclose([t.rotation % 90.0 for t in setup.tiling_result.transforms], 30.0, atol=1e-6)
+
+    def test_mosaic_rotation_far_from_the_origin(self):
+        far = 8.0e6
+        a = MosaicLayout(tiling="hexagon", morph=False, rotation=30.0).compute(
+            prepare_layout_data(_grid_gdf(4, 3), tile_count="tiles"), show_progress=False
+        )
+        b = MosaicLayout(tiling="hexagon", morph=False, rotation=30.0).compute(
+            prepare_layout_data(_grid_gdf(4, 3, x0=far), tile_count="tiles"), show_progress=False
+        )
+        assert np.array_equal(np.sort(np.bincount(a.source_indices)), np.sort(np.bincount(b.source_indices)))
+        assert a.tiling_result.n_tiles == b.tiling_result.n_tiles

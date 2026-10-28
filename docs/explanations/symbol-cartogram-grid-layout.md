@@ -145,7 +145,8 @@ where the native sizes are computed from the area-equivalent radii divided by th
 | `neighbor_weight` | 0.3 | Weight for neighbor hop and reverse-neighbor costs |
 | `topology_weight` | 0.2 | Weight for angular orientation cost |
 | `spacing` | 0.0 | Gap between symbols as fraction of tile size |
-| `rotation` | 0.0 | Grid rotation in degrees |
+| `rotation` | 0.0 | Rotation of the tile lattice in degrees, counter-clockwise, about the center of the covered region |
+| `offset` | `(0.0, 0.0)` | Shift of the lattice in multiples of its two translation vectors; periodic (see [Tiling System](tiling-system.md)) |
 | `fill_holes` | `True` | Enable interior hole filling |
 | `fix_islands` | `True` | Enable island/connectivity correction |
 

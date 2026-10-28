@@ -45,6 +45,27 @@ def _apply_kwargs_to_options(options: Any, kwargs: dict) -> Any:
     return dataclasses.replace(options, **kwargs)
 
 
+def _validate_lattice_options(rotation: Any, offset: Any) -> None:
+    """Raise ``ValueError`` unless *rotation* is a finite number and *offset* a pair of finite numbers."""
+    from ..tiling import _finite_float, _validated_offset
+
+    _finite_float(rotation, "rotation")
+    _validated_offset(offset)
+
+
+def _orient_tiling(tiling: Any, rotation: Any, offset: Any) -> Any:
+    """*tiling* with its lattice rotated by *rotation* degrees about the region center and shifted by *offset*.
+
+    A rotation of 0 and an offset of ``(0, 0)`` return *tiling* itself.
+    """
+    _validate_lattice_options(rotation, offset)
+    if float(rotation) != 0.0:
+        tiling = tiling.rotated(float(rotation))
+    if tuple(float(v) for v in offset) != (0.0, 0.0):
+        tiling = tiling.with_offset(offset)
+    return tiling
+
+
 # ---------------------------------------------------------------------------
 # Layout Registry
 # ---------------------------------------------------------------------------

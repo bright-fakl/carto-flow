@@ -20,7 +20,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 import shapely
-from scipy.sparse import csr_array
 from scipy.sparse.csgraph import connected_components
 
 from carto_flow.data import load_us_census
@@ -62,7 +61,7 @@ def _metrics(gdf, result) -> dict:
     per_region: dict[int, list[int]] = {}
     for tile, region in zip(tiles.tolist(), regions.tolist(), strict=True):
         per_region.setdefault(region, []).append(tile)
-    adjacency = csr_array(np.asarray(tiling_result.adjacency))
+    adjacency = tiling_result.adjacency
     split = 0
     distance = []
     for region, region_tiles in per_region.items():

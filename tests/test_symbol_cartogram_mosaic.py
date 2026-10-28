@@ -24,6 +24,7 @@ import geopandas as gpd
 import numpy as np
 import pytest
 import shapely
+from scipy.sparse import issparse
 from shapely.geometry import box
 
 from carto_flow.geo_utils import find_adjacent_pairs
@@ -239,7 +240,7 @@ def _core_holes(result: MosaicLayoutResult) -> int:
     for t in (int(x) for x in result.core_tile_indices):
         if t in assigned:
             continue
-        neighbours = np.flatnonzero(adjacency[t])
+        neighbours = adjacency.indices[adjacency.indptr[t] : adjacency.indptr[t + 1]]
         if len(neighbours) and all(int(nb) in assigned for nb in neighbours):
             holes += 1
     return holes
@@ -1167,7 +1168,7 @@ def _enclosed_cells(result: MosaicLayoutResult) -> set[int]:
     for t in range(len(result.tiling_result.polygons)):
         if t in assigned:
             continue
-        neighbours = np.flatnonzero(adjacency[t])
+        neighbours = adjacency.indices[adjacency.indptr[t] : adjacency.indptr[t + 1]]
         if len(neighbours) and all(int(nb) in assigned for nb in neighbours):
             out.add(t)
     return out
@@ -1364,7 +1365,8 @@ class TestComputeAdjacencyFlag:
             with_adj = tiling.generate(n_tiles=30)
             without_adj = tiling.generate(n_tiles=30, compute_adjacency=False)
             assert without_adj.adjacency.shape == with_adj.adjacency.shape
-            assert not without_adj.adjacency.any()
+            assert issparse(without_adj.adjacency)
+            assert without_adj.adjacency.nnz == 0
             # Polygons/centers are identical regardless of compute_adjacency.
             for pa, pb in zip(with_adj.polygons, without_adj.polygons, strict=True):
                 assert pa.equals_exact(pb, tolerance=0)
@@ -1388,12 +1390,13 @@ class TestCalibrationAdjacencySkip:
         setup = calibrate_tiling(HexagonTiling(), bounds, union, target_count=sum(COUNTS_4X3))
 
         # Real (non-placeholder) adjacency for the accepted tile size.
-        assert setup.tiling_result.adjacency.any()
+        assert setup.tiling_result.adjacency.nnz > 0
         assert len(setup.valid_tile_indices) > 0
         # adj_list must be consistent with the adjacency matrix it was built from.
         adj = setup.tiling_result.adjacency
         for t, neighbours in enumerate(setup.adj_list):
-            assert neighbours == list(np.where(adj[t])[0])
+            assert neighbours == adj.indices[adj.indptr[t] : adj.indptr[t + 1]].tolist()
+            assert all(type(nb) is int for nb in neighbours)
 
     def test_calibration_reaches_target_count(self):
         from shapely.ops import unary_union

@@ -188,7 +188,9 @@ def calibrate_tiling(
     elif not adjacency_fresh:
         result, T, core = _build(tile_size)
 
-    adj_list: list[list[int]] = [list(np.where(result.adjacency[t])[0]) for t in range(T)]
+    indptr = result.adjacency.indptr.tolist()
+    indices = result.adjacency.indices.tolist()
+    adj_list: list[list[int]] = [indices[indptr[t] : indptr[t + 1]] for t in range(T)]
     core_set = set(core)
     valid_tile_indices = core
 

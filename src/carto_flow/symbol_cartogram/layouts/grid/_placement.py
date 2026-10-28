@@ -5,12 +5,31 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
+from scipy.sparse import csc_array, csr_array
 from scipy.spatial.distance import cdist
+
+
+def _canonical(adjacency: csr_array, *, columns: bool = False) -> csr_array:
+    """Copy of a tile adjacency matrix without stored zeros and with sorted indices.
+
+    Returns a CSR matrix, or a CSC matrix when *columns* is True.
+    """
+    adj = (csc_array if columns else csr_array)(adjacency, copy=True)
+    adj.eliminate_zeros()
+    adj.sort_indices()
+    return adj
+
+
+def _lists(adj: csr_array) -> list[list[int]]:
+    """Ascending indices of the stored entries of every row of a canonical matrix, as lists of Python ints."""
+    indptr = adj.indptr.tolist()
+    indices = adj.indices.tolist()
+    return [indices[indptr[t] : indptr[t + 1]] for t in range(adj.shape[0])]
 
 
 def fill_internal_holes(
     assignments: NDArray[np.intp],
-    tile_adjacency: NDArray[np.bool_],
+    tile_adjacency: csr_array,
     centroids: NDArray[np.floating],
     grid_centers: NDArray[np.floating],
     original_polygons: list,
@@ -29,7 +48,7 @@ def fill_internal_holes(
     ----------
     assignments : (n,) int array
         Current region-to-tile assignments (indices into *grid_centers*).
-    tile_adjacency : (m, m) bool array
+    tile_adjacency : (m, m) sparse boolean matrix
         Edge-based tile adjacency matrix.  Used for the flood-fill that
         classifies exterior vs. internal tiles, for grouping holes into
         connected components, and for shift chain BFS.  Should use strict
@@ -72,10 +91,14 @@ def fill_internal_holes(
     # Approximate one tile's area from the mean distance between adjacent
     # tile centers, then scale by min_hole_fraction.  Interior rings
     # smaller than this threshold are treated as boundary artifacts.
-    adj_pairs = np.argwhere(tile_adjacency)
-    if len(adj_pairs) > 0:
+    adj = _canonical(tile_adjacency)
+    nbrs = _lists(adj)
+    neighbor_counts = np.diff(adj.indptr)
+    adj_rows = np.repeat(np.arange(adj.shape[0]), neighbor_counts)
+    adj_cols = adj.indices
+    if len(adj_rows) > 0:
         dists = np.linalg.norm(
-            grid_centers[adj_pairs[:, 0]] - grid_centers[adj_pairs[:, 1]],
+            grid_centers[adj_rows] - grid_centers[adj_cols],
             axis=1,
         )
         tile_area_est = float(np.mean(dists)) ** 2
@@ -122,7 +145,6 @@ def fill_internal_holes(
             break
 
         # -- Detect boundary tiles (fewer neighbors than interior max) --
-        neighbor_counts = tile_adjacency.sum(axis=1)
         max_neighbors = int(neighbor_counts.max())
 
         if verbose:
@@ -141,8 +163,7 @@ def fill_internal_holes(
 
         while queue:
             t = queue.popleft()
-            for j in np.where(tile_adjacency[t])[0]:
-                j_int = int(j)
+            for j_int in nbrs[t]:
                 if j_int in unassigned and j_int not in exterior:
                     exterior.add(j_int)
                     queue.append(j_int)
@@ -167,8 +188,7 @@ def fill_internal_holes(
             while q:
                 t = q.popleft()
                 comp.append(t)
-                for j in np.where(tile_adjacency[t])[0]:
-                    j_int = int(j)
+                for j_int in nbrs[t]:
                     if j_int in internal and j_int not in visited:
                         visited.add(j_int)
                         q.append(j_int)
@@ -211,8 +231,7 @@ def fill_internal_holes(
 
                 while bfs_q:
                     cur = bfs_q.popleft()
-                    for nb in np.where(tile_adjacency[cur])[0]:
-                        nb_int = int(nb)
+                    for nb_int in nbrs[cur]:
                         if nb_int in parent:
                             continue
                         if nb_int not in assigned_set:
@@ -286,7 +305,7 @@ def fill_internal_holes(
 
 def _fix_island_assignments(
     assignments: NDArray[np.intp],
-    tile_adjacency: NDArray[np.bool_],
+    tile_adjacency: csr_array,
     centroids: NDArray[np.floating],
     grid_centers: NDArray[np.floating],
     region_adjacency: NDArray[np.floating] | None = None,
@@ -308,7 +327,7 @@ def _fix_island_assignments(
     ----------
     assignments : (n,) int array
         Current region-to-tile assignments.
-    tile_adjacency : (m, m) bool array
+    tile_adjacency : (m, m) sparse boolean matrix
         Edge-based tile adjacency matrix.
     centroids : (n, 2) array
         Original region centroids.
@@ -331,6 +350,7 @@ def _fix_island_assignments(
     assignments = assignments.copy()
     n = len(assignments)
     m = len(grid_centers)
+    nbrs = _lists(_canonical(tile_adjacency))
 
     # --- Identify true geographic islands (connected components of regions) ---
     if region_adjacency is not None:
@@ -391,8 +411,7 @@ def _fix_island_assignments(
             while tile_queue:
                 cur_t = tile_queue.popleft()
                 comp_regions.extend(tile_to_regions.get(cur_t, []))
-                for nb in np.where(tile_adjacency[cur_t])[0]:
-                    nb_int = int(nb)
+                for nb_int in nbrs[cur_t]:
                     if nb_int not in tile_visited and nb_int in assigned_set:
                         tile_visited.add(nb_int)
                         tile_queue.append(nb_int)
@@ -419,8 +438,7 @@ def _fix_island_assignments(
             for region in comp_regions:
                 candidate_tiles = set()
                 for mt in main_tiles:
-                    for nb in np.where(tile_adjacency[mt])[0]:
-                        nb_int = int(nb)
+                    for nb_int in nbrs[mt]:
                         if nb_int not in assigned_set:
                             candidate_tiles.add(nb_int)
 
@@ -479,8 +497,7 @@ def _fix_island_assignments(
     main_cluster.update(mainland_tiles)
     while q_init:
         t = q_init.popleft()
-        for nb in np.where(tile_adjacency[t])[0]:
-            nb_int = int(nb)
+        for nb_int in nbrs[t]:
             if nb_int not in main_cluster and nb_int in assigned_set:
                 main_cluster.add(nb_int)
                 q_init.append(nb_int)
@@ -492,7 +509,7 @@ def _fix_island_assignments(
         # Check if any region in this island group is on a tile
         # that is edge-adjacent to the main cluster
         island_tiles = {int(assignments[r]) for r in island_group}
-        attached = any(tile_adjacency[it, mt] for it in island_tiles for mt in main_cluster if it != mt)
+        attached = any(nb in main_cluster for it in island_tiles for nb in nbrs[it] if nb != it)
 
         if not attached:
             continue
@@ -509,7 +526,7 @@ def _fix_island_assignments(
                 if t in assigned_set:
                     continue
                 # Check tile is not edge-adjacent to any main cluster tile
-                if not any(tile_adjacency[t, mt] for mt in main_cluster):
+                if not any(nb in main_cluster for nb in nbrs[t]):
                     isolated_tiles.append(t)
 
             if not isolated_tiles:
@@ -532,12 +549,12 @@ def _fix_island_assignments(
     return assignments
 
 
-def _bfs_distance_matrix(adjacency: NDArray[np.bool_]) -> NDArray[np.int32]:
+def _bfs_distance_matrix(adjacency: csr_array) -> NDArray[np.int32]:
     """Compute all-pairs shortest-path distances on an adjacency graph via BFS.
 
     Parameters
     ----------
-    adjacency : (m, m) boolean array
+    adjacency : (m, m) sparse boolean matrix
         Adjacency matrix.
 
     Returns
@@ -548,7 +565,8 @@ def _bfs_distance_matrix(adjacency: NDArray[np.bool_]) -> NDArray[np.int32]:
     """
     from collections import deque
 
-    m = len(adjacency)
+    m = adjacency.shape[0]
+    nbrs = _lists(_canonical(adjacency))
     dists = np.full((m, m), m, dtype=np.int32)
     np.fill_diagonal(dists, 0)
 
@@ -559,8 +577,7 @@ def _bfs_distance_matrix(adjacency: NDArray[np.bool_]) -> NDArray[np.int32]:
         while queue:
             node = queue.popleft()
             d = dists[source, node]
-            neighbors = np.where(adjacency[node])[0]
-            for nb in neighbors:
+            for nb in nbrs[node]:
                 if not visited[nb]:
                     visited[nb] = True
                     dists[source, nb] = d + 1
@@ -572,7 +589,7 @@ def _bfs_distance_matrix(adjacency: NDArray[np.bool_]) -> NDArray[np.int32]:
 def bfs_expand_assignments(
     anchor_assignments: NDArray[np.intp],
     counts: NDArray[np.int32],
-    tile_adjacency: NDArray[np.bool_],
+    tile_adjacency: csr_array,
     grid_centers: NDArray[np.floating] | None = None,
 ) -> list[list[int]]:
     """Expand G-level anchor assignments to fill counts[g] tiles per geometry via BFS.
@@ -583,7 +600,7 @@ def bfs_expand_assignments(
         One anchor tile per geometry from a G-level Hungarian assignment.
     counts : (G,) int array
         Number of tiles each geometry needs (>= 1).
-    tile_adjacency : (M, M) bool array
+    tile_adjacency : (M, M) sparse boolean matrix
         Edge-based tile adjacency matrix.
     grid_centers : (M, 2) array, optional
         Tile center positions.  Used in the fallback when BFS cannot find
@@ -603,10 +620,7 @@ def bfs_expand_assignments(
     M = tile_adjacency.shape[0]
 
     # Precompute adjacency lists once
-    adj_lists: list[list[int]] = [[] for _ in range(M)]
-    rows, cols = np.where(tile_adjacency)
-    for r, c in zip(rows.tolist(), cols.tolist(), strict=False):
-        adj_lists[r].append(c)
+    adj_lists = _lists(_canonical(tile_adjacency))
 
     occupied: dict[int, int] = {}  # tile_idx -> geom_idx
     geom_tiles: list[list[int]] = [[] for _ in range(G)]
@@ -652,8 +666,8 @@ def assign_to_grid_hungarian(
     centroids: NDArray[np.floating],
     grid_centers: NDArray[np.floating],
     adjacency: NDArray[np.floating] | None = None,
-    tile_adjacency: NDArray[np.bool_] | None = None,
-    vertex_adjacency: NDArray[np.bool_] | None = None,
+    tile_adjacency: csr_array | None = None,
+    vertex_adjacency: csr_array | None = None,
     *,
     origin_weight: float = 1.0,
     neighbor_weight: float = 0.3,
@@ -686,9 +700,9 @@ def assign_to_grid_hungarian(
         Grid cell centers (m >= n).
     adjacency : np.ndarray of shape (n, n), optional
         Region adjacency matrix. Required for neighbor and topology costs.
-    tile_adjacency : np.ndarray of shape (m, m), optional
+    tile_adjacency : scipy.sparse.csr_array of shape (m, m), optional
         Tile edge adjacency matrix.
-    vertex_adjacency : np.ndarray of shape (m, m), optional
+    vertex_adjacency : scipy.sparse.csr_array of shape (m, m), optional
         Tile vertex-only adjacency matrix (tiles sharing exactly one vertex
         but no edge).
     origin_weight : float
@@ -735,6 +749,11 @@ def assign_to_grid_hungarian(
         # Pre-compute BFS hop distances for distance-scaled neighbor cost
         bfs_dists = _bfs_distance_matrix(tile_adjacency) if tile_adjacency is not None and neighbor_weight > 0 else None
 
+        # Tiles adjacent to each tile: the column of the matrix, as index lists
+        vertex_cols = _lists(_canonical(vertex_adjacency, columns=True)) if vertex_adjacency is not None else None
+        edge_cols = _lists(_canonical(tile_adjacency, columns=True)) if tile_adjacency is not None else None
+        edge_rows = _lists(_canonical(tile_adjacency)) if tile_adjacency is not None else None
+
         # Pre-compute original direction angles for orientation cost
         if topology_weight > 0:
             orig_angles = np.full((n, n), np.nan)
@@ -778,10 +797,10 @@ def assign_to_grid_hungarian(
                             penalty = raw * raw
                         else:
                             penalty = np.ones(m)
-                        if vertex_adjacency is not None:
-                            penalty[vertex_adjacency[:, j_cell]] = 0.2
-                        if tile_adjacency is not None:
-                            penalty[tile_adjacency[:, j_cell]] = 0.0
+                        if vertex_cols is not None:
+                            penalty[vertex_cols[j_cell]] = 0.2
+                        if edge_cols is not None:
+                            penalty[edge_cols[j_cell]] = 0.0
                         penalty[j_cell] = 0.0
                         neighbor_cost[i, :] += penalty * w
 
@@ -806,15 +825,15 @@ def assign_to_grid_hungarian(
             # Reverse neighbor penalty: for each candidate tile k, count
             # how many of k's tile-neighbors are occupied by regions
             # that are NOT geographic neighbors of region i.
-            if neighbor_weight > 0 and tile_adjacency is not None:
+            if neighbor_weight > 0 and edge_rows is not None:
                 reverse_cost = np.zeros((n, m))
                 # Build tile→region lookup
                 tile_to_region = np.full(m, -1, dtype=int)
                 for r_idx in range(n):
                     tile_to_region[assignment[r_idx]] = r_idx
                 for k in range(m):
-                    for t_nb in np.where(tile_adjacency[k])[0]:
-                        j_region = tile_to_region[int(t_nb)]
+                    for t_nb in edge_rows[k]:
+                        j_region = tile_to_region[t_nb]
                         if j_region < 0:
                             continue
                         # All regions not adjacent to j_region get penalty

@@ -280,4 +280,4 @@ def test_saved_cartogram_round_trips_with_the_new_code(tmp_path):
     first, second = loaded.layout_result.tiling_result, again.layout_result.tiling_result
     assert second.n_tiles == first.n_tiles
     assert second.tile_size == pytest.approx(first.tile_size)
-    assert isinstance(csr_array(second.adjacency), csr_array)
+    assert isinstance(second.adjacency, csr_array)

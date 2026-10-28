@@ -275,7 +275,7 @@ dev = [
 requires-dist = [
     { name = "censusdis", marker = "extra == 'data'", specifier = ">=1.2.4" },
     { name = "geopandas", specifier = ">=1.0.1" },
-    { name = "isotile", git = "https://github.com/bright-fakl/isotile?rev=392484c254d44af317a24dcea69bd8dcf44a83fc" },
+    { name = "isotile", git = "https://github.com/bright-fakl/isotile?rev=a4625b7a28a9eb52f2403909a44f61a1447ee2e5" },
     { name = "joblib", specifier = ">=1.5.2" },
     { name = "matplotlib", specifier = ">=3.9.4" },
     { name = "numba", specifier = ">=0.60.0" },
@@ -1407,7 +1407,7 @@ wheels = [
 [[package]]
 name = "isotile"
 version = "0.1.0.dev0"
-source = { git = "https://github.com/bright-fakl/isotile?rev=392484c254d44af317a24dcea69bd8dcf44a83fc#392484c254d44af317a24dcea69bd8dcf44a83fc" }
+source = { git = "https://github.com/bright-fakl/isotile?rev=a4625b7a28a9eb52f2403909a44f61a1447ee2e5#a4625b7a28a9eb52f2403909a44f61a1447ee2e5" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },

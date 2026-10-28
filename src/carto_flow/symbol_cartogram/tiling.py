@@ -21,9 +21,9 @@ IsohedralTiling
     Tiling of one of the 81 isohedral types, optionally with curved edges.
 
 Tiles cover the region (bounds with margin): a tile is returned if it overlaps the region
-with positive area. The lattice is anchored at the center of the region, so a region that
-is expanded by the same amount on all sides keeps its tiles. The order of the tiles is not
-part of the interface.
+with positive area; for a tiling with curved edges the overlap is that of the curved outline.
+The lattice is anchored at the center of the region, so a region that is expanded by the same
+amount on all sides keeps its tiles. The order of the tiles is not part of the interface.
 """
 
 from __future__ import annotations
@@ -430,8 +430,8 @@ class Tiling(ABC):
         """Generate the tiles that cover the bounding box.
 
         A tile is returned if it overlaps the box expanded by *margin* with
-        positive area. The lattice is anchored at the center of the expanded
-        box.
+        positive area (for curved edges, the area of the curved outline). The
+        lattice is anchored at the center of the expanded box.
 
         Parameters
         ----------
@@ -844,20 +844,11 @@ class _IsotileTiling(Tiling):
     ) -> TilingResult:
         bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
         if tile_size is None:
-            tiles = self._iso.fill_region(bounds, n_tiles=n_tiles, margin=margin)
+            tiles = self._iso.fill_region(bounds, n_tiles=n_tiles, margin=margin, offset=self._offset)
         else:
-            tiles = self._iso.fill_region(bounds, tile_size=tile_size * self._side_per_size, margin=margin)
-        if self._offset != (0.0, 0.0):
-            # fill_region anchors the lattice at the center of the region; move it by the offset and cover the
-            # same region again.
-            placed = tiles.tiling
-            frame = np.array(placed.frame, dtype=float)
-            frame[:, 2] += self._offset[0] * np.asarray(placed.translation_u) + self._offset[1] * np.asarray(
-                placed.translation_v
+            tiles = self._iso.fill_region(
+                bounds, tile_size=tile_size * self._side_per_size, margin=margin, offset=self._offset
             )
-            x0, y0, x1, y1 = (float(b) for b in bounds)
-            dx, dy = (x1 - x0) * margin, (y1 - y0) * margin
-            tiles = placed.with_frame(frame).cover((x0 - dx, y0 - dy, x1 + dx, y1 + dy))
 
         polygons = tiles.polygons()
         centers = shapely.get_coordinates(shapely.centroid(np.asarray(polygons, dtype=object)))

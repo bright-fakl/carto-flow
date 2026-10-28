@@ -181,6 +181,18 @@ class TestWithOffset:
         moved = b.tile_set.tiling.centroid - a.tile_set.tiling.centroid
         assert np.allclose(moved, shift, atol=1e-9)
 
+    @pytest.mark.parametrize("kind", ["n_tiles", "tile_size"])
+    def test_generate_is_fill_region_with_the_offset(self, tiling, kind):
+        """The offset is applied by one fill_region call: same tiles, in the same order, as isotile returns."""
+        value = {"n_tiles": 60, "tile_size": 1.3}[kind]
+        offset = (0.3, 0.8)
+        result = tiling.with_offset(offset).generate(BOUNDS, margin=0.1, **{kind: value})
+        argument = value * tiling._side_per_size if kind == "tile_size" else value
+        direct = tiling._iso.fill_region(BOUNDS, margin=0.1, offset=offset, **{kind: argument})
+        assert np.array_equal(result.tile_set.cell, direct.cell)
+        assert np.array_equal(result.tile_set.aspect, direct.aspect)
+        assert np.array_equal(result.tile_set.transforms, direct.transforms)
+
     def test_the_offset_changes_the_tiles(self):
         a = SquareTiling().generate(BOUNDS, tile_size=1.0)
         b = SquareTiling().with_offset((0.5, 0.5)).generate(BOUNDS, tile_size=1.0)

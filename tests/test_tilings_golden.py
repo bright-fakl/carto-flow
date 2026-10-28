@@ -75,22 +75,17 @@ NAMED = {
 EDGE_PAIRS_THAT_ARE_VERTEX_ONLY = {"preset/wavy_square", "preset/scalloped_quad"}
 # The former implementation sampled a spline with 11 control points at 100 points, isotile at 110.
 SPLINE_SAMPLING = {"preset/puzzle_piece"}
-# Presets with curved edges. The former implementation returned tiles whose curves reach into the region while the
-# straight outline does not, isotile selects tiles by the straight outline.
-CURVED_PRESETS = {
-    f"preset/{name}"
-    for name in (
-        "scalloped_hexagon",
-        "wavy_square",
-        "puzzle_piece",
-        "arrow_quad",
-        "wavy_triangle",
-        "interlocking_hexagon",
-        "flowers",
-        "scalloped_quad",
-        "tree",
-    )
-}
+CURVED_PRESETS = [
+    "scalloped_hexagon",
+    "wavy_square",
+    "puzzle_piece",
+    "arrow_quad",
+    "wavy_triangle",
+    "interlocking_hexagon",
+    "flowers",
+    "scalloped_quad",
+    "tree",
+]
 
 PRESETS = [key for key in META if key.startswith("preset/")]
 TYPES = [key for key in META if key.startswith("type/")]
@@ -173,9 +168,11 @@ def _compare(key: str, tile_set, tol: float, match_tol: float) -> None:
     assert (distance < match_tol * size).all(), "tiles of the former implementation without a tile at their center"
     assert len(set(matched.tolist())) == n_old, "two former tiles matched the same tile"
     outside = ~is_member[matched]
-    assert not outside.any() or key in CURVED_PRESETS, (
-        f"{outside.sum()} tiles of the former implementation not returned"
-    )
+    assert not outside.any(), f"{outside.sum()} tiles of the former implementation not returned"
+    # Tiles that the former implementation did not return (it lacked boundary tiles in 18 of the 81 types) overlap the region.
+    unmatched = np.setdiff1d(np.flatnonzero(is_member), matched)
+    region = Polygon.from_bounds(*REGION)
+    assert all(polygons[i].intersection(region).area > 0 for i in unmatched)
 
     old_vertices = _place(old["canonical"], old["centers"], old["rotation"], old["flipped"])
     gap = max(_vertex_gap(old_vertices[i], new_vertices[j]) for i, j in enumerate(matched)) / size
@@ -224,6 +221,30 @@ def test_presets(key):
 @pytest.mark.parametrize("key", TYPES)
 def test_types(key):
     _compare(key, _wrapper_tile_set(key), tol=1e-9, match_tol=1e-6)
+
+
+def test_curved_outline_adds_tiles_at_the_boundary():
+    """puzzle_piece at the default margin returns tiles that the straight outline does not select."""
+    result = IsohedralTiling.from_preset("puzzle_piece").generate((0.0, 0.0, 10.0, 6.0), n_tiles=100)
+    straight = result.tile_set.tiling.cover((-1.0, -0.6, 11.0, 6.6), outline="straight")
+    assert (len(straight), result.n_tiles) == (112, 126)
+
+
+@pytest.mark.parametrize("name", CURVED_PRESETS)
+def test_curved_presets_select_tiles_by_the_curved_outline(name):
+    """The tiles are those whose curved polygon overlaps the region with positive area, a superset of the straight ones."""
+    tiling = IsohedralTiling.from_preset(name)
+    result = tiling.generate(BOUNDS, n_tiles=100, margin=MARGIN)
+    iso = result.tile_set.tiling
+    straight = iso.cover(REGION, outline="straight")
+    assert len(result.tile_set) >= len(straight)
+    wide = iso.cover(tuple(np.array(REGION) + 2.0 * result.tile_size * np.array([-1.0, -1.0, 1.0, 1.0])))
+    region = Polygon.from_bounds(*REGION)
+    overlapping = {
+        k for k, p in zip(_cell_keys(wide), wide.polygons(), strict=True) if p.intersection(region).area > 1e-9
+    }
+    assert set(_cell_keys(result.tile_set)) == overlapping
+    assert set(_cell_keys(straight)) <= overlapping
 
 
 def test_former_implementation_returned_tiles_outside_the_region():

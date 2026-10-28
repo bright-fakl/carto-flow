@@ -20,6 +20,8 @@ The breaking changes below make the next release 3.0.0.
     tiles that lie outside the region (11 % of the tiles in 19 named cases), left holes in triangle and quadrilateral tilings
     of irregular shapes, and returned no tile at all for a region about its own size away from the origin; the isohedral
     class lacked tiles at the boundary in 18 of the 81 types.
+  - For tilings with curved edges the overlap with the region is tested with the curved outline of the tile, so a tile whose
+    curve reaches into the region is returned although its straight-edge outline does not.
   - The lattice is anchored at the center of the region for all tilings. It was anchored at the lower-left corner of the
     region (square, hexagon), at the origin (triangle, quadrilateral) or at the center (isohedral). The position of the
     lattice relative to the data changes where each symbol is placed; the mosaic calibration now builds its trial tilings

@@ -44,15 +44,15 @@ The order of the tiles in `TilingResult` is not part of the interface, and neith
 |-------|------|-------------|
 | `polygons` | list of `Polygon` | Tile geometries in world coordinates |
 | `transforms` | list of `TileTransform` | Per-tile center (area centroid of the polygon), rotation (degrees) and `flipped` flag, relative to `canonical_tile` |
-| `adjacency` | `NDArray` | Binary adjacency matrix of the kind given by `adjacency_type` |
-| `vertex_adjacency` | `NDArray` | Binary vertex-only adjacency matrix (tiles that share a vertex and no edge) |
+| `adjacency` | `scipy.sparse.csr_array` | Boolean sparse adjacency matrix of the kind given by `adjacency_type` |
+| `vertex_adjacency` | `scipy.sparse.csr_array` or None | Boolean sparse vertex-only adjacency matrix (tiles that share a vertex and no edge); `None` for a loaded result |
 | `tile_size` | float | Tile size used for generation |
 | `inscribed_radius` | float | Distance from the center of the canonical tile to its boundary |
 | `canonical_tile` | `Polygon` | Tile shape before applying transforms, centered at its centroid, at the generated size |
 | `n_base_vertices` | int or None | Number of vertices of the prototile of an isohedral tiling |
 | `tile_set` | `isotile.TileSet` or None | The isotile tiles in the order of `polygons`, with the cell and aspect of each tile; `None` after `rotate` or when a result is loaded from a file |
 
-`adjacency_type` is `"edge"` (tiles that share an edge), `"vertex"` (tiles that share an edge or a vertex) or `"vertex-only"`. `vertex_adjacency` is always the vertex-only matrix. Adjacency comes from the lattice table of the tiling type, so it is exact for every tile shape, curved ones included. With `compute_adjacency=False` both matrices are all-`False` placeholders of the right shape.
+`adjacency_type` is `"edge"` (tiles that share an edge), `"vertex"` (tiles that share an edge or a vertex) or `"vertex-only"`. `vertex_adjacency` is always the vertex-only matrix. Adjacency comes from the lattice table of the tiling type, so it is exact for every tile shape, curved ones included. The matrices are symmetric and the column indices of every row are sorted, so the neighbors of tile `t` are `adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]`. The memory of a matrix grows with the number of tiles, not with its square. With `compute_adjacency=False` both matrices have the right shape and no stored entries. `SymbolCartogram.save` does not write the adjacency; a loaded result has an empty `adjacency` and `vertex_adjacency=None`, which is enough for plotting.
 
 A tile with `flipped=True` is the canonical tile mirrored about the vertical axis, then rotated by `rotation` degrees, then moved to `center`.
 

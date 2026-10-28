@@ -716,6 +716,7 @@ class SymbolCartogram:
         # Reconstruct tiling data (grid layouts only)
         tiling_result = None
         if "tiling_result" in data:
+            from scipy.sparse import csr_array
             from shapely.geometry import shape as shapely_shape
 
             from .tiling import TileTransform, TilingResult
@@ -732,7 +733,7 @@ class SymbolCartogram:
                     )
                     for t in tr_data["transforms"]
                 ],
-                adjacency=np.zeros((n, n), dtype=bool),  # not needed post-assignment
+                adjacency=csr_array((n, n), dtype=bool),  # not needed post-assignment
                 vertex_adjacency=None,
                 tile_size=tr_data["tile_size"],
                 inscribed_radius=tr_data["inscribed_radius"],

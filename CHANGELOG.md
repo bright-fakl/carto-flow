@@ -39,6 +39,16 @@ The breaking changes below make the next release 3.0.0.
   shared vertices within a tolerance, which reported vertex-only contacts of curved tiles as edge contacts (`wavy_square`,
   `scalloped_quad`). It now comes from the lattice table of the tiling type, so the grid layout and the mosaic repairs see the
   true edge neighbors of these tilings.
+- **`TilingResult.adjacency` and `TilingResult.vertex_adjacency` are `scipy.sparse.csr_array`.** They were dense boolean
+  `numpy.ndarray` of shape `(n, n)`. The sparse matrices are symmetric, boolean and have sorted column indices in every row,
+  and they come from isotile's `TileSet.adjacency`. `adjacency[i, j]`, `adjacency.shape`, `adjacency.T`, `adjacency.nnz`
+  and `adjacency.toarray()` work. `adjacency.any()`, `len(adjacency)`, `numpy.where(adjacency[t])`, `numpy.array_equal`
+  and a column of the matrix as a boolean mask (`values[adjacency[:, j]]`) raise or give a different result. Use
+  `adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]` for the neighbors of tile `t`, `adjacency.nnz` for the
+  number of entries, or call `toarray()`.
+  With `compute_adjacency=False` the matrices have shape `(n, n)` and no stored entries. A result loaded with
+  `SymbolCartogram.load` has an empty `adjacency`, as before. The file format of `save` and `load` does not change, and
+  files written by earlier versions load. The layouts give the same assignments as before.
 - **`generate_grid` and `compute_grid_symbol_size` are removed**, with `symbol_cartogram.grid`. `SquareTiling().generate(bounds, tile_size=...)`
   and `HexagonTiling().generate(...)` return the cells and their polygons.
 - **`IsohedralTiling` edge curves are validated.** A curve that makes the prototile self-intersecting raises `ValueError` naming

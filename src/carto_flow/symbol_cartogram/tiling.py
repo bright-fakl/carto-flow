@@ -39,6 +39,7 @@ import isotile as _isotile
 import numpy as np
 import shapely
 from numpy.typing import NDArray
+from scipy.sparse import csr_array
 from shapely.affinity import rotate, scale, translate
 from shapely.geometry import Point, Polygon
 from typing_extensions import Self
@@ -99,12 +100,15 @@ class TilingResult:
         Tile polygons in world coordinates.
     transforms : list[TileTransform]
         Per-tile transforms (center, rotation, flip).
-    adjacency : NDArray[np.bool_]
-        (m, m) boolean adjacency matrix between tiles, of the kind given to
-        ``generate`` (shared edge by default).
-    vertex_adjacency : NDArray[np.bool_] | None
-        (m, m) boolean vertex-only adjacency matrix (tiles sharing exactly
-        one vertex but no edge).  *None* for tilings that don't compute it.
+    adjacency : scipy.sparse.csr_array
+        (m, m) sparse boolean adjacency matrix between tiles, of the kind
+        given to ``generate`` (shared edge by default). Symmetric, with sorted
+        column indices in every row: the neighbors of tile ``t`` are
+        ``adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]``.
+    vertex_adjacency : scipy.sparse.csr_array | None
+        (m, m) sparse boolean vertex-only adjacency matrix (tiles sharing
+        exactly one vertex but no edge), in the same layout as ``adjacency``.
+        *None* for a result that was loaded.
     tile_size : float
         Size parameter used for generation.
     inscribed_radius : float
@@ -127,8 +131,8 @@ class TilingResult:
 
     polygons: list[Polygon]
     transforms: list[TileTransform]
-    adjacency: NDArray[np.bool_]
-    vertex_adjacency: NDArray[np.bool_] | None
+    adjacency: csr_array
+    vertex_adjacency: csr_array | None
     tile_size: float
     inscribed_radius: float
     canonical_tile: Polygon
@@ -445,8 +449,8 @@ class Tiling(ABC):
         compute_adjacency : bool
             Whether to compute the adjacency matrices at all. When False,
             ``adjacency`` and ``vertex_adjacency`` on the returned
-            ``TilingResult`` are all-``False`` placeholders of the right
-            shape. Use when only the tile polygons are needed, to skip the
+            ``TilingResult`` are sparse matrices of the right shape without
+            stored entries. Use when only the tile polygons are needed, to skip the
             most expensive part of tile generation.
 
         Returns
@@ -764,13 +768,16 @@ class _IsotileTiling(Tiling):
             for c, r, f in zip(centers, rotation, flipped, strict=True)
         ]
         n = len(polygons)
-        adjacency: NDArray[np.bool_]
-        vertex_adjacency: NDArray[np.bool_]
+        adjacency: csr_array
+        vertex_adjacency: csr_array
         if compute_adjacency:
-            adjacency = tiles.adjacency(adjacency_type).toarray()
-            vertex_adjacency = tiles.adjacency("vertex-only").toarray()
+            adjacency = tiles.adjacency(adjacency_type)
+            vertex_adjacency = tiles.adjacency("vertex-only")
+            adjacency.sort_indices()
+            vertex_adjacency.sort_indices()
         else:
-            adjacency = vertex_adjacency = np.zeros((n, n), dtype=bool)
+            adjacency = csr_array((n, n), dtype=bool)
+            vertex_adjacency = csr_array((n, n), dtype=bool)
 
         # The scale of the placed tiling relative to this one gives the tile size; the area of the placed tiling would
         # lose precision far from the origin.

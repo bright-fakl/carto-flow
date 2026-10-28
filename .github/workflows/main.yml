@@ -132,11 +132,15 @@ jobs:
           print(f"{len(expected)} data file(s) verified.")
           PY
 
+      # isotile is installed from the commit of [tool.uv.sources] until a release is on PyPI: the source is not part of
+      # the wheel metadata, which asks for a registry version. Remove the extra requirement when isotile is released.
       - name: Install the wheel into a clean venv
         run: |
           WHEEL=$(ls dist/carto_flow-*-py3-none-any.whl)
+          ISOTILE_GIT=$(sed -n 's/^isotile = { git = "\([^"]*\)", rev = "\([^"]*\)" }$/git+\1@\2/p' pyproject.toml)
+          test -n "$ISOTILE_GIT"
           uv venv /tmp/smokevenv --python 3.10
-          VIRTUAL_ENV=/tmp/smokevenv uv pip install "$WHEEL"
+          VIRTUAL_ENV=/tmp/smokevenv uv pip install "$WHEEL" "isotile @ $ISOTILE_GIT"
 
       # Every public loader is exercised, discovered from carto_flow.data's
       # __all__ rather than listed here, so a loader added later is covered

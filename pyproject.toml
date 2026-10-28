@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-isotile = { git = "https://github.com/bright-fakl/isotile", rev = "392484c254d44af317a24dcea69bd8dcf44a83fc" }
+isotile = { git = "https://github.com/bright-fakl/isotile", rev = "a4625b7a28a9eb52f2403909a44f61a1447ee2e5" }
 
 [project.optional-dependencies]
 data = ["censusdis>=1.2.4"]

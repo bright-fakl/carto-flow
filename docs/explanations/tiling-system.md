@@ -30,7 +30,7 @@ All classes share the same `generate(bounds, n_tiles=None, tile_size=None, margi
 
 The lattice is anchored at the center of the expanded region and does not depend on the distance of the region from the origin. A region that is expanded by the same amount on all four sides therefore keeps its tiles: every tile of the region is a tile of the expanded region. The mosaic layout relies on this when it builds a trial tiling and a final tiling on larger bounds.
 
-For tilings with curved edges the tiles are selected by their straight-edge outline, so a curve that bulges across the boundary of the region does not add a tile.
+For tilings with curved edges the overlap is tested with the curved outline of the tile, so a tile whose curve reaches into the region is returned although its straight-edge outline does not reach it.
 
 The order of the tiles in `TilingResult` is not part of the interface, and neither is the start vertex of a tile polygon.
 

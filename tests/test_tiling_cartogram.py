@@ -9,6 +9,7 @@ from __future__ import annotations
 import geopandas as gpd
 import numpy as np
 import pytest
+from scipy.sparse import csr_array
 from shapely.geometry import box
 
 from carto_flow.symbol_cartogram import (
@@ -387,6 +388,49 @@ class TestIsohedralPipeline:
 # ---------------------------------------------------------------------------
 
 
+def _sparse_adjacency(neighbors: dict[int, list[int]], m: int) -> csr_array:
+    """Boolean sparse (m, m) adjacency from a ``{tile: neighbors}`` mapping."""
+    rows = [i for i, nbs in neighbors.items() for _ in nbs]
+    cols = [j for nbs in neighbors.values() for j in nbs]
+    return csr_array((np.ones(len(rows), dtype=bool), (rows, cols)), shape=(m, m))
+
+
+class TestSparsePlacementHelpers:
+    """The placement helpers read the sparse tile adjacency in canonical order."""
+
+    @staticmethod
+    def _path(m: int, *, unsorted: bool, explicit_zeros: bool) -> csr_array:
+        rows = list(range(m - 1)) + list(range(1, m))
+        cols = list(range(1, m)) + list(range(m - 1))
+        data = [True] * len(rows)
+        if explicit_zeros:
+            rows, cols, data = [*rows, 0], [*cols, m - 1], [*data, False]
+        matrix = csr_array((np.array(data), (rows, cols)), shape=(m, m))
+        if unsorted:
+            for t in range(m):
+                lo, hi = matrix.indptr[t], matrix.indptr[t + 1]
+                matrix.indices[lo:hi] = matrix.indices[lo:hi][::-1]
+                matrix.data[lo:hi] = matrix.data[lo:hi][::-1]
+        return matrix
+
+    @pytest.mark.parametrize(
+        ("unsorted", "explicit_zeros"), [(False, False), (True, False), (False, True), (True, True)]
+    )
+    def test_bfs_distance_matrix_on_a_path(self, unsorted, explicit_zeros):
+        from carto_flow.symbol_cartogram.layouts.grid._placement import _bfs_distance_matrix
+
+        matrix = self._path(6, unsorted=unsorted, explicit_zeros=explicit_zeros)
+        expected = np.abs(np.subtract.outer(np.arange(6), np.arange(6)))
+        np.testing.assert_array_equal(_bfs_distance_matrix(matrix), expected)
+
+    def test_bfs_expand_assignments_visits_neighbors_in_ascending_order(self):
+        from carto_flow.symbol_cartogram.layouts.grid._placement import bfs_expand_assignments
+
+        matrix = self._path(7, unsorted=True, explicit_zeros=True)
+        tiles = bfs_expand_assignments(np.array([3]), np.array([5], dtype=np.int32), matrix)
+        assert tiles == [[3, 2, 4, 1, 5]]
+
+
 class TestFillInternalHoles:
     """Tests for the fill_holes post-processing feature."""
 
@@ -421,7 +465,6 @@ class TestFillInternalHoles:
 
         # Tile adjacency (4-connected)
         m = 9
-        adj = np.zeros((m, m), dtype=bool)
         neighbors = {
             0: [1, 3],
             1: [0, 2, 4],
@@ -433,9 +476,7 @@ class TestFillInternalHoles:
             7: [4, 6, 8],
             8: [5, 7],
         }
-        for i, nbs in neighbors.items():
-            for j in nbs:
-                adj[i, j] = True
+        adj = _sparse_adjacency(neighbors, m)
 
         # 8 regions assigned to tiles 0-3, 5-8 (skip tile 4 = center hole)
         centroids = grid_centers[[0, 1, 2, 3, 5, 6, 7, 8]]
@@ -483,7 +524,6 @@ class TestFillInternalHoles:
         )
 
         m = 9
-        adj = np.zeros((m, m), dtype=bool)
         neighbors = {
             0: [1, 3],
             1: [0, 2, 4],
@@ -495,9 +535,7 @@ class TestFillInternalHoles:
             7: [4, 6, 8],
             8: [5, 7],
         }
-        for i, nbs in neighbors.items():
-            for j in nbs:
-                adj[i, j] = True
+        adj = _sparse_adjacency(neighbors, m)
 
         # 8 regions, center is a "lake" — original polygons form a ring
         # with an interior hole.

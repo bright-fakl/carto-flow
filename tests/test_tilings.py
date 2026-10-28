@@ -17,6 +17,7 @@ import dataclasses
 
 import numpy as np
 import pytest
+from scipy.sparse import csr_array
 from shapely.affinity import scale as shapely_scale
 from shapely.affinity import translate as shapely_translate
 from shapely.geometry import Polygon
@@ -56,7 +57,7 @@ def _interior_mask(result: TilingResult, bounds, margin_frac: float = 0.3):
 
 def _neighbor_counts(result: TilingResult, mask=None):
     """Per-tile neighbor counts (optionally filtered by mask)."""
-    counts = result.adjacency.sum(axis=1)
+    counts = np.diff(result.adjacency.indptr)
     if mask is not None:
         return counts[mask]
     return counts
@@ -70,9 +71,10 @@ def _check_no_overlaps(result: TilingResult, tol_frac: float = 0.01):
     n = len(result.polygons)
     indices = rng.choice(n, size=200, replace=False) if n > 200 else np.arange(n)
 
+    adjacency = result.adjacency.toarray()
     for idx, i in enumerate(indices):
         for j in indices[idx + 1 :]:
-            if result.adjacency[i, j]:
+            if adjacency[i, j]:
                 area = result.polygons[i].intersection(result.polygons[j]).area
                 assert area < max_area, f"Tiles {i} and {j} overlap with area {area:.6f} (max allowed {max_area:.6f})"
 
@@ -118,8 +120,8 @@ class TestTilingResult:
         result = TilingResult(
             polygons=[Polygon([(0, 0), (1, 0), (1, 1), (0, 1)])] * 2,
             transforms=transforms,
-            adjacency=np.zeros((2, 2), dtype=bool),
-            vertex_adjacency=np.zeros((2, 2), dtype=bool),
+            adjacency=csr_array((2, 2), dtype=bool),
+            vertex_adjacency=csr_array((2, 2), dtype=bool),
             tile_size=1.0,
             inscribed_radius=0.5,
             canonical_tile=Polygon([(0, 0), (1, 0), (1, 1), (0, 1)]),
@@ -133,8 +135,8 @@ class TestTilingResult:
         result = TilingResult(
             polygons=[Polygon([(0, 0), (1, 0), (1, 1)])] * 5,
             transforms=[TileTransform(center=(0, 0))] * 5,
-            adjacency=np.zeros((5, 5), dtype=bool),
-            vertex_adjacency=np.zeros((5, 5), dtype=bool),
+            adjacency=csr_array((5, 5), dtype=bool),
+            vertex_adjacency=csr_array((5, 5), dtype=bool),
             tile_size=1.0,
             inscribed_radius=0.3,
             canonical_tile=Polygon([(0, 0), (1, 0), (1, 1)]),
@@ -552,8 +554,8 @@ class TestIsohedralTiling:
         result = t.generate(BOUNDS, n_tiles=30)
         adj = result.adjacency
         assert adj.shape[0] == adj.shape[1] == result.n_tiles
-        assert np.array_equal(adj, adj.T)
-        assert adj.any(), "Adjacency matrix should not be all-zero"
+        assert (adj != adj.T).nnz == 0
+        assert adj.nnz > 0, "Adjacency matrix should not be all-zero"
 
     def test_available_types(self):
         types = IsohedralTiling.available_types()
@@ -924,15 +926,16 @@ class TestAdjacencyKinds:
     def test_vertex_adjacency_field_does_not_depend_on_the_kind(self):
         tiling = TriangleTiling.equilateral()
         reference = tiling.generate(BOUNDS, n_tiles=100).vertex_adjacency
-        assert reference.any()
+        assert reference.nnz > 0
         for kind in ("edge", "vertex", "vertex-only"):
             np.testing.assert_array_equal(
-                tiling.generate(BOUNDS, n_tiles=100, adjacency_type=kind).vertex_adjacency, reference
+                tiling.generate(BOUNDS, n_tiles=100, adjacency_type=kind).vertex_adjacency.toarray(),
+                reference.toarray(),
             )
 
     def test_vertex_only_kind_equals_the_vertex_adjacency_field(self):
         result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=100, adjacency_type="vertex-only")
-        np.testing.assert_array_equal(result.adjacency, result.vertex_adjacency)
+        np.testing.assert_array_equal(result.adjacency.toarray(), result.vertex_adjacency.toarray())
 
     def test_unknown_kind_raises(self):
         with pytest.raises(ValueError, match="kind"):
@@ -940,7 +943,59 @@ class TestAdjacencyKinds:
 
     def test_hexagons_have_no_vertex_only_neighbors(self):
         result = HexagonTiling().generate(BOUNDS, n_tiles=100)
-        assert not result.vertex_adjacency.any()
+        assert result.vertex_adjacency.nnz == 0
+
+
+class TestSparseAdjacency:
+    """``adjacency`` and ``vertex_adjacency`` are boolean ``csr_array`` with sorted indices."""
+
+    TILINGS = (
+        SquareTiling(),
+        HexagonTiling(),
+        TriangleTiling.equilateral(),
+        QuadrilateralTiling.parallelogram(),
+        IsohedralTiling.from_preset("scalloped_hexagon"),
+    )
+
+    @pytest.mark.parametrize("tiling", TILINGS, ids=lambda t: type(t).__name__)
+    def test_fields_are_boolean_csr_arrays(self, tiling):
+        result = tiling.generate(BOUNDS, n_tiles=60)
+        for matrix in (result.adjacency, result.vertex_adjacency):
+            assert isinstance(matrix, csr_array)
+            assert matrix.dtype == bool
+            assert matrix.shape == (result.n_tiles, result.n_tiles)
+            assert matrix.has_sorted_indices
+            assert matrix.data.all()
+        assert (result.adjacency != result.adjacency.T).nnz == 0
+
+    def test_neighbors_are_a_row_slice(self):
+        result = SquareTiling().generate(BOUNDS, n_tiles=60)
+        adjacency = result.adjacency
+        dense = adjacency.toarray()
+        for t in range(result.n_tiles):
+            assert (
+                adjacency.indices[adjacency.indptr[t] : adjacency.indptr[t + 1]].tolist()
+                == np.flatnonzero(dense[t]).tolist()
+            )
+
+    def test_without_adjacency_the_matrices_are_empty(self):
+        result = HexagonTiling().generate(BOUNDS, n_tiles=40, compute_adjacency=False)
+        for matrix in (result.adjacency, result.vertex_adjacency):
+            assert isinstance(matrix, csr_array)
+            assert matrix.shape == (result.n_tiles, result.n_tiles)
+            assert matrix.nnz == 0
+
+    def test_rotate_keeps_the_sparse_matrices(self):
+        result = HexagonTiling().generate(BOUNDS, n_tiles=40)
+        rotated = result.rotate(30.0)
+        assert isinstance(rotated.adjacency, csr_array)
+        assert (rotated.adjacency != result.adjacency).nnz == 0
+
+    def test_memory_is_proportional_to_the_tile_count(self):
+        result = HexagonTiling().generate((0.0, 0.0, 100.0, 100.0), n_tiles=4000, compute_adjacency=True)
+        stored = result.adjacency.data.nbytes + result.adjacency.indices.nbytes + result.adjacency.indptr.nbytes
+        assert stored < 100 * result.n_tiles
+        assert stored < result.n_tiles**2 / 10  # a dense boolean matrix has n**2 bytes
 
 
 class TestTileSet:
@@ -961,7 +1016,7 @@ class TestTileSet:
         result = TilingResult(
             polygons=[Polygon([(0, 0), (1, 0), (1, 1)])],
             transforms=[TileTransform(center=(0, 0))],
-            adjacency=np.zeros((1, 1), dtype=bool),
+            adjacency=csr_array((1, 1), dtype=bool),
             vertex_adjacency=None,
             tile_size=1.0,
             inscribed_radius=0.3,

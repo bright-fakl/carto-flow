@@ -786,10 +786,12 @@ def _finite_float(value: object, name: str) -> float:
 def _validated_offset(offset: object) -> tuple[float, float]:
     """``(u, v)`` as floats; ``ValueError`` unless it is a pair of finite numbers."""
     try:
-        u, v = offset  # type: ignore[misc]
-    except (TypeError, ValueError):
-        raise ValueError(f"offset must be a pair (u, v) of finite numbers, got {offset!r}") from None
-    return _finite_float(u, "offset[0]"), _finite_float(v, "offset[1]")
+        pair = list(offset)  # type: ignore[call-overload]
+    except TypeError:
+        pair = []
+    if len(pair) != 2:
+        raise ValueError(f"offset must be a pair (u, v) of finite numbers, got {offset!r}")
+    return _finite_float(pair[0], "offset[0]"), _finite_float(pair[1], "offset[1]")
 
 
 class _IsotileTiling(Tiling):

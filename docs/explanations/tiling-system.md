@@ -22,7 +22,7 @@ Five concrete tiling classes are provided, covering all regular and semi-regular
 | `QuadrilateralTiling` | the square root of the tile area | Any simple quadrilateral, convex or not; convenience constructors for parallelogram, rectangle, rhombus, trapezoid |
 | `IsohedralTiling` | the square root of the tile area | 81 Grünbaum–Shephard isohedral types with numeric parameters and customizable edge curves |
 
-All classes share the same `generate(bounds, n_tiles=None, tile_size=None, margin=0.1, adjacency_type="edge", compute_adjacency=True)` interface. Either the number of tiles or the tile size must be specified.
+All classes share the same `generate(bounds, n_tiles=None, tile_size=None, margin=0.1, adjacency_type="edge")` interface. Either the number of tiles or the tile size must be specified.
 
 ### Which tiles are returned
 
@@ -52,7 +52,7 @@ The order of the tiles in `TilingResult` is not part of the interface, and neith
 | `n_base_vertices` | int or None | Number of vertices of the prototile of an isohedral tiling |
 | `tile_set` | `isotile.TileSet` or None | The isotile tiles in the order of `polygons`, with the cell and aspect of each tile; `None` after `rotate` or when a result is loaded from a file |
 
-`adjacency_type` is `"edge"` (tiles that share an edge), `"vertex"` (tiles that share an edge or a vertex) or `"vertex-only"`. `vertex_adjacency` is always the vertex-only matrix. Adjacency comes from the lattice table of the tiling type, so it is exact for every tile shape, curved ones included. The matrices are symmetric and the column indices of every row are sorted, so the neighbors of tile `t` are `adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]`. The memory of a matrix grows with the number of tiles, not with its square. With `compute_adjacency=False` both matrices have the right shape and no stored entries. `SymbolCartogram.save` does not write the adjacency; a loaded result has an empty `adjacency` and `vertex_adjacency=None`, which is enough for plotting.
+`adjacency_type` is `"edge"` (tiles that share an edge), `"vertex"` (tiles that share an edge or a vertex) or `"vertex-only"`. `vertex_adjacency` is always the vertex-only matrix. Adjacency comes from the lattice table of the tiling type, so it is exact for every tile shape, curved ones included. The matrices are symmetric and the column indices of every row are sorted, so the neighbors of tile `t` are `adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]`. The memory of a matrix grows with the number of tiles, not with its square. `SymbolCartogram.save` does not write the adjacency; a loaded result has an empty `adjacency` and `vertex_adjacency=None`, which is enough for plotting.
 
 A tile with `flipped=True` is the canonical tile mirrored about the vertical axis, then rotated by `rotation` degrees, then moved to `center`.
 

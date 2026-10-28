@@ -978,12 +978,9 @@ class TestSparseAdjacency:
                 == np.flatnonzero(dense[t]).tolist()
             )
 
-    def test_without_adjacency_the_matrices_are_empty(self):
-        result = HexagonTiling().generate(BOUNDS, n_tiles=40, compute_adjacency=False)
-        for matrix in (result.adjacency, result.vertex_adjacency):
-            assert isinstance(matrix, csr_array)
-            assert matrix.shape == (result.n_tiles, result.n_tiles)
-            assert matrix.nnz == 0
+    def test_generate_has_no_compute_adjacency_parameter(self):
+        with pytest.raises(TypeError):
+            HexagonTiling().generate(BOUNDS, n_tiles=40, compute_adjacency=False)
 
     def test_rotate_keeps_the_sparse_matrices(self):
         result = HexagonTiling().generate(BOUNDS, n_tiles=40)
@@ -992,7 +989,7 @@ class TestSparseAdjacency:
         assert (rotated.adjacency != result.adjacency).nnz == 0
 
     def test_memory_is_proportional_to_the_tile_count(self):
-        result = HexagonTiling().generate((0.0, 0.0, 100.0, 100.0), n_tiles=4000, compute_adjacency=True)
+        result = HexagonTiling().generate((0.0, 0.0, 100.0, 100.0), n_tiles=4000)
         stored = result.adjacency.data.nbytes + result.adjacency.indices.nbytes + result.adjacency.indptr.nbytes
         assert stored < 100 * result.n_tiles
         assert stored < result.n_tiles**2 / 10  # a dense boolean matrix has n**2 bytes

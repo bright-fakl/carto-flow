@@ -421,7 +421,6 @@ class Tiling(ABC):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: AdjacencyKind = "edge",
-        compute_adjacency: bool = True,
     ) -> TilingResult:
         """Generate the tiles that cover the bounding box.
 
@@ -446,12 +445,6 @@ class Tiling(ABC):
         adjacency_type : {"edge", "vertex", "vertex-only"}
             Kind of ``adjacency``: tiles sharing an edge, tiles sharing an
             edge or a vertex, or tiles sharing only a vertex.
-        compute_adjacency : bool
-            Whether to compute the adjacency matrices at all. When False,
-            ``adjacency`` and ``vertex_adjacency`` on the returned
-            ``TilingResult`` are sparse matrices of the right shape without
-            stored entries. Use when only the tile polygons are needed, to skip the
-            most expensive part of tile generation.
 
         Returns
         -------
@@ -752,7 +745,6 @@ class _IsotileTiling(Tiling):
         tile_size: float | None = None,
         margin: float = 0.1,
         adjacency_type: AdjacencyKind = "edge",
-        compute_adjacency: bool = True,
     ) -> TilingResult:
         bounds, n_tiles, tile_size = self._resolve_generate_args(bounds, n_tiles, tile_size)
         if tile_size is None:
@@ -767,17 +759,10 @@ class _IsotileTiling(Tiling):
             TileTransform(center=(float(c[0]), float(c[1])), rotation=float(r), flipped=bool(f))
             for c, r, f in zip(centers, rotation, flipped, strict=True)
         ]
-        n = len(polygons)
-        adjacency: csr_array
-        vertex_adjacency: csr_array
-        if compute_adjacency:
-            adjacency = tiles.adjacency(adjacency_type)
-            vertex_adjacency = tiles.adjacency("vertex-only")
-            adjacency.sort_indices()
-            vertex_adjacency.sort_indices()
-        else:
-            adjacency = csr_array((n, n), dtype=bool)
-            vertex_adjacency = csr_array((n, n), dtype=bool)
+        adjacency = tiles.adjacency(adjacency_type)
+        vertex_adjacency = tiles.adjacency("vertex-only")
+        adjacency.sort_indices()
+        vertex_adjacency.sort_indices()
 
         # The scale of the placed tiling relative to this one gives the tile size; the area of the placed tiling would
         # lose precision far from the origin.

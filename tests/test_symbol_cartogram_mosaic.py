@@ -24,7 +24,6 @@ import geopandas as gpd
 import numpy as np
 import pytest
 import shapely
-from scipy.sparse import issparse
 from shapely.geometry import box
 
 from carto_flow.geo_utils import find_adjacent_pairs
@@ -1354,28 +1353,8 @@ class TestEnclosedHoleRelocation:
         assert len(_enclosed_cells(on)) <= len(_enclosed_cells(off))
 
 
-class TestComputeAdjacencyFlag:
-    """The adjacency matrices of ``generate`` are placeholders when ``compute_adjacency=False``."""
-
-    def test_generate_compute_adjacency_false_gives_placeholder(self):
-        """compute_adjacency=False returns an all-False matrix of the right shape."""
-        from carto_flow.symbol_cartogram.tiling import HexagonTiling, SquareTiling
-
-        for tiling in (SquareTiling(), HexagonTiling()):
-            with_adj = tiling.generate(n_tiles=30)
-            without_adj = tiling.generate(n_tiles=30, compute_adjacency=False)
-            assert without_adj.adjacency.shape == with_adj.adjacency.shape
-            assert issparse(without_adj.adjacency)
-            assert without_adj.adjacency.nnz == 0
-            # Polygons/centers are identical regardless of compute_adjacency.
-            for pa, pb in zip(with_adj.polygons, without_adj.polygons, strict=True):
-                assert pa.equals_exact(pb, tolerance=0)
-
-
-class TestCalibrationAdjacencySkip:
-    """calibrate_tiling must return the same tile size whether or not lattice
-    adjacency is skipped during the internal search trials (it is now
-    skipped for performance; only the accepted tile size gets adjacency)."""
+class TestCalibrationAdjacency:
+    """calibrate_tiling returns the adjacency of the accepted tile size."""
 
     def test_calibration_tile_size_and_adjacency_stable(self):
         from shapely.ops import unary_union

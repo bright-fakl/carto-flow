@@ -46,9 +46,10 @@ The breaking changes below make the next release 3.0.0.
   and a column of the matrix as a boolean mask (`values[adjacency[:, j]]`) raise or give a different result. Use
   `adjacency.indices[adjacency.indptr[t]:adjacency.indptr[t + 1]]` for the neighbors of tile `t`, `adjacency.nnz` for the
   number of entries, or call `toarray()`.
-  With `compute_adjacency=False` the matrices have shape `(n, n)` and no stored entries. A result loaded with
-  `SymbolCartogram.load` has an empty `adjacency`, as before. The file format of `save` and `load` does not change, and
-  files written by earlier versions load. The layouts give the same assignments as before.
+  A result loaded with `SymbolCartogram.load` has an empty `adjacency`, as before. The file format of `save` and `load`
+  does not change, and files written by earlier versions load. The layouts give the same assignments as before.
+- **`Tiling.generate` has no `compute_adjacency` parameter.** The adjacency matrices are always computed; from the lattice
+  table they cost about 3 ms at 10,000 tiles, 2 to 3 percent of `generate`. Remove the argument from calls.
 - **`generate_grid` and `compute_grid_symbol_size` are removed**, with `symbol_cartogram.grid`. `SquareTiling().generate(bounds, tile_size=...)`
   and `HexagonTiling().generate(...)` return the cells and their polygons.
 - **`IsohedralTiling` edge curves are validated.** A curve that makes the prototile self-intersecting raises `ValueError` naming

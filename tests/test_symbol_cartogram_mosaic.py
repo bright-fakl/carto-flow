@@ -359,9 +359,13 @@ class TestRingSwapbackReach:
         tiles = np.maximum(1, np.round(population / population.sum() * total_tiles)).astype(int)
         return gdf.assign(tiles=tiles)
 
-    @pytest.mark.parametrize("morph", [False, True])
-    def test_us_states_needs_more_than_8_hops(self, morph):
-        """At ~300 tiles, 16 hops is never worse than 8 and sometimes better.
+    @pytest.mark.parametrize(("morph", "total_tiles"), [(False, 350), (True, 300)])
+    def test_us_states_needs_more_than_8_hops(self, morph, total_tiles):
+        """On US states, 16 hops is never worse than 8 and sometimes better.
+
+        Whether 8 hops strands a region depends on where the lattice lies
+        relative to the states, so the tile count is one at which it does
+        under the region-centered lattice.
 
         16 hops must leave every region contiguous and every group whole, and
         must leave no more stranded core tiles than 8 hops does.  Under
@@ -374,7 +378,7 @@ class TestRingSwapbackReach:
         longer reach used to.  The guarantee kept here is that 16 never loses
         to 8 — not that it always wins.
         """
-        gdf = self._states_gdf(total_tiles=300)
+        gdf = self._states_gdf(total_tiles=total_tiles)
         data = prepare_layout_data(gdf, tile_count="tiles")
 
         eight = MosaicLayout(morph=morph, hungarian_options=HungarianOptions(ring_swapback_max_hops=8)).compute(
@@ -507,31 +511,53 @@ class TestTopologyMetrics:
         assert result.metrics.iterations == metrics.repair_passes
 
     def test_repair_loop_assignment_is_pinned(self):
-        """The exact tiles each region owns on the 4x3 fixture.
+        """The footprint each region owns on the 4x3 fixture.
 
         Pins the output of the connectivity-repair loop, whose gap-bridge
         cost reduction and disconnected-tile tie-break weight are fixed
-        constants rather than options.
+        constants rather than options.  A footprint is the sorted centers of
+        the region's tiles, so the pin does not depend on the order in which
+        the tiling lists its tiles.
         """
         expected = [
-            [25, 26, 37, 38],
-            [27, 28, 39],
-            [29, 30, 40, 41, 42],
-            [31, 43, 54, 55],
-            [36, 48, 49, 60, 61, 72],
-            [50, 51, 62],
-            [52, 63, 64, 75],
-            [53, 65, 66, 77, 78],
-            [59, 71, 83],
-            [73, 74, 84, 85],
-            [86, 87, 98],
-            [76, 88, 89, 99, 100],
+            [(0.179392, 0.448872), (0.482827, -0.076693), (0.786262, 0.448872), (1.089696, -0.076693)],
+            [(1.089696, 0.974436), (1.393131, 0.448872), (1.696565, -0.076693)],
+            [(2.0, 0.448872), (2.303435, -0.076693), (2.606869, 0.448872), (2.910304, -0.076693), (2.910304, 0.974436)],
+            [(3.213738, 0.448872), (3.517173, -0.076693), (3.820608, 0.448872), (4.124042, 0.974436)],
+            [
+                (-0.124042, 0.974436),
+                (-0.124042, 2.025564),
+                (0.179392, 1.5),
+                (0.482827, 0.974436),
+                (0.482827, 2.025564),
+                (0.786262, 1.5),
+            ],
+            [(1.089696, 2.025564), (1.393131, 1.5), (1.696565, 0.974436)],
+            [(1.696565, 2.025564), (2.0, 1.5), (2.303435, 0.974436), (2.606869, 1.5)],
+            [(2.910304, 2.025564), (3.213738, 1.5), (3.517173, 0.974436), (3.517173, 2.025564), (3.820608, 1.5)],
+            [(0.179392, 2.551128), (0.482827, 3.076693), (0.786262, 2.551128)],
+            [(1.089696, 3.076693), (1.393131, 2.551128), (1.696565, 3.076693), (2.0, 2.551128)],
+            [(2.303435, 2.025564), (2.303435, 3.076693), (2.606869, 2.551128)],
+            [
+                (2.910304, 3.076693),
+                (3.213738, 2.551128),
+                (3.517173, 3.076693),
+                (3.820608, 2.551128),
+                (4.124042, 2.025564),
+            ],
         ]
         result = compute(grid_gdf(4, 3, COUNTS_4X3))
 
         grouped = tiles_by_key(result, list(range(len(COUNTS_4X3))))
-        tiles_of_region = [sorted(int(result.assignments[s]) for s in grouped[g]) for g in range(len(COUNTS_4X3))]
-        assert tiles_of_region == expected
+        centers = result.tiling_result.centers
+        footprints = [
+            sorted(
+                (round(float(centers[t][0]), 6), round(float(centers[t][1]), 6))
+                for t in (int(result.assignments[s]) for s in grouped[g])
+            )
+            for g in range(len(COUNTS_4X3))
+        ]
+        assert footprints == expected
 
     def test_converged_true_when_contiguous(self):
         """The 4x3 fixture is fully contiguous with exact counts."""
@@ -1001,22 +1027,24 @@ class TestOptions:
 class TestPlotting:
     """``plot_tiling`` renders the mosaic result, with and without the pool."""
 
+    @pytest.mark.parametrize("tiling", ["hexagon", "triangle"])
     @pytest.mark.parametrize("show_pool", [False, True])
-    def test_plot_tiling(self, show_pool):
+    def test_plot_tiling(self, show_pool, tiling):
         import matplotlib
 
         matplotlib.use("Agg")
         import matplotlib.pyplot as plt
 
         gdf = grid_gdf(3, 3, COUNTS_3X3)
-        result = compute(gdf)
+        result = compute(gdf, tiling=tiling)
 
         plot = result.plot_tiling(show_pool=show_pool, show_symbols=False)
         assert plot.ax is not None
         if show_pool:
-            # Assigned tiles are split across the core/ring collections.
+            # Assigned tiles are split across the core/ring collections; the core collection holds the unassigned
+            # core tiles, so it exists exactly when there are some.
             assert plot.assigned_tiles is None
-            assert plot.core_tiles is not None
+            assert (plot.core_tiles is not None) == (result.metrics.algorithm.n_unassigned_core_tiles > 0)
         else:
             assert plot.assigned_tiles is not None
             assert plot.core_tiles is None
@@ -1325,55 +1353,8 @@ class TestEnclosedHoleRelocation:
         assert len(_enclosed_cells(on)) <= len(_enclosed_cells(off))
 
 
-class TestVectorizedLatticeAdjacency:
-    """Equivalence between the vectorised and reference lattice-adjacency code.
-
-    ``_compute_adjacency_from_lattice`` was vectorised with a KD-tree for
-    performance; ``_compute_adjacency_from_lattice_naive`` is the original
-    per-tile Python loop, kept only so these tests can diff against it.
-    """
-
-    @pytest.mark.parametrize("n_tiles", [1, 5, 20, 50, 200, 601])
-    @pytest.mark.parametrize("tiling_cls_name", ["SquareTiling", "HexagonTiling"])
-    def test_matches_naive_reference(self, n_tiles, tiling_cls_name):
-        from carto_flow.symbol_cartogram import tiling as tiling_mod
-
-        tiling_cls = getattr(tiling_mod, tiling_cls_name)
-        t = tiling_cls()
-        result = t.generate(n_tiles=n_tiles, compute_adjacency=False)
-        centers = np.array([p.centroid.coords[0] for p in result.polygons])
-        s = result.tile_size
-
-        if tiling_cls_name == "SquareTiling":
-            offsets = [(s, 0), (-s, 0), (0, s), (0, -s)]
-        else:
-            hex_width = s * np.sqrt(3)
-            hex_height = s * 2
-            dx = hex_width
-            dy = hex_height * 0.75
-            offsets = [
-                (dx, 0),
-                (-dx, 0),
-                (dx / 2, dy),
-                (-dx / 2, dy),
-                (dx / 2, -dy),
-                (-dx / 2, -dy),
-            ]
-        tol = s * 0.1
-
-        vectorized = tiling_mod._compute_adjacency_from_lattice(centers, offsets, tol)
-        naive = tiling_mod._compute_adjacency_from_lattice_naive(centers, offsets, tol)
-        np.testing.assert_array_equal(vectorized, naive)
-
-    def test_empty_and_single_tile(self):
-        from carto_flow.symbol_cartogram import tiling as tiling_mod
-
-        empty = tiling_mod._compute_adjacency_from_lattice(np.empty((0, 2)), [(1.0, 0.0)], 0.1)
-        assert empty.shape == (0, 0)
-
-        single = tiling_mod._compute_adjacency_from_lattice(np.array([[0.0, 0.0]]), [(1.0, 0.0)], 0.1)
-        assert single.shape == (1, 1)
-        assert not single.any()
+class TestComputeAdjacencyFlag:
+    """The adjacency matrices of ``generate`` are placeholders when ``compute_adjacency=False``."""
 
     def test_generate_compute_adjacency_false_gives_placeholder(self):
         """compute_adjacency=False returns an all-False matrix of the right shape."""

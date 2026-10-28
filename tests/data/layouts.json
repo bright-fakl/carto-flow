@@ -1,0 +1,138 @@
+{
+  "cases": {
+    "states grid hexagon": {
+      "lattice_tiles": 149,
+      "assigned": 49,
+      "regions": 49,
+      "split": 0,
+      "disp_mean": 1.349634,
+      "disp_max": 3.529514
+    },
+    "states grid square": {
+      "lattice_tiles": 150,
+      "assigned": 49,
+      "regions": 49,
+      "split": 0,
+      "disp_mean": 0.78679,
+      "disp_max": 2.560516
+    },
+    "states grid triangle": {
+      "lattice_tiles": 190,
+      "assigned": 49,
+      "regions": 49,
+      "split": 0,
+      "disp_mean": 0.756899,
+      "disp_max": 2.000893
+    },
+    "states grid quadrilateral": {
+      "lattice_tiles": 180,
+      "assigned": 49,
+      "regions": 49,
+      "split": 0,
+      "disp_mean": 0.961172,
+      "disp_max": 3.174412
+    },
+    "states grid scalloped_hexagon": {
+      "lattice_tiles": 208,
+      "assigned": 49,
+      "regions": 49,
+      "split": 0,
+      "disp_mean": 0.833687,
+      "disp_max": 2.130646
+    },
+    "states mosaic hexagon": {
+      "lattice_tiles": 470,
+      "assigned": 154,
+      "regions": 49,
+      "split": 0,
+      "disp_mean": 3.918406,
+      "disp_max": 7.890858
+    },
+    "states mosaic square": {
+      "lattice_tiles": 475,
+      "assigned": 154,
+      "regions": 49,
+      "split": 0,
+      "disp_mean": 2.298487,
+      "disp_max": 4.2791
+    },
+    "states mosaic triangle": {
+      "lattice_tiles": 543,
+      "assigned": 154,
+      "regions": 49,
+      "split": 1,
+      "disp_mean": 2.399208,
+      "disp_max": 6.279842
+    },
+    "states mosaic scalloped_hexagon": {
+      "lattice_tiles": 546,
+      "assigned": 154,
+      "regions": 49,
+      "split": 0,
+      "disp_mean": 2.351068,
+      "disp_max": 4.670755
+    },
+    "districts grid hexagon": {
+      "lattice_tiles": 1125,
+      "assigned": 432,
+      "regions": 432,
+      "split": 0,
+      "disp_mean": 4.318399,
+      "disp_max": 10.20024
+    },
+    "districts grid square": {
+      "lattice_tiles": 1290,
+      "assigned": 432,
+      "regions": 432,
+      "split": 0,
+      "disp_mean": 2.625178,
+      "disp_max": 6.021225
+    },
+    "districts mosaic hexagon": {
+      "lattice_tiles": 1178,
+      "assigned": 432,
+      "regions": 432,
+      "split": 0,
+      "disp_mean": 7.29697,
+      "disp_max": 15.791563
+    },
+    "districts mosaic square": {
+      "lattice_tiles": 1230,
+      "assigned": 432,
+      "regions": 432,
+      "split": 0,
+      "disp_mean": 4.736622,
+      "disp_max": 9.908549
+    },
+    "districts mosaic triangle": {
+      "lattice_tiles": 1316,
+      "assigned": 432,
+      "regions": 432,
+      "split": 0,
+      "disp_mean": 4.666698,
+      "disp_max": 10.875261
+    },
+    "districts mosaic scalloped_hexagon": {
+      "lattice_tiles": 1358,
+      "assigned": 432,
+      "regions": 432,
+      "split": 0,
+      "disp_mean": 4.591496,
+      "disp_max": 9.447319
+    }
+  },
+  "phase_range": {
+    "hexagon": [
+      1.196326,
+      1.492991
+    ],
+    "square": [
+      0.711195,
+      0.956298
+    ],
+    "triangle": [
+      0.756899,
+      0.961318
+    ]
+  }
+}

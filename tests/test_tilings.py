@@ -13,8 +13,12 @@ Tests cover:
 
 from __future__ import annotations
 
+import dataclasses
+
 import numpy as np
 import pytest
+from shapely.affinity import scale as shapely_scale
+from shapely.affinity import translate as shapely_translate
 from shapely.geometry import Polygon
 
 from carto_flow.symbol_cartogram.tiling import (
@@ -22,7 +26,6 @@ from carto_flow.symbol_cartogram.tiling import (
     IsohedralTiling,
     QuadrilateralTiling,
     SquareTiling,
-    TileAdjacencyType,
     TileTransform,
     TilingResult,
     TriangleTiling,
@@ -160,7 +163,7 @@ class TestSquareTiling:
 
     def test_edge_adjacency_interior_4(self):
         """Interior tiles in a square grid have 4 edge-neighbors."""
-        result = SquareTiling().generate(BOUNDS, n_tiles=N_TILES, adjacency_type=TileAdjacencyType.EDGE)
+        result = SquareTiling().generate(BOUNDS, n_tiles=N_TILES, adjacency_type="edge")
         mask = _interior_mask(result, BOUNDS)
         counts = _neighbor_counts(result, mask)
         assert len(counts) > 0, "No interior tiles found"
@@ -168,7 +171,7 @@ class TestSquareTiling:
 
     def test_vertex_adjacency_interior_8(self):
         """Interior tiles in a square grid have 8 vertex-neighbors."""
-        result = SquareTiling().generate(BOUNDS, n_tiles=N_TILES, adjacency_type=TileAdjacencyType.VERTEX)
+        result = SquareTiling().generate(BOUNDS, n_tiles=N_TILES, adjacency_type="vertex")
         mask = _interior_mask(result, BOUNDS)
         counts = _neighbor_counts(result, mask)
         assert len(counts) > 0, "No interior tiles found"
@@ -214,7 +217,7 @@ class TestHexagonTiling:
 
     def test_edge_adjacency_interior_6(self):
         """Interior hexagonal tiles have 6 edge-neighbors."""
-        result = HexagonTiling().generate(BOUNDS, n_tiles=100, adjacency_type=TileAdjacencyType.EDGE)
+        result = HexagonTiling().generate(BOUNDS, n_tiles=100, adjacency_type="edge")
         mask = _interior_mask(result, BOUNDS)
         counts = _neighbor_counts(result, mask)
         assert len(counts) > 0, "No interior tiles found"
@@ -224,8 +227,35 @@ class TestHexagonTiling:
         """Hex tiling tiles are all unrotated."""
         result = HexagonTiling().generate(BOUNDS, n_tiles=N_TILES)
         for t in result.transforms:
-            assert t.rotation == 0.0
+            assert t.rotation == pytest.approx(0.0, abs=1e-9)
             assert t.flipped is False
+
+    def test_flat_top_has_vertex_at_angle_zero(self):
+        """pointy_top=False gives flat-top tiles: a vertex on the horizontal axis of the canonical tile."""
+        flat = HexagonTiling(pointy_top=False).canonical_tile
+        pointy = HexagonTiling(pointy_top=True).canonical_tile
+        flat_angles = np.degrees(np.arctan2(*np.array(flat.exterior.coords[:-1]).T[::-1])) % 60
+        pointy_angles = np.degrees(np.arctan2(*np.array(pointy.exterior.coords[:-1]).T[::-1])) % 60
+        np.testing.assert_allclose((flat_angles + 30.0) % 60.0 - 30.0, 0.0, atol=1e-9)
+        np.testing.assert_allclose(pointy_angles, 30.0, atol=1e-9)
+
+    def test_flat_top_tiles_match_the_symbol(self):
+        """The tiles of HexagonTiling(pointy_top=False) are the tiles that HexagonSymbol(pointy_top=False) fills."""
+        tiling = HexagonTiling(pointy_top=False)
+        result = tiling.generate(BOUNDS, tile_size=1.0)
+        unit = tiling.canonical_symbol().unit_polygon()
+        # the symbol has bounding radius 0.5, the tile has circumradius tile_size
+        symbol_tile = shapely_scale(unit, xfact=2.0, yfact=2.0, origin=(0, 0))
+        placed = shapely_translate(symbol_tile, *result.transforms[0].center)
+        assert placed.symmetric_difference(result.polygons[0]).area < 1e-9 * result.polygons[0].area
+
+    def test_hexagon_tile_size_is_the_circumradius(self):
+        result = HexagonTiling().generate(BOUNDS, tile_size=1.0)
+        radii = np.linalg.norm(
+            np.array(result.polygons[0].exterior.coords[:-1]) - np.array(result.transforms[0].center), axis=1
+        )
+        np.testing.assert_allclose(radii, 1.0, atol=1e-9)
+        assert result.tile_size == pytest.approx(1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -248,7 +278,7 @@ class TestTriangleTiling:
 
     def test_equilateral_edge_adjacency_interior_3(self):
         """Interior equilateral triangle tiles have 3 edge-neighbors."""
-        result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=200, adjacency_type=TileAdjacencyType.EDGE)
+        result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=200, adjacency_type="edge")
         mask = _interior_mask(result, BOUNDS)
         counts = _neighbor_counts(result, mask)
         assert len(counts) > 0, "No interior tiles found"
@@ -256,7 +286,7 @@ class TestTriangleTiling:
 
     def test_equilateral_vertex_adjacency_interior_12(self):
         """Interior equilateral triangle tiles have 12 vertex-neighbors."""
-        result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=200, adjacency_type=TileAdjacencyType.VERTEX)
+        result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=200, adjacency_type="vertex")
         mask = _interior_mask(result, BOUNDS)
         counts = _neighbor_counts(result, mask)
         assert len(counts) > 0, "No interior tiles found"
@@ -326,9 +356,7 @@ class TestQuadrilateralTiling:
 
     def test_parallelogram_edge_adjacency_interior_4(self):
         """Interior parallelogram tiles have 4 edge-neighbors."""
-        result = QuadrilateralTiling.parallelogram().generate(
-            BOUNDS, n_tiles=200, adjacency_type=TileAdjacencyType.EDGE
-        )
+        result = QuadrilateralTiling.parallelogram().generate(BOUNDS, n_tiles=200, adjacency_type="edge")
         mask = _interior_mask(result, BOUNDS)
         counts = _neighbor_counts(result, mask)
         assert len(counts) > 0, "No interior tiles found"
@@ -351,9 +379,7 @@ class TestQuadrilateralTiling:
 
     def test_trapezoid_edge_adjacency_interior_4(self):
         """Interior trapezoid tiles have 4 edge-neighbors."""
-        result = QuadrilateralTiling.trapezoid(top_ratio=0.5).generate(
-            BOUNDS, n_tiles=200, adjacency_type=TileAdjacencyType.EDGE
-        )
+        result = QuadrilateralTiling.trapezoid(top_ratio=0.5).generate(BOUNDS, n_tiles=200, adjacency_type="edge")
         mask = _interior_mask(result, BOUNDS)
         counts = _neighbor_counts(result, mask)
         assert len(counts) > 0, "No interior tiles found"
@@ -467,7 +493,7 @@ class TestTilingErrors:
 
 
 class TestIsohedralTiling:
-    """Tests for IsohedralTiling wrapping the tactile library."""
+    """Tests for IsohedralTiling, the Tiling over isotile."""
 
     def test_create_default(self):
         """Instantiate with type 1 (most general hexagon) — valid polygon."""
@@ -610,45 +636,32 @@ class TestIsohedralEdgeCurves:
         n_straight = len(t_straight.canonical_tile.exterior.coords) - 1
         assert n_curved > n_straight
 
-    def test_edge_curves_s_symmetry(self):
-        """S-type edges enforce 180° rotational symmetry."""
-        # IH4 has S edges (edge shape IDs 0, 2, 3 are S for type 4)
-        info = IsohedralTiling.type_info(4)
-        # Find an S-edge ID
-        s_ids = [i for i, name in enumerate(info["edge_shapes"][: info["num_edge_shapes"]]) if name == "S"]
-        if not s_ids:
-            pytest.skip("No S edges in type 4")
-        s_id = s_ids[0]
-        # Provide an asymmetric curve — should be symmetrized
-        curve = [(0, 0), (0.2, 0.3), (0.4, 0.1), (0.6, 0.2), (1, 0)]
-        t = IsohedralTiling(tiling_type=4, edge_curves={s_id: curve})
-        # Should not raise and should produce a valid tile
-        assert t.canonical_tile.is_valid
-        assert t.canonical_tile.area == pytest.approx(1.0, rel=1e-4)
-
-    def test_edge_curves_u_symmetry(self):
-        """U-type edges enforce mirror symmetry."""
-        # Find a type with U edges
-        for tp in IsohedralTiling.available_types():
-            info = IsohedralTiling.type_info(tp)
-            edge_names = info["edge_shapes"][: info["num_edge_shapes"]]
-            u_ids = [i for i, name in enumerate(edge_names) if name == "U"]
-            if u_ids:
+    @pytest.mark.parametrize("shape", ["S", "U"])
+    def test_symmetric_edge_curves_reach_the_canonical_tile(self, shape):
+        """Curves of S and U edges are applied to the canonical tile and keep it a simple unit-area polygon."""
+        for number in IsohedralTiling.available_types():
+            info = IsohedralTiling.type_info(number)
+            ids = [i for i, name in enumerate(info["edge_shapes"]) if name == shape]
+            if ids:
                 break
-        else:
-            pytest.skip("No type with U edges found")
-        curve = [(0, 0), (0.2, 0.2), (0.5, 0.3), (0.8, 0.1), (1, 0)]
-        t = IsohedralTiling(tiling_type=tp, edge_curves={u_ids[0]: curve})
-        assert t.canonical_tile.is_valid
+        curve = [(0, 0), (0.2, 0.1), (0.4, 0.05), (0.6, -0.05), (0.8, -0.1), (1, 0)]
+        curved = IsohedralTiling(tiling_type=number, edge_curves={ids[0]: curve})
+        straight = IsohedralTiling(tiling_type=number)
+        assert curved.canonical_tile.is_valid
+        assert curved.canonical_tile.area == pytest.approx(1.0, rel=1e-4)
+        assert len(curved.canonical_tile.exterior.coords) > len(straight.canonical_tile.exterior.coords)
 
-    def test_edge_curves_i_ignored(self):
-        """I-type edges ignore custom curves (must remain straight)."""
-        # IH93 has all I edges
-        curve = [(0, 0), (0.5, 0.5), (1, 0)]
-        t = IsohedralTiling(tiling_type=93, edge_curves={0: curve})
-        # Should still produce a simple triangle (3 vertices)
-        n_verts = len(t.canonical_tile.exterior.coords) - 1
-        assert n_verts == 3
+    def test_edge_curve_on_a_straight_edge_raises(self):
+        """A curve for an I edge cannot be applied and is an error."""
+        # IH93 has only I edges
+        with pytest.raises(ValueError, match="straight"):
+            IsohedralTiling(tiling_type=93, edge_curves={0: [(0, 0), (0.5, 0.5), (1, 0)]})
+
+    def test_self_intersecting_edge_curves_raise(self):
+        """Edge curves that make the prototile self-intersect are rejected."""
+        curve = [(0, 0), (0.25, 0.5), (0.75, -0.5), (1, 0)]
+        with pytest.raises(ValueError, match="invalid prototile"):
+            IsohedralTiling(tiling_type=83, edge_curves={0: curve})
 
     def test_edge_curve_tessellation(self):
         """Tiles with custom J-edge curves should still tessellate."""
@@ -663,8 +676,8 @@ class TestIsohedralEdgeCurves:
                 assert inter.area < result.polygons[i].area * 0.01
 
     def test_edge_curves_ih83(self):
-        """IH83 with custom J-edge curves should generate tiles (scale fix)."""
-        curve = [(0, 0), (0.25, 0.5), (0.75, -0.5), (1, 0)]
+        """IH83 with a large custom J-edge curve generates tiles of the same size as without it."""
+        curve = [(0, 0), (0.25, 0.3), (0.75, 0.3), (1, 0)]
         t = IsohedralTiling(tiling_type=83, edge_curves={0: curve})
         result = t.generate(BOUNDS, n_tiles=30)
         assert result.n_tiles > 0
@@ -674,84 +687,64 @@ class TestIsohedralEdgeCurves:
             assert poly.area > 0
 
 
-class TestIsohedralTypeInfo:
-    """Tests for enhanced type_info, describe, and plot_prototile."""
+class TestIsohedralDelegates:
+    """The type metadata, presets and serialization of IsohedralTiling are isotile's."""
 
-    def test_type_info_edges(self):
-        """type_info returns edge detail dicts."""
-        info = IsohedralTiling.type_info(83)
-        assert "edges" in info
-        assert len(info["edges"]) == info["num_vertices"]
-        for e in info["edges"]:
-            assert "edge_index" in e
-            assert "shape_id" in e
-            assert "shape_type" in e
-            assert "description" in e
-            assert "customizable" in e
-        # IH83 has J and I edges
-        types = {e["shape_type"] for e in info["edges"]}
-        assert "J" in types
-        assert "I" in types
+    def test_type_info_on_class_and_instance(self):
+        import isotile
 
-    def test_type_info_has_reflections(self):
-        """type_info detects reflection aspects."""
-        info24 = IsohedralTiling.type_info(24)
-        assert info24["has_reflections"] is True
-        info1 = IsohedralTiling.type_info(1)
-        assert info1["has_reflections"] is False
+        info = isotile.get_type(83).info()
+        assert IsohedralTiling.type_info(83) == info
+        assert IsohedralTiling(83).type_info() == info
+        assert "IH83" in IsohedralTiling.describe(83)
+        assert IsohedralTiling(83).describe() == IsohedralTiling.describe(83)
 
-    def test_type_info_customizable_ids(self):
-        """type_info lists customizable shape IDs."""
-        info = IsohedralTiling.type_info(83)
-        assert "customizable_shape_ids" in info
-        assert 0 in info["customizable_shape_ids"]
-        # Shape ID for I-edge should not be customizable
-        i_ids = {e["shape_id"] for e in info["edges"] if not e["customizable"]}
-        for sid in i_ids:
-            assert sid not in info["customizable_shape_ids"]
+    def test_type_info_needs_a_number_on_the_class(self):
+        with pytest.raises(TypeError, match="type_info"):
+            IsohedralTiling.type_info()
+        with pytest.raises(TypeError, match="describe"):
+            IsohedralTiling.describe()
 
-    def test_describe_output(self):
-        """describe() returns a multi-line string with key info."""
-        text = IsohedralTiling.describe(83)
-        assert "IH83" in text
-        assert "Parameters:" in text
-        assert "Edges:" in text
-        assert "Free curve" in text
-        assert "Straight" in text
+    def test_find_types(self):
+        import isotile
 
-    def test_describe_shows_parameter_effects(self):
-        """describe() includes per-parameter vertex movement info."""
-        text = IsohedralTiling.describe(84)
-        assert "moves V2 horizontally" in text
-        assert "moves V2 vertically" in text
+        assert IsohedralTiling.find_types(num_vertices=3) == isotile.find_types(num_vertices=3)
+        assert IsohedralTiling.find_types(num_vertices=3, all_edges="J") == []
+        assert IsohedralTiling.find_types(num_vertices=6, max_parameters=0) == [10, 11, 18, 20]
 
-    def test_type_info_parameters(self):
-        """type_info returns parameter descriptions."""
-        info = IsohedralTiling.type_info(84)
-        assert "parameters" in info
-        assert len(info["parameters"]) == 2
-        p0 = info["parameters"][0]
-        assert "index" in p0
-        assert "default" in p0
-        assert "affected_vertices" in p0
-        assert "description" in p0
-        # Param 0 moves V2 horizontally
-        assert any(a["vertex"] == 2 for a in p0["affected_vertices"])
+    def test_list_presets(self):
+        import isotile
 
-    def test_type_info_parameters_zero_params(self):
-        """type_info returns empty parameters list for fixed types."""
-        info = IsohedralTiling.type_info(93)
-        assert info["parameters"] == []
+        assert IsohedralTiling.list_presets() == isotile.list_presets()
+        assert len(IsohedralTiling.list_presets()) == 15
 
-    def test_self_intersection_warning(self):
-        """Self-intersecting edge curves trigger a UserWarning."""
-        import warnings
+    def test_dict_and_file_round_trip(self, tmp_path):
+        original = IsohedralTiling.from_preset("scalloped_hexagon")
+        for restored in (
+            IsohedralTiling.from_dict(original.to_dict()),
+            _saved_and_loaded(original, tmp_path / "t.json"),
+        ):
+            assert isinstance(restored, IsohedralTiling)
+            assert restored.isotile.to_dict() == original.isotile.to_dict()
+            np.testing.assert_allclose(
+                np.array(restored.canonical_tile.exterior.coords), np.array(original.canonical_tile.exterior.coords)
+            )
 
-        curve = [(0, 0), (0.25, 0.5), (0.75, -0.5), (1, 0)]
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            IsohedralTiling(tiling_type=83, edge_curves={0: curve})
-        assert any("self-intersecting" in str(x.message) for x in w)
+    def test_isotile_property(self):
+        import isotile
+
+        tiling = IsohedralTiling(4)
+        assert isinstance(tiling.isotile, isotile.IsohedralTiling)
+        assert tiling.isotile.type.number == 4
+
+
+def _saved_and_loaded(tiling: IsohedralTiling, path) -> IsohedralTiling:
+    tiling.save(path)
+    return IsohedralTiling.load(path)
+
+
+class TestIsohedralPlotPrototile:
+    """``plot_prototile`` draws with isotile."""
 
     @pytest.mark.parametrize("tiling_type", [1, 24, 83])
     def test_plot_prototile_returns_axes(self, tiling_type):
@@ -780,92 +773,8 @@ class TestIsohedralTypeInfo:
         plt.close("all")
 
 
-class TestIsohedralFindTypes:
-    """Tests for find_types() search method."""
-
-    def test_find_by_vertices(self):
-        """Filter by number of vertices."""
-        tri = IsohedralTiling.find_types(num_vertices=3)
-        assert all(IsohedralTiling.type_info(t)["num_vertices"] == 3 for t in tri)
-        assert len(tri) > 0
-
-    def test_find_all_j_edges(self):
-        """Filter for types with all J edges."""
-        types = IsohedralTiling.find_types(all_edges="J")
-        for t in types:
-            info = IsohedralTiling.type_info(t)
-            assert all(e["shape_type"] == "J" for e in info["edges"])
-
-    def test_find_no_reflections(self):
-        """Filter for types without reflections."""
-        types = IsohedralTiling.find_types(has_reflections=False)
-        for t in types[:5]:  # spot check
-            info = IsohedralTiling.type_info(t)
-            assert info["has_reflections"] is False
-
-    def test_find_max_parameters(self):
-        """Filter by maximum parameters."""
-        types = IsohedralTiling.find_types(max_parameters=0)
-        for t in types:
-            info = IsohedralTiling.type_info(t)
-            assert info["num_parameters"] == 0
-
-    def test_find_combined_filters(self):
-        """Multiple filters are ANDed together."""
-        types = IsohedralTiling.find_types(
-            num_vertices=4,
-            all_edges="J",
-            has_reflections=False,
-        )
-        for t in types:
-            info = IsohedralTiling.type_info(t)
-            assert info["num_vertices"] == 4
-            assert all(e["shape_type"] == "J" for e in info["edges"])
-            assert info["has_reflections"] is False
-
-    def test_find_no_match_returns_empty(self):
-        """No match returns empty list."""
-        types = IsohedralTiling.find_types(num_vertices=3, all_edges="J")
-        assert types == []
-
-
 class TestIsohedralPresets:
     """Tests for preset tilings."""
-
-    def test_list_presets(self):
-        """list_presets returns a dict of names to descriptions."""
-        presets = IsohedralTiling.list_presets()
-        assert isinstance(presets, dict)
-        assert len(presets) >= 5
-        for name, desc in presets.items():
-            assert isinstance(name, str)
-            assert isinstance(desc, str)
-
-    def test_from_preset_straight(self):
-        """from_preset creates a valid tiling (straight-edge preset)."""
-        t = IsohedralTiling.from_preset("regular_hexagon")
-        assert t.canonical_tile.is_valid
-        result = t.generate(BOUNDS, n_tiles=20)
-        assert result.n_tiles > 0
-
-    def test_from_preset_curved(self):
-        """from_preset creates a valid tiling (curved-edge preset)."""
-        t = IsohedralTiling.from_preset("scalloped_hexagon")
-        assert t.canonical_tile.is_valid
-        result = t.generate(BOUNDS, n_tiles=20)
-        assert result.n_tiles > 0
-        # Curved tiles should have more vertices than straight
-        t_straight = IsohedralTiling.from_preset("regular_hexagon")
-        n_curved = len(t.canonical_tile.exterior.coords) - 1
-        n_straight = len(t_straight.canonical_tile.exterior.coords) - 1
-        assert n_curved > n_straight
-
-    def test_from_preset_with_params(self):
-        """from_preset applies non-default parameters."""
-        t = IsohedralTiling.from_preset("regular_hexagon")
-        assert t.canonical_tile.is_valid
-        result = t.generate(BOUNDS, n_tiles=20)
-        assert result.n_tiles > 0
 
     def test_from_preset_with_overrides(self):
         """from_preset accepts edge_curves override."""
@@ -878,7 +787,7 @@ class TestIsohedralPresets:
 
     def test_from_preset_invalid(self):
         """from_preset raises for unknown preset."""
-        with pytest.raises(ValueError, match="Unknown preset"):
+        with pytest.raises(ValueError, match="unknown preset"):
             IsohedralTiling.from_preset("nonexistent")
 
     def test_resolve_tiling_preset(self):
@@ -886,9 +795,245 @@ class TestIsohedralPresets:
         t = resolve_tiling("regular_hexagon")
         assert isinstance(t, IsohedralTiling)
 
-    @pytest.mark.parametrize("name", list(IsohedralTiling._PRESETS.keys()))
+    @pytest.mark.parametrize("name", list(IsohedralTiling.list_presets()))
     def test_all_presets_generate(self, name):
         """Every preset generates tiles without error."""
         t = IsohedralTiling.from_preset(name)
         result = t.generate(BOUNDS, n_tiles=15)
         assert result.n_tiles > 0
+
+
+# ---------------------------------------------------------------------------
+# Covering a region
+# ---------------------------------------------------------------------------
+
+FAMILIES = [
+    pytest.param(SquareTiling, 0.2, id="square"),
+    pytest.param(HexagonTiling, 0.12, id="hexagon"),
+    pytest.param(TriangleTiling.equilateral, 0.2, id="triangle"),
+    pytest.param(QuadrilateralTiling.parallelogram, 0.2, id="quadrilateral"),
+]
+
+
+def _sample_hits(result: TilingResult, region, n: int = 2000, seed: int = 5) -> np.ndarray:
+    """Number of tiles that contain each of ``n`` random points of the region."""
+    import shapely
+    from shapely import STRtree
+
+    minx, miny, maxx, maxy = region
+    rng = np.random.default_rng(seed)
+    points = shapely.points(np.column_stack([rng.uniform(minx, maxx, n), rng.uniform(miny, maxy, n)]))
+    hit = STRtree(result.polygons).query(points, predicate="within")
+    return np.bincount(hit[0], minlength=n)
+
+
+class TestCoverage:
+    """The tiles cover the region exactly once, wherever the region is."""
+
+    @pytest.mark.parametrize("center", [0.0, 10.0, 1e3, 1e6])
+    @pytest.mark.parametrize(("factory", "size"), FAMILIES)
+    def test_region_far_from_the_origin(self, factory, size, center):
+        bounds = (center - 1.0, center - 1.0, center + 1.0, center + 1.0)
+        result = factory().generate(bounds, tile_size=size, margin=0.0)
+        assert result.n_tiles * result.canonical_tile.area >= 4.0 * (1 - 1e-6)
+        assert (_sample_hits(result, bounds) == 1).all()
+
+    @pytest.mark.parametrize("seed", range(10))
+    @pytest.mark.parametrize("sides", [3, 4])
+    def test_random_shapes_leave_no_hole(self, sides, seed):
+        rng = np.random.default_rng(seed)
+        while True:
+            points = rng.uniform(-1.0, 1.0, (sides, 2))
+            center = points.mean(axis=0)
+            order = np.argsort(np.arctan2(*(points - center).T[::-1]))  # a star-shaped polygon is simple
+            shape = Polygon(points[order])
+            if shape.is_valid and shape.area > 0.3:
+                break
+        cls = TriangleTiling if sides == 3 else QuadrilateralTiling
+        bounds = (-1.0, -1.0, 1.0, 1.0)
+        result = cls(shape).generate(bounds, tile_size=0.25, margin=0.0)
+        assert (_sample_hits(result, bounds) == 1).all()
+
+    @pytest.mark.parametrize(("factory", "size"), FAMILIES)
+    def test_tiles_overlap_the_region(self, factory, size):
+        from shapely.geometry import box
+
+        bounds = (0.0, 0.0, 2.0, 1.0)
+        result = factory().generate(bounds, tile_size=size, margin=0.0)
+        region = box(*bounds)
+        assert all(p.intersection(region).area > 1e-6 * p.area for p in result.polygons)
+
+    @pytest.mark.parametrize(("factory", "size"), FAMILIES)
+    def test_lattice_is_kept_when_the_bounds_expand_symmetrically(self, factory, size):
+        """Every tile of a region is a tile of the region expanded by the same amount on all sides."""
+        from scipy.spatial import cKDTree
+
+        tiling = factory()
+        bounds = (-1.0, -1.0, 1.0, 1.0)
+        inner = tiling.generate(bounds, tile_size=size, margin=0.0)
+        buffer = 1.5 * size
+        outer = tiling.generate(
+            (bounds[0] - buffer, bounds[1] - buffer, bounds[2] + buffer, bounds[3] + buffer),
+            tile_size=size,
+            margin=0.0,
+        )
+        distance, _ = cKDTree(outer.centers).query(inner.centers)
+        assert (distance < 1e-9).all()
+
+    @pytest.mark.parametrize(("factory", "size"), FAMILIES)
+    def test_n_tiles_sets_the_tile_size(self, factory, size):
+        result = factory().generate((0.0, 0.0, 4.0, 3.0), n_tiles=100, margin=0.0)
+        assert result.polygons[0].area == pytest.approx(12.0 / 100, rel=1e-9)
+        assert result.n_tiles >= 100
+
+    def test_margin_expands_the_region(self):
+        plain = SquareTiling().generate((0.0, 0.0, 4.0, 4.0), tile_size=1.0, margin=0.0)
+        padded = SquareTiling().generate((0.0, 0.0, 4.0, 4.0), tile_size=1.0, margin=0.5)
+        assert plain.n_tiles == 16
+        assert padded.n_tiles == 64
+
+    def test_invalid_arguments_raise(self):
+        with pytest.raises(ValueError):
+            SquareTiling().generate(BOUNDS, tile_size=-1.0)
+        with pytest.raises(ValueError):
+            SquareTiling().generate(BOUNDS, n_tiles=0)
+        with pytest.raises(ValueError, match="margin"):
+            SquareTiling().generate(BOUNDS, n_tiles=10, margin=-0.5)
+        with pytest.raises(ValueError):
+            SquareTiling().generate((1.0, 0.0, 1.0, 2.0), n_tiles=10)
+
+    def test_self_intersecting_quadrilateral_raises(self):
+        with pytest.raises(ValueError):
+            QuadrilateralTiling(Polygon([(0, 0), (1, 1), (1, 0), (0, 1)]))
+
+
+# ---------------------------------------------------------------------------
+# Adjacency kinds and the isotile tile set
+# ---------------------------------------------------------------------------
+
+
+class TestAdjacencyKinds:
+    def test_neighbor_counts_of_squares(self):
+        counts = {}
+        for kind in ("edge", "vertex", "vertex-only"):
+            result = SquareTiling().generate(BOUNDS, n_tiles=100, adjacency_type=kind)
+            mask = _interior_mask(result, BOUNDS)
+            counts[kind] = set(np.unique(_neighbor_counts(result, mask)).tolist())
+        assert counts == {"edge": {4}, "vertex": {8}, "vertex-only": {4}}
+
+    def test_vertex_adjacency_field_does_not_depend_on_the_kind(self):
+        tiling = TriangleTiling.equilateral()
+        reference = tiling.generate(BOUNDS, n_tiles=100).vertex_adjacency
+        assert reference.any()
+        for kind in ("edge", "vertex", "vertex-only"):
+            np.testing.assert_array_equal(
+                tiling.generate(BOUNDS, n_tiles=100, adjacency_type=kind).vertex_adjacency, reference
+            )
+
+    def test_vertex_only_kind_equals_the_vertex_adjacency_field(self):
+        result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=100, adjacency_type="vertex-only")
+        np.testing.assert_array_equal(result.adjacency, result.vertex_adjacency)
+
+    def test_unknown_kind_raises(self):
+        with pytest.raises(ValueError, match="kind"):
+            SquareTiling().generate(BOUNDS, n_tiles=10, adjacency_type="corner")
+
+    def test_hexagons_have_no_vertex_only_neighbors(self):
+        result = HexagonTiling().generate(BOUNDS, n_tiles=100)
+        assert not result.vertex_adjacency.any()
+
+
+class TestTileSet:
+    def test_tile_set_describes_the_tiles(self):
+        result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=50)
+        tile_set = result.tile_set
+        assert tile_set is not None
+        assert len(tile_set) == result.n_tiles
+        assert tile_set.tiling.type.number == 84
+        assert set(tile_set.aspect.tolist()) == {0, 1}
+        np.testing.assert_allclose(tile_set.polygons()[3].exterior.coords, result.polygons[3].exterior.coords)
+
+    def test_rotate_drops_the_tile_set(self):
+        result = SquareTiling().generate(BOUNDS, n_tiles=20)
+        assert result.rotate(30.0).tile_set is None
+
+    def test_tile_set_is_optional(self):
+        result = TilingResult(
+            polygons=[Polygon([(0, 0), (1, 0), (1, 1)])],
+            transforms=[TileTransform(center=(0, 0))],
+            adjacency=np.zeros((1, 1), dtype=bool),
+            vertex_adjacency=None,
+            tile_size=1.0,
+            inscribed_radius=0.3,
+            canonical_tile=Polygon([(0, 0), (1, 0), (1, 1)]),
+        )
+        assert result.tile_set is None
+
+    def test_isohedral_tile_set_keeps_the_cells(self):
+        result = IsohedralTiling(2).generate(BOUNDS, n_tiles=50)
+        assert result.tile_set.cell.shape == (result.n_tiles, 2)
+        assert result.n_base_vertices == 6
+
+
+class TestSerialization:
+    def test_files_of_the_former_format_load(self):
+        data = {
+            "version": "1.0",
+            "tiling_type": 4,
+            "parameters": IsohedralTiling.type_info(4)["default_parameters"],
+            "edge_curves": {},
+        }
+        tiling = IsohedralTiling.from_dict(data)
+        assert tiling.isotile.type.number == 4
+
+    def test_format_1_1_is_written(self):
+        written = IsohedralTiling.from_preset("wavy_square").to_dict()
+        assert written["version"] == "1.1"
+        assert set(written["edge_curve_modes"]) == set(written["edge_curves"])
+        assert "edge_curves" not in IsohedralTiling(4).to_dict()
+
+
+class TestPlotColorBy:
+    @pytest.fixture(autouse=True)
+    def _agg(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        yield
+        import matplotlib.pyplot as plt
+
+        plt.close("all")
+
+    def test_aspect_colors_by_the_aspect_index(self):
+        import matplotlib.pyplot as plt
+
+        result = IsohedralTiling(2).generate(BOUNDS, n_tiles=60)
+        plot = result.plot(color_by="aspect", cmap="hsv")
+        n_aspects = result.tile_set.tiling.type.n_aspects
+        expected = np.array([plt.get_cmap("hsv")(int(a) / n_aspects) for a in result.tile_set.aspect])
+        np.testing.assert_allclose(plot.tiles.get_facecolor()[:, :3], expected[:, :3], atol=1e-2)
+        assert len({tuple(c) for c in plot.tiles.get_facecolor().round(3)}) == n_aspects
+
+    def test_single_aspect_tiling_has_one_color(self):
+        plot = SquareTiling().generate(BOUNDS, n_tiles=16).plot(color_by="aspect")
+        assert len({tuple(c) for c in plot.tiles.get_facecolor().round(3)}) == 1
+
+    def test_rotation_colors_by_the_rotation_angle(self):
+        import matplotlib.pyplot as plt
+
+        result = TriangleTiling.equilateral().generate(BOUNDS, n_tiles=40)
+        plot = result.plot(color_by="rotation", cmap="hsv")
+        expected = np.array([plt.get_cmap("hsv")((t.rotation % 360) / 360.0) for t in result.transforms])
+        np.testing.assert_allclose(plot.tiles.get_facecolor()[:, :3], expected[:, :3], atol=1e-2)
+
+    @pytest.mark.parametrize("how", ["rotate", "no_tile_set"])
+    def test_aspect_without_a_tile_set_raises(self, how):
+        result = SquareTiling().generate(BOUNDS, n_tiles=16)
+        result = result.rotate(30.0) if how == "rotate" else dataclasses.replace(result, tile_set=None)
+        with pytest.raises(ValueError, match="tile set"):
+            result.plot(color_by="aspect")
+        assert result.plot(color_by="rotation") is not None
+
+    def test_unknown_mode_lists_the_modes(self):
+        with pytest.raises(ValueError, match="rotation"):
+            SquareTiling().generate(BOUNDS, n_tiles=16).plot(color_by="spin")

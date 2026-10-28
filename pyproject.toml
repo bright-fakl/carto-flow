@@ -18,6 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "geopandas>=1.0.1",
+    "isotile>=0.1.0.dev0",
     "joblib>=1.5.2",
     "matplotlib>=3.9.4",
     "numba>=0.60.0",
@@ -27,10 +28,12 @@ dependencies = [
     "pyfftw>=0.14.0",
     "scipy>=1.13.1",
     "shapely>=2.1.0",
-    "tactile>=0.1.0",
     "tqdm>=4.67.1",
     "typing_extensions>=4.0.0",
 ]
+
+[tool.uv.sources]
+isotile = { git = "https://github.com/bright-fakl/isotile", rev = "392484c254d44af317a24dcea69bd8dcf44a83fc" }
 
 [project.optional-dependencies]
 data = ["censusdis>=1.2.4"]
@@ -100,7 +103,6 @@ module = [
     "geopandas.*",
     "pandas.*",
     "tqdm.*",
-    "tactile.*",
 ]
 ignore_missing_imports = true
 

@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "geopandas>=1.0.1",
-    "isotile>=0.1.0.dev0",
+    "isotile>=0.1.0",
     "joblib>=1.5.2",
     "matplotlib>=3.9.4",
     "numba>=0.60.0",
@@ -31,9 +31,6 @@ dependencies = [
     "tqdm>=4.67.1",
     "typing_extensions>=4.0.0",
 ]
-
-[tool.uv.sources]
-isotile = { git = "https://github.com/bright-fakl/isotile", rev = "a4625b7a28a9eb52f2403909a44f61a1447ee2e5" }
 
 [project.optional-dependencies]
 data = ["censusdis>=1.2.4"]

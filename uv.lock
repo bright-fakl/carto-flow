@@ -275,7 +275,7 @@ dev = [
 requires-dist = [
     { name = "censusdis", marker = "extra == 'data'", specifier = ">=1.2.4" },
     { name = "geopandas", specifier = ">=1.0.1" },
-    { name = "isotile", git = "https://github.com/bright-fakl/isotile?rev=a4625b7a28a9eb52f2403909a44f61a1447ee2e5" },
+    { name = "isotile", specifier = ">=0.1.0" },
     { name = "joblib", specifier = ">=1.5.2" },
     { name = "matplotlib", specifier = ">=3.9.4" },
     { name = "numba", specifier = ">=0.60.0" },
@@ -1406,13 +1406,17 @@ wheels = [
 
 [[package]]
 name = "isotile"
-version = "0.1.0.dev0"
-source = { git = "https://github.com/bright-fakl/isotile?rev=a4625b7a28a9eb52f2403909a44f61a1447ee2e5#a4625b7a28a9eb52f2403909a44f61a1447ee2e5" }
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "numpy", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.16.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/40/70/234bf61dcfa6e4a46a64ed10cf5c044788742d91566fb881202109c25763/isotile-0.1.0.tar.gz", hash = "sha256:d0a833eaac022104a554ca85affbefefaa729bcfb332f25fc8690af5e8878c7a", size = 123488 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ff/76/eb0d6cfc199f8963f2dd71fe90b38670bef35803517aedec43698896093f/isotile-0.1.0-py3-none-any.whl", hash = "sha256:7584f7f98213f59f98067a49bd715a838e955055437bea2a5db878c1709976e2", size = 88846 },
 ]
 
 [[package]]

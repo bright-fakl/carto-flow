@@ -500,16 +500,6 @@ class CartogramWorkflow:
         return self._results[-1]
 
     @property
-    def latest(self) -> Cartogram:
-        """The most recent result.
-
-        .. deprecated:: 2.1
-            Use :attr:`last`.
-        """
-        warnings.warn("CartogramWorkflow.latest is deprecated; use last", DeprecationWarning, stacklevel=2)
-        return self.last
-
-    @property
     def results(self) -> list[Cartogram]:
         """All results (copy of list)."""
         return self._results.copy()

@@ -22,7 +22,6 @@ Examples
 >>> gdf_result = cartogram.to_geodataframe()
 """
 
-import warnings
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -177,20 +176,6 @@ class Cartogram:
         """Iteration of :attr:`best`, or None if no snapshots exist."""
         best = self.best
         return best.iteration if best is not None else None
-
-    @property
-    def latest(self) -> Optional["CartogramSnapshot"]:
-        """Snapshot of the returned state.
-
-        .. deprecated:: 2.1
-            Use :attr:`best`, or :attr:`last` for the last stored snapshot.
-        """
-        warnings.warn(
-            "Cartogram.latest is deprecated; use best (the returned state) or last (the last stored snapshot)",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.best
 
     def lift_coordinates(self, coords: Any, state: int | None = None) -> np.ndarray:
         """Lift the vertex coordinates of an earlier state to the vertices of the returned geometries.

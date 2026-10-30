@@ -13,7 +13,6 @@ History
 
 from __future__ import annotations
 
-import warnings
 from abc import ABC
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -140,19 +139,6 @@ class History(Generic[S]):
         if best is None:
             return []
         return [s for s in self.snapshots if s.iteration <= best.iteration]
-
-    def latest(self) -> S | None:
-        """Return the last snapshot, or None if empty.
-
-        .. deprecated:: 2.1
-            Use :meth:`last`, or :meth:`best` for the result of the run.
-        """
-        warnings.warn(
-            "History.latest() is deprecated; use last(), or best() for the result of the run",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.last()
 
     def variable_summary(self, variable_name: str) -> dict[str, Any]:
         """Return summary statistics for *variable_name* across all snapshots."""

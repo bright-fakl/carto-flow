@@ -12,8 +12,6 @@ create_flow_cartogram
     Primary interface for cartogram generation from GeoDataFrames, at one resolution or on a ladder.
 morph_geometries
     Low-level interface working directly with Shapely geometries.
-morph_gdf, multiresolution_morph
-    Deprecated; use create_flow_cartogram.
 
 Classes
 -------
@@ -157,7 +155,7 @@ from .anisotropy import (
 )
 from .anisotropy import Smooth as VelocitySmooth
 from .anisotropy import preview_modulator as preview_velocity_modulator
-from .api import create_flow_cartogram, morph_gdf, multiresolution_morph
+from .api import create_flow_cartogram
 from .cartogram import Cartogram
 from .density import DensityBorderExtension, DensityModulator, DensityPipeline
 from .density import Smooth as DensitySmooth
@@ -235,9 +233,7 @@ __all__ = [
     "grid",
     "history",
     "metrics",
-    "morph_gdf",
     "morph_geometries",
-    "multiresolution_morph",
     "preview_density_modulator",
     "preview_velocity_modulator",
     "serialization",

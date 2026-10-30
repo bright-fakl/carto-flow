@@ -8,8 +8,6 @@ Functions
 ---------
 create_flow_cartogram
     Generate a flow cartogram from a GeoDataFrame, at one resolution or on a ladder of resolutions.
-morph_gdf, multiresolution_morph
-    Deprecated; use create_flow_cartogram.
 
 Examples
 --------
@@ -25,7 +23,6 @@ Examples
 >>> print(f"Status: {cartogram.status}")
 """
 
-import warnings
 from typing import Any, Literal
 
 from .cartogram import Cartogram
@@ -33,8 +30,6 @@ from .options import MorphOptions
 
 __all__ = [
     "create_flow_cartogram",
-    "morph_gdf",
-    "multiresolution_morph",
 ]
 
 
@@ -117,115 +112,3 @@ def create_flow_cartogram(
         gdf, column, landmarks, displacement_coords, options, density_per=density_per, validate=validate
     )
     return workflow.morph()
-
-
-def morph_gdf(
-    gdf: Any,
-    column: str,
-    landmarks: Any = None,
-    options: MorphOptions | None = None,
-    displacement_coords: Any = None,
-    density_per: Literal["m2", "km2", "ha", "acre", "sqft", "sqmi"] | None = None,
-) -> Cartogram:
-    """
-    Generate cartogram from GeoDataFrame.
-
-    .. deprecated:: 2.1
-        Use :func:`create_flow_cartogram`, which takes the same arguments after ``column`` as keywords.
-    """
-    warnings.warn(
-        "morph_gdf is deprecated and will be removed in the next major release; use create_flow_cartogram.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return create_flow_cartogram(
-        gdf,
-        column,
-        landmarks=landmarks,
-        options=options,
-        displacement_coords=displacement_coords,
-        density_per=density_per,
-    )
-
-
-def multiresolution_morph(
-    gdf: Any,
-    column: str,
-    landmarks: Any = None,
-    min_resolution: int | Literal["auto"] = 128,
-    levels: int | Literal["auto"] = 3,
-    margin: float = 0.5,
-    square: bool = True,
-    options: MorphOptions | list[MorphOptions] | None = None,
-    displacement_coords: Any = None,
-    density_per: Literal["m2", "km2", "ha", "acre", "sqft", "sqmi"] | None = None,
-) -> Cartogram:
-    """
-    Multi-resolution cartogram generation.
-
-    .. deprecated:: 2.1
-        Use :func:`create_flow_cartogram` with ``MorphOptions(grid=LadderSpec(...))``.
-        Per-level option lists are available through ``CartogramWorkflow.morph_multiresolution``.
-
-    Progressively refines the cartogram at increasing grid resolutions
-    for better convergence. Returns the final Cartogram. For access to
-    intermediate levels, use CartogramWorkflow directly.
-
-    Parameters
-    ----------
-    gdf : GeoDataFrame
-        Input GeoDataFrame.
-    column : str
-        Data column name.
-    landmarks : GeoDataFrame, optional
-        Optional landmarks.
-    min_resolution : int or "auto", default=128
-        Resolution of the coarsest (first) grid level. Each subsequent
-        level doubles this, up to ``min_resolution * 2^(levels-1)``.
-        ``"auto"`` takes the smallest power of two from 64 to 512 at which
-        the smallest target region covers at least 2.5 cells (512 if none does).
-    levels : int or "auto", default=3
-        Number of resolution levels. ``"auto"`` doubles up to a finest grid
-        of 2048; the morph ends at the first level that converges.
-    margin : float, default=0.5
-        Grid margin around data bounds.
-    square : bool, default=True
-        Whether to create square grids.
-    options : MorphOptions or list[MorphOptions], optional
-        Options per level.
-    displacement_coords : array-like, optional
-        Displacement field coordinates.
-    density_per : {'m2', 'km2', 'ha', 'acre', 'sqft', 'sqmi'}, optional
-        Unit for density calculations. If specified, automatically computes
-        the appropriate area_scale based on the GeoDataFrame's CRS units.
-
-    Returns
-    -------
-    Cartogram
-        Final cartogram after all resolution levels.
-
-    Examples
-    --------
-    >>> cartogram = multiresolution_morph(gdf, 'population', levels=3)
-    >>> cartogram.plot()
-    >>> print(f"Converged: {cartogram.status}")
-    >>>
-    >>> # With density in people per km²
-    >>> cartogram = multiresolution_morph(gdf, 'population', density_per='km2')
-    """
-    from .workflow import CartogramWorkflow
-
-    warnings.warn(
-        "multiresolution_morph is deprecated and will be removed in the next major release; use "
-        "create_flow_cartogram with MorphOptions(grid=LadderSpec(...)).",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    workflow = CartogramWorkflow(gdf, column, landmarks, displacement_coords, options, density_per=density_per)  # type: ignore[arg-type]
-    return workflow.morph_multiresolution(
-        min_resolution=min_resolution,
-        levels=levels,
-        margin=margin,
-        square=square,
-        options=options,
-    )

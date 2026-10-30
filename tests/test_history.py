@@ -680,8 +680,3 @@ class TestBestAndLast:
         history = self._history()
         history.best_iteration = 4
         assert history.best() is history.last()
-
-    def test_latest_is_deprecated(self):
-        history = self._history()
-        with pytest.warns(DeprecationWarning, match="last"):
-            assert history.latest() is history.last()

@@ -12,9 +12,8 @@ Shape Morphing (Cartogram Generation)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Core cartogram algorithms for deforming polygons based on data values:
 
-- create_flow_cartogram: GeoDataFrame-based flow cartogram generation interface (morph_gdf is deprecated)
+- create_flow_cartogram: GeoDataFrame-based flow cartogram generation interface
 - morph_geometries: Low-level interface working with shapely geometries
-- multiresolution_morph: Deprecated; use create_flow_cartogram with a LadderSpec
 - Cartogram: Result class with morphed geometries and rich interface
 - CartogramWorkflow: Workflow class for iterative refinement
 - MorphOptions: Configuration options for morphing algorithms
@@ -90,9 +89,7 @@ from .flow_cartogram import (
     displacement,
     grid,
     history,
-    morph_gdf,
     morph_geometries,
-    multiresolution_morph,
     velocity,
 )
 from .geo_utils import (
@@ -167,9 +164,7 @@ __all__ = [
     "grid",
     "history",
     # Cartogram functions
-    "morph_gdf",
     "morph_geometries",
-    "multiresolution_morph",
     # Shape splitting
     "partition_geometries",
     "reconstruct_geometries",

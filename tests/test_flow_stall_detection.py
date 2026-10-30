@@ -387,10 +387,6 @@ class TestBestAndLast:
         assert list(gdf.geometry) == list(result.best.geometry)
         assert list(result.get_geometry()) == list(result.best.geometry)
 
-    def test_latest_is_deprecated_and_means_best(self, result):
-        with pytest.warns(DeprecationWarning, match="best"):
-            assert result.latest is result.best
-
     def test_converged_run_has_the_same_best_and_last(self, states):
         result = create_flow_cartogram(states, "Population", options=MorphOptions(show_progress=False))
         assert result.best is result.last
@@ -404,12 +400,10 @@ class TestBestAndLast:
         assert internals.best().iteration == internals.best_iteration
         assert all(s.iteration <= result.best_iteration for s in internals.through_best())
 
-    def test_workflow_last_replaces_latest(self, states):
+    def test_workflow_last_is_the_most_recent_result(self, states):
         workflow = CartogramWorkflow(states, "Population", options=MorphOptions(show_progress=False))
         workflow.morph()
         assert workflow.last is workflow[-1]
-        with pytest.warns(DeprecationWarning, match="last"):
-            assert workflow.latest is workflow.last
 
     @pytest.mark.filterwarnings("ignore:Animation was deleted")
     def test_animation_stops_at_the_best_iteration(self, result):

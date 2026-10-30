@@ -117,7 +117,7 @@ def test_multiresolution_convergence(benchmark, us_states_gdf):
         return workflow
 
     workflow = benchmark.pedantic(run, rounds=_ROUNDS, warmup_rounds=_WARMUP_ROUNDS, iterations=1)
-    final = workflow.latest
+    final = workflow.last
     errors = final.get_errors()
     # Sum iterations across all morphed levels (results[0] is the original, niterations=0)
     total_iters = sum(c.niterations for c in workflow.results[1:])

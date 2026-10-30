@@ -12,8 +12,6 @@ from carto_flow.flow_cartogram import (
     LadderSpec,
     MorphOptions,
     create_flow_cartogram,
-    morph_gdf,
-    multiresolution_morph,
 )
 from carto_flow.flow_cartogram.grid import Grid
 from carto_flow.flow_cartogram.options import MorphOptionsValidationError
@@ -138,22 +136,6 @@ def test_workflow_morph_runs_a_ladder_and_stores_each_level(states):
 def test_entry_point_takes_keywords_after_the_column(states):
     with pytest.raises(TypeError):
         create_flow_cartogram(states, "Population", None)
-
-
-def test_morph_gdf_is_deprecated_and_equivalent(states):
-    options = _quiet(n_iter=10, recompute_every=5)
-    with pytest.warns(DeprecationWarning, match="create_flow_cartogram"):
-        old = morph_gdf(states, "Population", options=options)
-    new = create_flow_cartogram(states, "Population", options=options)
-    assert old.niterations == new.niterations
-    assert old.get_errors().mean_error_pct == pytest.approx(new.get_errors().mean_error_pct)
-
-
-def test_multiresolution_morph_is_deprecated(states):
-    options = _quiet(n_iter=10, recompute_every=5)
-    with pytest.warns(DeprecationWarning, match="create_flow_cartogram"):
-        cartogram = multiresolution_morph(states, "Population", min_resolution=64, levels=2, options=options)
-    assert cartogram.options.grid.sx in (64, 128)
 
 
 def test_n_iter_is_the_total_of_a_ladder(states):

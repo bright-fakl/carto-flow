@@ -44,8 +44,8 @@ HERE = Path(__file__).resolve().parent
 # that they cannot be reached); go-cart has no iteration cap and gets maximum area errors (fractions),
 # which is also its own stopping rule. All tools run at their default grid. The cost of the
 # Dougenik-type tools grows with regions x vertices, so they are limited on large datasets.
-_FLOW = [10, 20, 40, 80, 100, 120, 140, 160, 240, 320, 640]
-_GO_CART = [0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002]
+_FLOW = [10, 20, 40, 80, 100, 120, 140, 160, 240, 320, 640, 1280, 2560, 5120, 10240, 20480]
+_GO_CART = [0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002, 1e-4, 1e-5, 1e-6, 1e-7]
 _AUTO = {"carto-flow (grid=auto)": _FLOW}
 _REPAIR = {"carto-flow (repair-crossings)": _FLOW, "carto-flow (repair-quadtree)": _FLOW}
 PROFILES = {
@@ -135,6 +135,10 @@ PROFILES = {
     },
 }
 # carto-flow runs as several tools; each entry is the MorphOptions that differ from the defaults.
+# A tool also stops climbing its ladder once a run is more accurate than FLOOR_PCT (maximum area error, %),
+# the lowest value the docs plots show. The carto-flow ladders reach far higher caps than they can use in the
+# budget, so only time limits them.
+FLOOR_PCT = 1e-4
 # A tool stops climbing its ladder once a run takes longer than this many seconds (median of the
 # repeats); the settings above it are not run and the tool is marked truncated in the results.
 # Every dataset has its own budget: the same setting costs more on larger data.
@@ -235,7 +239,7 @@ def run_carto_flow(gdf, repeats, variant, ladder, budget):
         seconds, res = timed(lambda n_iter=n_iter: call(n_iter), repeats)
         out = res.to_geodataframe(include_errors=False, include_density=False).geometry
         rows.append(record(gdf, out, seconds, max_iterations=n_iter))
-        if statistics.median(seconds) > budget:
+        if statistics.median(seconds) > budget or rows[-1]["max_area_error_pct"] <= FLOOR_PCT:
             break
     return rows
 
@@ -265,7 +269,7 @@ def run_python_cartogram(gdf, repeats, ladder, budget):
             geoms[cap] = current.geometry
             current = gpd.GeoDataFrame(current[["value", "geometry"]])
             previous = cap
-            if elapsed > budget:
+            if elapsed > budget or area_errors(current.geometry, gdf["value"])[1] <= FLOOR_PCT:
                 break
         reached = [cap for cap in ladder if times[cap]]
     return [record(gdf, geoms[cap], times[cap], max_iterations=cap) for cap in reached]
@@ -295,7 +299,7 @@ def run_go_cart(gdf, repeats, binary, workdir, ladder, budget):
         out = gpd.read_file(next(outdir.glob("*_cartogram.geojson"))).set_index("ID").loc[gdf["ID"]].geometry
         out = out.set_crs(None, allow_override=True)
         rows.append(record(gdf, out.reset_index(drop=True), seconds, tolerance=tol))
-        if statistics.median(seconds) > budget:
+        if statistics.median(seconds) > budget or rows[-1]["max_area_error_pct"] <= FLOOR_PCT:
             break
     return rows
 
@@ -354,10 +358,14 @@ def to_input_frame(geoms, reference):
     )
 
 
-def write_examples(path: Path, gdf, results: dict[str, list[dict]]) -> dict:
-    """Write the input and one example cartogram per tool as layers of a GeoPackage."""
-    path.unlink(missing_ok=True)
-    gdf.to_file(path, layer="input", driver="GPKG")
+def write_examples(path: Path, gdf, results: dict[str, list[dict]], fresh: bool = True) -> dict:
+    """Write the input and one example cartogram per tool as layers of a GeoPackage.
+
+    With ``fresh=False`` the file is kept and only the layers of the given tools are replaced.
+    """
+    if fresh:
+        path.unlink(missing_ok=True)
+        gdf.to_file(path, layer="input", driver="GPKG")
     chosen = {}
     for tool, rows in results.items():
         run = pick_example(rows)
@@ -404,6 +412,11 @@ def main():
         "--go-cart", default=shutil.which("cartogram") or "cartogram", help="path of the go-cart binary"
     )
     parser.add_argument("--output", type=Path, default=Path("comparison_results.json"))
+    parser.add_argument(
+        "--merge-into",
+        type=Path,
+        help="results JSON of an earlier run (its .gpkg beside it): replace the entries of the tools run now, keep the rest",
+    )
     args = parser.parse_args()
 
     plan = PROFILES[args.profile][args.dataset]
@@ -429,7 +442,7 @@ def main():
             results.update(run_r_tools(gdf, repeats, workdir, r_ladders, budget))
 
     try:
-        examples = write_examples(args.output.with_suffix(".gpkg"), gdf, results)
+        examples = write_examples(args.output.with_suffix(".gpkg"), gdf, results, fresh=args.merge_into is None)
     except Exception as exc:  # the example figures must not cost the results
         print(f"warning: example cartograms not written: {exc!r}")
         examples = {}
@@ -455,6 +468,11 @@ def main():
             for tool, rows in results.items()
         },
     }
+    if args.merge_into is not None:
+        base = json.loads(args.merge_into.read_text())
+        base["tools"].update(payload["tools"])
+        base["ladders"].update(payload["ladders"])
+        payload = base
     args.output.write_text(json.dumps(payload, indent=2) + "\n")
     print(f"wrote {args.output}")
     for tool, entry in payload["tools"].items():

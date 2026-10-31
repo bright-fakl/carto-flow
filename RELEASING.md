@@ -10,7 +10,7 @@ releases on a merge to `main`.
 | `release.yml` | manual, takes a version | bumps the version, commits, tags, creates the GitHub Release |
 | `pypi-publish.yml` | a GitHub Release being published | builds and uploads to PyPI, or to TestPyPI if the release is a pre-release |
 | `deploy-docs.yml` | push to `main`, or manual | publishes the documentation site |
-| `benchmarks.yml` | manual only | runs the flow-cartogram benchmarks and commits the results file |
+| `benchmarks.yml` | manual only | runs all benchmarks in `benchmarks/` and commits the results file |
 
 `release.yml` owns the version. Do not bump `pyproject.toml`,
 `src/carto_flow/__init__.py` or `mkdocs.yml` by hand — pass the version to the

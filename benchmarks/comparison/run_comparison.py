@@ -199,6 +199,7 @@ def record(gdf, out_geoms, seconds: list[float], **extra) -> dict:
         "mean_area_error_pct": mean_err,
         "max_area_error_pct": max_err,
         "n_invalid": int((~out_geoms.is_valid).sum()),
+        "_geometry": out_geoms,  # kept for the example figures, not written to the JSON
         **extra,
     }
 
@@ -316,6 +317,55 @@ def run_r_tools(gdf, repeats, workdir, ladders, budget):
 
 
 # ---------------------------------------------------------------------------
+# Example cartograms
+# ---------------------------------------------------------------------------
+
+EXAMPLE_TARGET_PCT = 1.0
+
+
+def pick_example(rows: list[dict]) -> dict:
+    """The fastest run within EXAMPLE_TARGET_PCT maximum area error, else the most accurate run."""
+    within = [r for r in rows if r["max_area_error_pct"] <= EXAMPLE_TARGET_PCT]
+    return min(within, key=lambda r: r["time_s"]) if within else min(rows, key=lambda r: r["max_area_error_pct"])
+
+
+def to_input_frame(geoms, reference):
+    """Scale and move a result so that its total area and its centroid match the input's.
+
+    go-cart writes coordinates in its own planar projection; the others stay near the input. Applying the
+    same similarity transform to every tool keeps the drawn cartograms comparable without changing their shapes.
+    """
+    from shapely import affinity
+
+    ref_union, union = reference.union_all(), geoms.union_all()
+    factor = (ref_union.area / union.area) ** 0.5
+    c, rc = union.centroid, ref_union.centroid
+    return geoms.apply(
+        lambda g: affinity.translate(affinity.scale(g, factor, factor, origin=c), rc.x - c.x, rc.y - c.y)
+    )
+
+
+def write_examples(path: Path, gdf, results: dict[str, list[dict]]) -> dict:
+    """Write the input and one example cartogram per tool as layers of a GeoPackage."""
+    path.unlink(missing_ok=True)
+    gdf.to_file(path, layer="input", driver="GPKG")
+    chosen = {}
+    for tool, rows in results.items():
+        run = pick_example(rows)
+        geoms = to_input_frame(run["_geometry"].reset_index(drop=True), gdf.geometry.reset_index(drop=True))
+        out = gpd.GeoDataFrame(
+            {"ID": gdf["ID"].to_numpy(), "value": gdf["value"].to_numpy()}, geometry=geoms, crs=gdf.crs
+        )
+        out.to_file(path, layer=tool, driver="GPKG")
+        chosen[tool] = {
+            k: run[k]
+            for k in ("max_iterations", "tolerance", "time_s", "max_area_error_pct", "mean_area_error_pct", "n_invalid")
+            if k in run
+        }
+    return chosen
+
+
+# ---------------------------------------------------------------------------
 # Summary and entry point
 # ---------------------------------------------------------------------------
 
@@ -369,6 +419,11 @@ def main():
         if r_ladders:
             results.update(run_r_tools(gdf, repeats, workdir, r_ladders, budget))
 
+    examples = write_examples(args.output.with_suffix(".gpkg"), gdf, results)
+    for rows in results.values():
+        for r in rows:
+            r.pop("_geometry", None)
+
     payload = {
         "dataset": args.dataset,
         "n_regions": len(gdf),
@@ -382,6 +437,7 @@ def main():
                 "runs": rows,
                 "time_to_target_s": time_to_target(rows),
                 "truncated": len(rows) < len(ladders[tool]),
+                "example": examples[tool],
             }
             for tool, rows in results.items()
         },

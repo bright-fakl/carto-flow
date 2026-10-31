@@ -10,10 +10,12 @@ Compares carto-flow with other flow cartogram implementations on the US states, 
 | R `cartogramR` (`gsm` and `gn`) | 1.5.1 |
 | Python `cartogram` (Dougenik et al.) | 1.0.2 |
 
-A tool does not decide when it is accurate enough. The iterative tools run with a stopping tolerance that cannot be reached and an increasing iteration cap, so every run stops at its cap. go-cart has no iteration cap; it runs with maximum area errors of 5, 2, 1, 0.5 and 0.2 %, which is also its own stopping rule. The accuracy of every output is then measured with the same metrics from the output geometries, so the results do not depend on how a tool reports its own error:
+A tool does not decide when it is accurate enough. A tool also stops climbing its ladder once a run takes longer than a time budget (60 s on the states, 120 s on the districts, 300 s on the counties); the results mark it as truncated. The iterative tools run with a stopping tolerance that cannot be reached and an increasing iteration cap, so every run stops at its cap. go-cart has no iteration cap; it runs with maximum area errors of 5, 2, 1, 0.5 and 0.2 %, which is also its own stopping rule. The accuracy of every output is then measured with the same metrics from the output geometries, so the results do not depend on how a tool reports its own error:
 
 - area error: relative deviation of each region's share of the total area from its share of the total value (mean and maximum);
 - validity: the number of output regions that are not valid polygons.
+
+The results JSON is accompanied by a GeoPackage of the same name (`.gpkg`) with the input and one example cartogram per tool (its fastest run within 1 % maximum area error, or its most accurate run), moved and scaled to the input's centroid and total area. The docs page draws them.
 
 `time_to_target_s` in the results is the shortest median time among the runs whose measured maximum area error is within 5, 1 and 0.5 %. `null` means no run reached the target.
 

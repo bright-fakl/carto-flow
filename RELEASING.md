@@ -10,7 +10,7 @@ releases on a merge to `main`.
 | `release.yml` | manual, takes a version | bumps the version, commits, tags, creates the GitHub Release |
 | `pypi-publish.yml` | a GitHub Release being published | builds and uploads to PyPI, or to TestPyPI if the release is a pre-release |
 | `deploy-docs.yml` | push to `main`, or manual | publishes the documentation site |
-| `benchmarks.yml` | manual only | runs the flow-cartogram benchmarks and commits the results file |
+| `benchmarks.yml` | manual only | runs all benchmarks in `benchmarks/` and commits the results file |
 
 `release.yml` owns the version. Do not bump `pyproject.toml`,
 `src/carto_flow/__init__.py` or `mkdocs.yml` by hand — pass the version to the
@@ -39,14 +39,13 @@ dated section per candidate.
 
        gh workflow run benchmarks.yml
 
-   The workflow commits `docs/explanations/benchmark_results.json` to the branch
-   it ran on. `docs/explanations/performance.ipynb` renders that file, so the
-   published performance page shows whatever the last run produced. The
-   benchmarks measure the flow cartogram only.
+   The workflow commits `docs/performance/benchmark_results.json` to the branch
+   it ran on. The notebooks in `docs/performance/` render that file, so the
+   published performance pages show whatever the last run produced.
 
    The run takes about nine minutes. Check it succeeded — it commits nothing on
    failure, so a failed run leaves the previous results in place and the
-   performance page silently keeps showing older numbers.
+   performance pages silently keep showing older numbers.
 
    Results are hardware-dependent. Numbers from a CI runner are not comparable
    with numbers measured on a workstation; the machine is recorded in

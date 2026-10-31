@@ -4,3 +4,4 @@ Runtime benchmarks of carto-flow, one page per cartogram type. The numbers come 
 
 - [Flow cartogram](flow-cartogram.ipynb): grid size, parallelism, single and multi-resolution, vertex count.
 - [Voronoi and proportional cartograms](voronoi-and-proportional.ipynb): runtime on US states and congressional districts.
+- [Comparison with other implementations](comparison.ipynb): accuracy against time for carto-flow, go-cart, R `cartogram`, R `cartogramR` and the Python `cartogram` package.

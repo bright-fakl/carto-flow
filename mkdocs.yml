@@ -151,6 +151,7 @@ nav:
     - Overview: performance/index.md
     - Flow Cartogram: performance/flow-cartogram.ipynb
     - Voronoi and Proportional Cartograms: performance/voronoi-and-proportional.ipynb
+    - Comparison with Other Implementations: performance/comparison.ipynb
   - Changelog: changelog.md
   - Migrating to 2.0: migrating-to-2.0.md
   - Logo and Branding: branding.md

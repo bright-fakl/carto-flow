@@ -4,16 +4,16 @@ Compares carto-flow with other flow cartogram implementations on the US states, 
 
 | Tool | Version |
 |---|---|
-| carto-flow | the checked-out source |
+| carto-flow | the checked-out source, with `validity` set to `check` (default), `repair-crossings` and `repair-quadtree` |
 | go-cart (`cartogram-cpp`) | commit 9200b14 |
 | R `cartogram` (`cartogram_cont`, Dougenik et al.) | 0.3.0 |
 | R `cartogramR` (`gsm` and `gn`) | 1.5.1 |
 | Python `cartogram` (Dougenik et al.) | 1.0.2 |
 
-Each tool runs a ladder of its own stopping tolerances (maximum area error 5, 2, 1 and 0.5 %). The accuracy of every output is then measured with the same metrics from the output geometries, so the results do not depend on how a tool reports its own error:
+A tool does not decide when it is accurate enough. The iterative tools run with a stopping tolerance that cannot be reached and an increasing iteration cap, so every run stops at its cap. go-cart has no iteration cap; it runs with maximum area errors of 5, 2, 1, 0.5 and 0.2 %, which is also its own stopping rule. The accuracy of every output is then measured with the same metrics from the output geometries, so the results do not depend on how a tool reports its own error:
 
 - area error: relative deviation of each region's share of the total area from its share of the total value (mean and maximum);
-- shape distortion: 1 - IoU of each output region with the input region, after both are scaled to the same area and centered on the same point.
+- validity: the number of output regions that are not valid polygons.
 
 `time_to_target_s` in the results is the shortest median time among the runs whose measured maximum area error is within 5, 1 and 0.5 %. `null` means no run reached the target.
 

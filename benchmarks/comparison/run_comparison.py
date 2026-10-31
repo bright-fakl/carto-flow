@@ -4,14 +4,19 @@ Compare flow cartogram implementations on US census data.
 Tools: carto-flow, go-cart (cartogram-cpp), R ``cartogram`` (``cartogram_cont``),
 R ``cartogramR`` (``gsm`` and ``gn``) and the Python ``cartogram`` package.
 
-Each tool runs a ladder of its own stopping tolerances. Whatever the tool
-reports, the accuracy of every output is measured here with the same two
-metrics, from the output geometries and the target values:
+Every output is measured here with the same metrics, from the output
+geometries and the target values, whatever the tool reports itself:
 
 * area error: relative deviation of each region's share of the total area from
   its share of the total value (mean and maximum, in %);
-* shape distortion: 1 - IoU of each output region with the input region after
-  both are scaled to the same area and moved to the same centroid (mean, in %).
+* validity: the number of output regions that are not valid polygons.
+
+A tool does not decide when it is accurate enough. The iterative tools run with
+a stopping tolerance that cannot be reached and an increasing iteration cap, so
+each run stops at its cap and the measured error of that run is the result. The
+time to a target is the shortest time among the runs that measure within it.
+go-cart has no iteration cap; it runs with a ladder of maximum area errors
+(its stopping rule is a maximum area error, like the target).
 
 Run it with the Docker image (see README.md) or, with all tools installed,
 ``python run_comparison.py --dataset states --output results.json``.
@@ -34,13 +39,27 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 
-# Maximum area errors the tools are asked to reach (fractions).
-TOLERANCES = [0.05, 0.02, 0.01, 0.005]
+# Iteration caps of the iterative tools.
+ITERATIONS = {
+    "carto-flow": [5, 10, 20, 40, 80, 160, 320],
+    "Python cartogram": [5, 10, 20, 50, 100, 200],
+    "R cartogram": [5, 10, 20, 50, 100],
+    "cartogramR gsm": [2, 5, 10, 20, 50],
+    "cartogramR gn": [2, 5, 10, 20, 50],
+}
+# Maximum area errors go-cart is asked to reach (fractions).
+GO_CART_TOLERANCES = [0.05, 0.02, 0.01, 0.005, 0.002]
+# carto-flow validity modes run as separate tools; plain "carto-flow" only checks.
+CARTO_FLOW_VARIANTS = {
+    "carto-flow": "check",
+    "carto-flow (repair-crossings)": "repair-crossings",
+    "carto-flow (repair-quadtree)": "repair-quadtree",
+}
 # Accuracy targets for the time-to-target summary (%).
 TARGETS_PCT = [5.0, 1.0, 0.5]
 
 R_TOOLS = ("R cartogram", "cartogramR gsm", "cartogramR gn")
-PY_TOOLS = ("carto-flow", "Python cartogram")
+PY_TOOLS = (*CARTO_FLOW_VARIANTS, "Python cartogram")
 ALL_TOOLS = (*PY_TOOLS, *R_TOOLS, "go-cart")
 
 
@@ -78,24 +97,6 @@ def area_errors(geoms, values) -> tuple[float, float]:
     return float(err.mean()), float(err.max())
 
 
-def shape_distortion(original, result) -> float:
-    """Mean 1 - IoU (%) of each result region with its original, after matching area and centroid."""
-    from shapely import affinity, make_valid
-
-    scores = []
-    for a, b in zip(original, result, strict=True):
-        if a.is_empty or b.is_empty or b.area <= 0:
-            scores.append(1.0)
-            continue
-        # Some tools return self-intersecting polygons; repair them for the overlap computation.
-        a, b = make_valid(a), make_valid(b)
-        b = affinity.scale(b, *(np.sqrt(a.area / b.area),) * 2, origin=b.centroid)
-        b = affinity.translate(b, a.centroid.x - b.centroid.x, a.centroid.y - b.centroid.y)
-        union = a.union(b).area
-        scores.append(1.0 - (a.intersection(b).area / union if union > 0 else 0.0))
-    return float(np.mean(scores) * 100)
-
-
 def record(gdf, out_geoms, seconds: list[float], **extra) -> dict:
     mean_err, max_err = area_errors(out_geoms, gdf["value"])
     return {
@@ -103,7 +104,7 @@ def record(gdf, out_geoms, seconds: list[float], **extra) -> dict:
         "times_s": seconds,
         "mean_area_error_pct": mean_err,
         "max_area_error_pct": max_err,
-        "shape_distortion_pct": shape_distortion(gdf.geometry, out_geoms),
+        "n_invalid": int((~out_geoms.is_valid).sum()),
         **extra,
     }
 
@@ -122,20 +123,23 @@ def timed(fn, repeats: int):
     return seconds, out
 
 
-def run_carto_flow(gdf, repeats):
+def run_carto_flow(gdf, repeats, validity):
     from carto_flow.flow_cartogram import MorphOptions, create_flow_cartogram
 
-    def call(tol):
-        options = MorphOptions(n_iter=500, mean_tol=tol / 2, max_tol=tol, show_progress=False)
+    def call(n_iter):
+        # Tolerances that cannot be reached and no stall rule: the run stops at n_iter.
+        options = MorphOptions(
+            n_iter=n_iter, mean_tol=1e-6, max_tol=1e-6, stall_patience=None, validity=validity, show_progress=False
+        )
         return create_flow_cartogram(gdf, "value", options=options)
 
     # Compile the numba kernels outside the timed runs.
     create_flow_cartogram(gdf, "value", options=MorphOptions(grid=64, n_iter=2, show_progress=False))
     rows = []
-    for tol in TOLERANCES:
-        seconds, res = timed(lambda tol=tol: call(tol), repeats)
+    for n_iter in ITERATIONS["carto-flow"]:
+        seconds, res = timed(lambda n_iter=n_iter: call(n_iter), repeats)
         out = res.to_geodataframe(include_errors=False, include_density=False).geometry
-        rows.append(record(gdf, out, seconds, tolerance=tol, iterations=int(res.niterations)))
+        rows.append(record(gdf, out, seconds, max_iterations=n_iter))
     return rows
 
 
@@ -145,11 +149,12 @@ def run_python_cartogram(gdf, repeats):
     # The package reads the attribute named in the call and returns a GeoDataFrame.
     data = gdf[["value", "geometry"]]
     rows = []
-    for tol in TOLERANCES:
+    for n_iter in ITERATIONS["Python cartogram"]:
+        # A mean error of 0 is never reached, so the run stops at max_iterations.
         seconds, res = timed(
-            lambda tol=tol: Cartogram(data, "value", max_iterations=200, max_average_error=tol), repeats
+            lambda n_iter=n_iter: Cartogram(data, "value", max_iterations=n_iter, max_average_error=0.0), repeats
         )
-        rows.append(record(gdf, res.geometry, seconds, tolerance=tol))
+        rows.append(record(gdf, res.geometry, seconds, max_iterations=n_iter))
     return rows
 
 
@@ -160,7 +165,7 @@ def run_go_cart(gdf, repeats, binary, workdir):
     gdf[["ID", "geometry"]].to_crs(4326).to_file(geojson, driver="GeoJSON")
     pd.DataFrame({"ID": gdf["ID"], "Population (people)": gdf["value"]}).to_csv(csv, index=False)
     rows = []
-    for tol in TOLERANCES:
+    for tol in GO_CART_TOLERANCES:
         outdir = workdir / f"go_cart_{tol}"
         outdir.mkdir(exist_ok=True)
 
@@ -183,15 +188,16 @@ def run_go_cart(gdf, repeats, binary, workdir):
 def run_r_tools(gdf, repeats, workdir):
     """Run the three R tools in one R process; outputs come back as GeoPackages."""
     gdf.to_file(workdir / "input.gpkg", driver="GPKG")
+    (workdir / "r_ladders.json").write_text(json.dumps({t: ITERATIONS[t] for t in R_TOOLS}))
     subprocess.run(  # noqa: S603
-        ["Rscript", str(HERE / "run_r.R"), str(workdir), str(repeats), *map(str, TOLERANCES)],  # noqa: S607
+        ["Rscript", str(HERE / "run_r.R"), str(workdir), str(repeats)],  # noqa: S607
         check=True,
     )
     timings = json.loads((workdir / "r_times.json").read_text())
     results = {tool: [] for tool in R_TOOLS}
     for item in timings:
         out = gpd.read_file(workdir / item["file"]).geometry
-        results[item["tool"]].append(record(gdf, out, item["times_s"], tolerance=item["tolerance"]))
+        results[item["tool"]].append(record(gdf, out, item["times_s"], max_iterations=item["max_iterations"]))
     return results
 
 
@@ -224,8 +230,9 @@ def main():
     results: dict[str, list[dict]] = {}
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
-        if "carto-flow" in args.tools:
-            results["carto-flow"] = run_carto_flow(gdf, args.repeats)
+        for name, validity in CARTO_FLOW_VARIANTS.items():
+            if name in args.tools:
+                results[name] = run_carto_flow(gdf, args.repeats, validity)
         if "Python cartogram" in args.tools:
             results["Python cartogram"] = run_python_cartogram(gdf, args.repeats)
         if "go-cart" in args.tools:
@@ -238,7 +245,8 @@ def main():
         "dataset": args.dataset,
         "n_regions": len(gdf),
         "repeats": args.repeats,
-        "tolerances": TOLERANCES,
+        "iterations": ITERATIONS,
+        "go_cart_tolerances": GO_CART_TOLERANCES,
         "machine": {"platform": platform.platform(), "processor": platform.processor()},
         "tools": {tool: {"runs": rows, "time_to_target_s": time_to_target(rows)} for tool, rows in results.items()},
     }

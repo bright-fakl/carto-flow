@@ -337,11 +337,20 @@ def to_input_frame(geoms, reference):
     """
     from shapely import affinity
 
-    ref_union, union = reference.union_all(), geoms.union_all()
-    factor = (ref_union.area / union.area) ** 0.5
-    c, rc = union.centroid, ref_union.centroid
+    # Total area and area-weighted centroid from the parts; a union would fail on invalid polygons.
+    def frame(g):
+        area = g.area.to_numpy()
+        return (
+            area.sum(),
+            (g.centroid.x.to_numpy() * area).sum() / area.sum(),
+            (g.centroid.y.to_numpy() * area).sum() / area.sum(),
+        )
+
+    ref_area, rx, ry = frame(reference)
+    area, cx, cy = frame(geoms)
+    factor = (ref_area / area) ** 0.5
     return geoms.apply(
-        lambda g: affinity.translate(affinity.scale(g, factor, factor, origin=c), rc.x - c.x, rc.y - c.y)
+        lambda g: affinity.translate(affinity.scale(g, factor, factor, origin=(cx, cy)), rx - cx, ry - cy)
     )
 
 
@@ -419,7 +428,11 @@ def main():
         if r_ladders:
             results.update(run_r_tools(gdf, repeats, workdir, r_ladders, budget))
 
-    examples = write_examples(args.output.with_suffix(".gpkg"), gdf, results)
+    try:
+        examples = write_examples(args.output.with_suffix(".gpkg"), gdf, results)
+    except Exception as exc:  # the example figures must not cost the results
+        print(f"warning: example cartograms not written: {exc!r}")
+        examples = {}
     for rows in results.values():
         for r in rows:
             r.pop("_geometry", None)
@@ -437,7 +450,7 @@ def main():
                 "runs": rows,
                 "time_to_target_s": time_to_target(rows),
                 "truncated": len(rows) < len(ladders[tool]),
-                "example": examples[tool],
+                **({"example": examples[tool]} if tool in examples else {}),
             }
             for tool, rows in results.items()
         },

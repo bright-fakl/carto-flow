@@ -1,5 +1,6 @@
 # Run the R tools of the comparison on input.gpkg (columns ID, value, geometry).
-# Usage: Rscript run_r.R WORKDIR REPEATS
+# Usage: Rscript run_r.R WORKDIR REPEATS BUDGET_S
+# A tool stops climbing its ladder once a run takes longer than BUDGET_S seconds.
 # WORKDIR/r_ladders.json maps each tool to its iteration caps. The stopping
 # tolerances are set so that they cannot be reached and every run stops at its cap.
 # Writes one GeoPackage per (tool, cap) and r_times.json with the timings.
@@ -13,6 +14,7 @@ suppressMessages({
 args <- commandArgs(trailingOnly = TRUE)
 workdir <- args[1]
 repeats <- as.integer(args[2])
+budget <- as.numeric(args[3])
 ladders <- fromJSON(file.path(workdir, "r_ladders.json"))
 input <- st_read(file.path(workdir, "input.gpkg"), quiet = TRUE)
 
@@ -46,6 +48,7 @@ for (name in names(tools)) {
     file <- sprintf("r_%s_%s.gpkg", gsub(" ", "_", name), cap)
     st_write(st_sf(geometry = geometry_of(res)), file.path(workdir, file), quiet = TRUE, delete_dsn = TRUE)
     out[[length(out) + 1]] <- list(tool = name, max_iterations = cap, times_s = I(times), file = file)
+    if (median(times) > budget) break
   }
 }
 write(toJSON(out, auto_unbox = TRUE, digits = NA), file.path(workdir, "r_times.json"))

@@ -44,15 +44,47 @@ HERE = Path(__file__).resolve().parent
 # that they cannot be reached); go-cart has no iteration cap and gets maximum area errors (fractions),
 # which is also its own stopping rule. All tools run at their default grid. The cost of the
 # Dougenik-type tools grows with regions x vertices, so they are limited on large datasets.
-_FLOW = [10, 20, 40, 80, 100, 120, 140, 160, 240, 320]
-_GO_CART = [0.05, 0.02, 0.01, 0.005, 0.002]
+_FLOW = [10, 20, 40, 80, 100, 120, 140, 160, 240, 320, 640]
+_GO_CART = [0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002]
+_AUTO = {"carto-flow (grid=auto)": _FLOW}
 _REPAIR = {"carto-flow (repair-crossings)": _FLOW, "carto-flow (repair-quadtree)": _FLOW}
 PROFILES = {
+    # A short check of the setup and of the curves; not for publication.
+    "quick": {
+        "states": {
+            "repeats": 1,
+            "ladders": {
+                "carto-flow": [20, 80, 120, 160, 320, 640],
+                "carto-flow (grid=auto)": [80, 160, 320, 640],
+                "Python cartogram": [10, 20, 50],
+                "cartogramR gsm": [2, 3, 5, 10],
+                "go-cart": _GO_CART,
+            },
+        },
+        "districts": {
+            "repeats": 1,
+            "ladders": {
+                "carto-flow": [80, 160, 320],
+                "carto-flow (grid=auto)": [80, 160, 320, 640],
+                "cartogramR gsm": [2, 5],
+                "go-cart": [0.02, 0.005, 0.0005],
+            },
+        },
+        "counties": {
+            "repeats": 1,
+            "ladders": {
+                "carto-flow": [160, 320],
+                "carto-flow (grid=auto)": [80, 160, 320, 640],
+                "go-cart": [0.02, 0.005],
+            },
+        },
+    },
     "full": {
         "states": {
             "repeats": 3,
             "ladders": {
                 "carto-flow": _FLOW,
+                **_AUTO,
                 "Python cartogram": [5, 10, 20, 30, 50, 100],
                 "R cartogram": [5, 10, 20, 50, 100],
                 "cartogramR gsm": [2, 3, 5, 10, 20],
@@ -64,6 +96,7 @@ PROFILES = {
             "repeats": 2,
             "ladders": {
                 "carto-flow": _FLOW,
+                **_AUTO,
                 **_REPAIR,
                 "Python cartogram": [5, 10, 20],
                 "R cartogram": [5, 10, 20],
@@ -72,13 +105,14 @@ PROFILES = {
                 "go-cart": _GO_CART,
             },
         },
-        "counties": {"repeats": 1, "ladders": {"carto-flow": _FLOW, **_REPAIR, "go-cart": _GO_CART}},
+        "counties": {"repeats": 1, "ladders": {"carto-flow": _FLOW, **_AUTO, **_REPAIR, "go-cart": _GO_CART}},
     },
     "ci": {
         "states": {
             "repeats": 2,
             "ladders": {
                 "carto-flow": _FLOW,
+                **_AUTO,
                 "Python cartogram": [5, 10, 20, 50],
                 "R cartogram": [5, 10, 20, 50],
                 "cartogramR gsm": [2, 3, 5, 10, 20],
@@ -90,19 +124,30 @@ PROFILES = {
             "repeats": 1,
             "ladders": {
                 "carto-flow": _FLOW,
+                **_AUTO,
                 **_REPAIR,
                 "cartogramR gsm": [2, 3, 5, 10],
                 "cartogramR gn": [2, 5, 10],
                 "go-cart": _GO_CART,
             },
         },
-        "counties": {"repeats": 1, "ladders": {"carto-flow": _FLOW, **_REPAIR, "go-cart": _GO_CART}},
+        "counties": {"repeats": 1, "ladders": {"carto-flow": _FLOW, **_AUTO, **_REPAIR, "go-cart": _GO_CART}},
     },
 }
+# carto-flow runs as several tools; each entry is the MorphOptions that differ from the defaults.
+# A tool stops climbing its ladder once a run takes longer than this many seconds (median of the
+# repeats); the settings above it are not run and the tool is marked truncated in the results.
+# Every dataset has its own budget: the same setting costs more on larger data.
+BUDGET_S = {
+    "quick": {"states": 60, "districts": 120, "counties": 300},
+    "ci": {"states": 60, "districts": 120, "counties": 300},
+    "full": {"states": 120, "districts": 300, "counties": 600},
+}
 CARTO_FLOW_VARIANTS = {
-    "carto-flow": "check",
-    "carto-flow (repair-crossings)": "repair-crossings",
-    "carto-flow (repair-quadtree)": "repair-quadtree",
+    "carto-flow": {},
+    "carto-flow (grid=auto)": {"grid": "auto"},
+    "carto-flow (repair-crossings)": {"validity": "repair-crossings"},
+    "carto-flow (repair-quadtree)": {"validity": "repair-quadtree"},
 }
 
 # Accuracy targets for the time-to-target summary (%).
@@ -172,13 +217,13 @@ def timed(fn, repeats: int):
     return seconds, out
 
 
-def run_carto_flow(gdf, repeats, validity, ladder):
+def run_carto_flow(gdf, repeats, variant, ladder, budget):
     from carto_flow.flow_cartogram import MorphOptions, create_flow_cartogram
 
     def call(n_iter):
         # Tolerances that cannot be reached and no stall rule: the run stops at n_iter.
         options = MorphOptions(
-            n_iter=n_iter, mean_tol=1e-6, max_tol=1e-6, stall_patience=None, validity=validity, show_progress=False
+            n_iter=n_iter, mean_tol=1e-6, max_tol=1e-6, stall_patience=None, show_progress=False, **variant
         )
         return create_flow_cartogram(gdf, "value", options=options)
 
@@ -189,10 +234,12 @@ def run_carto_flow(gdf, repeats, validity, ladder):
         seconds, res = timed(lambda n_iter=n_iter: call(n_iter), repeats)
         out = res.to_geodataframe(include_errors=False, include_density=False).geometry
         rows.append(record(gdf, out, seconds, max_iterations=n_iter))
+        if statistics.median(seconds) > budget:
+            break
     return rows
 
 
-def run_python_cartogram(gdf, repeats, ladder):
+def run_python_cartogram(gdf, repeats, ladder, budget):
     from cartogram import Cartogram
 
     # The package reads the attribute named in the call and returns a GeoDataFrame.
@@ -205,10 +252,12 @@ def run_python_cartogram(gdf, repeats, ladder):
             lambda n_iter=n_iter: Cartogram(data, "value", max_iterations=n_iter, max_average_error=0.0), repeats
         )
         rows.append(record(gdf, res.geometry, seconds, max_iterations=n_iter))
+        if statistics.median(seconds) > budget:
+            break
     return rows
 
 
-def run_go_cart(gdf, repeats, binary, workdir, ladder):
+def run_go_cart(gdf, repeats, binary, workdir, ladder, budget):
     import pandas as pd
 
     geojson, csv = workdir / "go_cart.geojson", workdir / "go_cart.csv"
@@ -232,15 +281,17 @@ def run_go_cart(gdf, repeats, binary, workdir, ladder):
         out = gpd.read_file(next(outdir.glob("*_cartogram.geojson"))).set_index("ID").loc[gdf["ID"]].geometry
         out = out.set_crs(None, allow_override=True)
         rows.append(record(gdf, out.reset_index(drop=True), seconds, tolerance=tol))
+        if statistics.median(seconds) > budget:
+            break
     return rows
 
 
-def run_r_tools(gdf, repeats, workdir, ladders):
+def run_r_tools(gdf, repeats, workdir, ladders, budget):
     """Run the three R tools in one R process; outputs come back as GeoPackages."""
     gdf.to_file(workdir / "input.gpkg", driver="GPKG")
     (workdir / "r_ladders.json").write_text(json.dumps(ladders))
     subprocess.run(  # noqa: S603
-        ["Rscript", str(HERE / "run_r.R"), str(workdir), str(repeats)],  # noqa: S607
+        ["Rscript", str(HERE / "run_r.R"), str(workdir), str(repeats), str(budget)],  # noqa: S607
         check=True,
     )
     timings = json.loads((workdir / "r_times.json").read_text())
@@ -271,6 +322,12 @@ def main():
     parser.add_argument("--profile", choices=list(PROFILES), default="full", help="which tools and settings to run")
     parser.add_argument("--tools", nargs="+", choices=ALL_TOOLS, help="restrict the profile to these tools")
     parser.add_argument("--repeats", type=int, help="timed runs per setting (default: the profile's)")
+    parser.add_argument("--ladder", type=float, nargs="+", help="replace the iteration caps of the iterative tools")
+    parser.add_argument(
+        "--budget",
+        type=float,
+        help="seconds a run may take before the tool's ladder stops (default: by profile and dataset)",
+    )
     parser.add_argument(
         "--go-cart", default=shutil.which("cartogram") or "cartogram", help="path of the go-cart binary"
     )
@@ -280,21 +337,24 @@ def main():
     plan = PROFILES[args.profile][args.dataset]
     repeats = args.repeats or plan["repeats"]
     ladders = {t: v for t, v in plan["ladders"].items() if args.tools is None or t in args.tools}
+    if args.ladder:
+        ladders = {t: ([int(c) for c in args.ladder] if t != "go-cart" else v) for t, v in ladders.items()}
+    budget = args.budget or BUDGET_S[args.profile][args.dataset]
 
     gdf = load_dataset(args.dataset)
     results: dict[str, list[dict]] = {}
     with tempfile.TemporaryDirectory() as tmp:
         workdir = Path(tmp)
-        for name, validity in CARTO_FLOW_VARIANTS.items():
+        for name, variant in CARTO_FLOW_VARIANTS.items():
             if name in ladders:
-                results[name] = run_carto_flow(gdf, repeats, validity, ladders[name])
+                results[name] = run_carto_flow(gdf, repeats, variant, ladders[name], budget)
         if "Python cartogram" in ladders:
-            results["Python cartogram"] = run_python_cartogram(gdf, repeats, ladders["Python cartogram"])
+            results["Python cartogram"] = run_python_cartogram(gdf, repeats, ladders["Python cartogram"], budget)
         if "go-cart" in ladders:
-            results["go-cart"] = run_go_cart(gdf, repeats, args.go_cart, workdir, ladders["go-cart"])
+            results["go-cart"] = run_go_cart(gdf, repeats, args.go_cart, workdir, ladders["go-cart"], budget)
         r_ladders = {t: v for t, v in ladders.items() if t in R_TOOLS}
         if r_ladders:
-            results.update(run_r_tools(gdf, repeats, workdir, r_ladders))
+            results.update(run_r_tools(gdf, repeats, workdir, r_ladders, budget))
 
     payload = {
         "dataset": args.dataset,
@@ -302,8 +362,16 @@ def main():
         "profile": args.profile,
         "repeats": repeats,
         "ladders": ladders,
+        "budget_s": budget,
         "machine": {"platform": platform.platform(), "processor": platform.processor()},
-        "tools": {tool: {"runs": rows, "time_to_target_s": time_to_target(rows)} for tool, rows in results.items()},
+        "tools": {
+            tool: {
+                "runs": rows,
+                "time_to_target_s": time_to_target(rows),
+                "truncated": len(rows) < len(ladders[tool]),
+            }
+            for tool, rows in results.items()
+        },
     }
     args.output.write_text(json.dumps(payload, indent=2) + "\n")
     print(f"wrote {args.output}")

@@ -20,7 +20,7 @@ input <- st_read(file.path(workdir, "input.gpkg"), quiet = TRUE)
 
 tools <- list(
   "R cartogram" = function(cap) {
-    cartogram_cont(input, "value", itermax = cap, maxSizeError = 1 + 1e-9, prepare = "adjust")
+    cartogram_cont(input, "value", itermax = cap, maxSizeError = 1 + 1e-9, prepare = "none")
   },
   "cartogramR gsm" = function(cap) {
     cartogramR(input, "value", method = "gsm", options = list(relerror = 1e-9, maxit = cap))

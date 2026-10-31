@@ -141,7 +141,7 @@ PROFILES = {
 BUDGET_S = {
     "quick": {"states": 60, "districts": 120, "counties": 300},
     "ci": {"states": 60, "districts": 120, "counties": 300},
-    "full": {"states": 120, "districts": 300, "counties": 600},
+    "full": {"states": 60, "districts": 120, "counties": 300},
 }
 CARTO_FLOW_VARIANTS = {
     "carto-flow": {},
@@ -240,21 +240,34 @@ def run_carto_flow(gdf, repeats, variant, ladder, budget):
 
 
 def run_python_cartogram(gdf, repeats, ladder, budget):
+    """One chain of iterations per repeat, timed at each cap of the ladder.
+
+    The algorithm only depends on the current geometry, so continuing from the output of the previous
+    cap gives the same result as a fresh run to the larger cap. The time of a cap is the elapsed time
+    of the chain up to it, which is what a single run to that cap would take.
+    """
     from cartogram import Cartogram
 
-    # The package reads the attribute named in the call and returns a GeoDataFrame.
     data = gdf[["value", "geometry"]]
-    rows = []
     Cartogram(data, "value", max_iterations=1, max_average_error=0.0)  # warm-up, not timed
-    for n_iter in ladder:
-        # A mean error of 0 is never reached, so the run stops at max_iterations.
-        seconds, res = timed(
-            lambda n_iter=n_iter: Cartogram(data, "value", max_iterations=n_iter, max_average_error=0.0), repeats
-        )
-        rows.append(record(gdf, res.geometry, seconds, max_iterations=n_iter))
-        if statistics.median(seconds) > budget:
-            break
-    return rows
+    times: dict[int, list[float]] = {cap: [] for cap in ladder}
+    geoms: dict[int, object] = {}
+    reached = list(ladder)
+    for _ in range(repeats):
+        current, previous, elapsed = data, 0, 0.0
+        for cap in reached:
+            t0 = time.perf_counter()
+            # A mean error of 0 is never reached, so the run stops at max_iterations.
+            current = Cartogram(current, "value", max_iterations=cap - previous, max_average_error=0.0)
+            elapsed += time.perf_counter() - t0
+            times[cap].append(elapsed)
+            geoms[cap] = current.geometry
+            current = gpd.GeoDataFrame(current[["value", "geometry"]])
+            previous = cap
+            if elapsed > budget:
+                break
+        reached = [cap for cap in ladder if times[cap]]
+    return [record(gdf, geoms[cap], times[cap], max_iterations=cap) for cap in reached]
 
 
 def run_go_cart(gdf, repeats, binary, workdir, ladder, budget):

@@ -39,14 +39,13 @@ dated section per candidate.
 
        gh workflow run benchmarks.yml
 
-   The workflow commits `docs/explanations/benchmark_results.json` to the branch
-   it ran on. `docs/explanations/performance.ipynb` renders that file, so the
-   published performance page shows whatever the last run produced. The
-   benchmarks measure the flow cartogram only.
+   The workflow commits `docs/performance/benchmark_results.json` to the branch
+   it ran on. The notebooks in `docs/performance/` render that file, so the
+   published performance pages show whatever the last run produced.
 
    The run takes about nine minutes. Check it succeeded — it commits nothing on
    failure, so a failed run leaves the previous results in place and the
-   performance page silently keeps showing older numbers.
+   performance pages silently keep showing older numbers.
 
    Results are hardware-dependent. Numbers from a CI runner are not comparable
    with numbers measured on a workstation; the machine is recorded in

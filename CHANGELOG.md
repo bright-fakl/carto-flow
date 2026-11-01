@@ -86,6 +86,10 @@ The breaking changes below make the next release 3.0.0.
 
 ### Added
 
+- **`search_lattice_phase` option of `MosaicLayout`.** When the calibrated tiling has more than one core tile above the tile
+  budget (which leaves core tiles unassigned, as on symmetric rectangular regions), the calibration is repeated with the
+  lattice shifted by up to seven phases and the first tiling within one core tile of the budget is kept. A calibration that
+  reaches the budget is not repeated. Default `False`.
 - **`rotation` and `offset` options of `GridBasedLayout` and `MosaicLayout`.** `rotation` is in degrees, counter-clockwise, about
   the center of the covered region (the mosaic layout had no rotation). `offset=(u, v)` shifts the lattice by `u` and `v` times
   its two translation vectors; it is periodic, and the default `(0, 0)` is the lattice anchored at the region center. The

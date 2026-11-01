@@ -345,3 +345,31 @@ class TestLayouts:
         )
         assert np.array_equal(np.sort(np.bincount(a.source_indices)), np.sort(np.bincount(b.source_indices)))
         assert a.tiling_result.n_tiles == b.tiling_result.n_tiles
+
+
+class TestSearchLatticePhase:
+    @staticmethod
+    def _grid(n, tiles):
+        geoms = [box(c, r, c + 1, r + 1) for r in range(n) for c in range(n)]
+        return gpd.GeoDataFrame({"tiles": [tiles] * len(geoms)}, geometry=geoms)
+
+    def test_fewer_unassigned_core_tiles_on_a_symmetric_grid(self):
+        gdf = self._grid(10, 3)
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        plain = MosaicLayout(tiling="square", morph=False).compute(data, show_progress=False)
+        searched = MosaicLayout(tiling="square", morph=False, search_lattice_phase=True).compute(
+            data, show_progress=False
+        )
+        assert plain.metrics.algorithm.n_unassigned_core_tiles > 0
+        assert searched.metrics.algorithm.n_unassigned_core_tiles < plain.metrics.algorithm.n_unassigned_core_tiles
+        counts = np.bincount(searched.source_indices, minlength=len(gdf))
+        assert np.array_equal(counts, gdf["tiles"].to_numpy())
+
+    def test_unchanged_when_the_budget_is_reached(self):
+        gdf = self._grid(10, 4)
+        data = prepare_layout_data(gdf, tile_count="tiles")
+        a = MosaicLayout(tiling="square", morph=False).compute(data, show_progress=False)
+        b = MosaicLayout(tiling="square", morph=False, search_lattice_phase=True).compute(data, show_progress=False)
+        assert a.metrics.algorithm.n_unassigned_core_tiles == 0
+        assert np.array_equal(a.assignments, b.assignments)
+        assert a.tiling_result.tile_size == b.tiling_result.tile_size

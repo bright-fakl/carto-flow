@@ -462,6 +462,17 @@ class MosaicLayoutOptions:
         component that changes by 1 gives the same tiles. The calibration and
         the final tiling use the same offset. Default ``(0.0, 0.0)``, the
         lattice anchored at the center of the study area.
+    search_lattice_phase : bool
+        When the calibrated tiling has more than one core tile above the tile
+        budget, which leaves core tiles unassigned, repeat the calibration with
+        the lattice shifted by ``(0.5, 0)``, ``(0, 0.5)``, ``(0.5, 0.5)`` and four
+        quarter-tile phases added to ``offset``, and keep the first tiling that is
+        within one core tile of the budget (otherwise the one with the fewest
+        surplus core tiles). This happens on regions with a rectangular
+        symmetry, where the number of core tiles takes few values as the tile
+        size changes. A calibration that reaches the budget is not repeated. The
+        shifted lattice can place the tiles farther from the regions. Ignored
+        when ``tile_size`` is given. Default False.
     min_one_tile_per_region : bool
         Place a symbol for regions that sit on a land mass too small to win a
         tile of its own.  A region only gets tiles from the pool of its
@@ -490,6 +501,7 @@ class MosaicLayoutOptions:
     min_one_tile_per_region: bool = False
     rotation: float = 0.0
     offset: tuple[float, float] = (0.0, 0.0)
+    search_lattice_phase: bool = False
 
     def validate(self) -> None:
         """Validate options."""
@@ -565,7 +577,7 @@ class MosaicLayout(Layout):
 
         from ...tiling import resolve_tiling
         from ._assignment import hungarian_morphed_assignment
-        from ._calibration import calibrate_tiling
+        from ._calibration import calibrate_lattice_phase, calibrate_tiling
 
         opts = self._options
         source_gdf = data.source_gdf
@@ -607,16 +619,23 @@ class MosaicLayout(Layout):
         comp_tree = STRtree(comp_union_list)
 
         # Step 3: Calibrate tiling
-        tiling_obj = _orient_tiling(resolve_tiling(opts.tiling), opts.rotation, opts.offset)
-        setup = calibrate_tiling(
-            tiling_obj,
-            working_union.bounds,
-            working_union,
-            target_count,
-            tile_size=opts.tile_size,
-            buffer_rings=opts.extra_tile_rings,
-            min_overlap_frac=opts.min_overlap_frac,
-        )
+        base_tiling = resolve_tiling(opts.tiling)
+        calibration_args = (working_union.bounds, working_union, target_count)
+        calibration_kwargs = {
+            "tile_size": opts.tile_size,
+            "buffer_rings": opts.extra_tile_rings,
+            "min_overlap_frac": opts.min_overlap_frac,
+        }
+        if opts.search_lattice_phase:
+            tiling_obj, setup = calibrate_lattice_phase(
+                lambda offset: _orient_tiling(base_tiling, opts.rotation, offset),
+                opts.offset,
+                *calibration_args,
+                **calibration_kwargs,
+            )
+        else:
+            tiling_obj = _orient_tiling(base_tiling, opts.rotation, opts.offset)
+            setup = calibrate_tiling(tiling_obj, *calibration_args, **calibration_kwargs)
         tiling_result = setup.tiling_result
         adj_list = setup.adj_list
         valid_tile_indices = setup.valid_tile_indices

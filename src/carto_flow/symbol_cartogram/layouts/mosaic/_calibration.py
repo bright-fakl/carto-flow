@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -12,7 +13,7 @@ import shapely
 if TYPE_CHECKING:
     from ...tiling import Tiling, TilingResult
 
-__all__ = ["TilingSetup", "calibrate_tiling"]
+__all__ = ["TilingSetup", "calibrate_lattice_phase", "calibrate_tiling"]
 
 # Maximum correction iterations after the analytical estimate.
 _MAX_ADJUST = 20
@@ -200,3 +201,38 @@ def calibrate_tiling(
         core_set=core_set,
         valid_tile_indices=valid_tile_indices,
     )
+
+
+# Shifts of the lattice phase (fractions of the lattice vectors) tried after the given offset.
+_PHASE_SHIFTS = ((0.5, 0.0), (0.0, 0.5), (0.5, 0.5), (0.25, 0.25), (0.75, 0.75), (0.25, 0.75), (0.75, 0.25))
+
+
+def calibrate_lattice_phase(
+    make_tiling: Callable[[tuple[float, float]], Tiling],
+    offset: tuple[float, float],
+    *args,
+    **kwargs,
+) -> tuple[Tiling, TilingSetup]:
+    """Calibrate with the given lattice offset, then with shifted offsets while core tiles exceed the budget.
+
+    ``make_tiling(offset)`` returns the oriented tiling for an offset; the remaining arguments go to
+    :func:`calibrate_tiling`.  More than one core tile above the target leaves core tiles unassigned, so the first
+    offset (the given one, then ``_PHASE_SHIFTS`` added to it) whose core count is at most one above the target is
+    returned.  If none is, the offset with the smallest excess is returned.  A calibration that reaches the target
+    with the given offset costs one pass.
+    """
+    target = args[2]
+    best: tuple[int, Tiling, TilingSetup] | None = None
+    shifts = ((0.0, 0.0), *_PHASE_SHIFTS)
+    for du, dv in shifts:
+        trial = (offset[0] + du) % 1.0, (offset[1] + dv) % 1.0
+        tiling = make_tiling(tuple(offset) if (du, dv) == (0.0, 0.0) else trial)
+        setup = calibrate_tiling(tiling, *args, **kwargs)
+        excess = max(0, len(setup.core_set) - target - 1)
+        if best is None or excess < best[0]:
+            best = (excess, tiling, setup)
+        if excess == 0 or kwargs.get("tile_size") is not None:
+            break
+    if best is None:  # pragma: no cover - the shift list is not empty
+        raise RuntimeError("no calibration ran")
+    return best[1], best[2]

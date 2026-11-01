@@ -11,7 +11,7 @@ import numpy as np
 __all__ = ["repair_adjacency", "repair_compactness", "repair_contiguity", "repair_group_assignment"]
 
 
-def repair_contiguity(
+def _repair_contiguity_pass(
     cells: list | None,
     groups: list,
     *,
@@ -21,43 +21,15 @@ def repair_contiguity(
     min_shared_length: float | None = None,
     adjacency: list[set[int]] | None = None,
     max_candidate_paths: int = 20,
+    merge_satellites: bool = False,
+    order: tuple[str, str] | None = None,
+    guard: bool = True,
 ) -> tuple[np.ndarray, list[tuple[Any, list[int]]]]:
-    """Make each group's cells form a connected subgraph via local swaps.
+    """One repair run; see :func:`repair_contiguity`.
 
-    Parameters
-    ----------
-    cells : list or None
-        Shapely geometry objects — one per slot.  May be None when
-        *adjacency* is supplied.
-    groups : list
-        Group label for each slot (same length as *cells*).
-    max_passes : int
-        Maximum number of repair passes (default 20).
-    show_progress : bool
-        Print per-pass progress summary.
-    debug : bool
-        Print one line per satellite repair attempt.
-    min_shared_length : float or None
-        Minimum shared border length for adjacency.
-    adjacency : list of set of int, or None
-        Precomputed slot adjacency (``adjacency[i]`` = slots sharing an edge
-        with slot *i*).  When given, *cells* is not used and no geometric
-        adjacency is computed.  Callers that already hold an exact tile
-        adjacency graph should pass it so the repair sees the same topology
-        the caller's metrics are computed on.
-    max_candidate_paths : int
-        How many shortest satellite-to-main-body chains to try before giving
-        up on a satellite.  Each candidate may be rejected because rerouting
-        it would split another group, so a low value can abandon a satellite
-        that a slightly longer search would have repaired.  Default 20.
-
-    Returns
-    -------
-    slot_of : np.ndarray of int, shape (n,)
-        Permutation array: ``slot_of[d]`` is the slot that district *d*
-        should occupy.
-    discontiguous : list[tuple[Any, list[int]]]
-        Remaining satellite components that could not be repaired.
+    *merge_satellites* lets a satellite join any other piece of its group, *order*
+    (group order, satellite order) fixes the processing order, and *guard* False
+    allows chains that split other groups.
     """
     n = len(groups)
 
@@ -108,49 +80,46 @@ def repair_contiguity(
         max_len: int = 10,
         max_k: int = max_candidate_paths,
     ):
-        # Reachability pre-check.  The enumeration below walks *paths*, so a
-        # node is re-expanded once per prefix that reaches it, and the search
-        # ends only when the heap empties -- which, when nothing reaches
-        # ``dst_slots``, means enumerating every simple path of up to
-        # ``max_len`` nodes.  A node-level BFS over the same restricted node
-        # set settles reachability in linear time, and a shortest walk is a
-        # simple path, so "no node of ``dst_slots`` within ``max_len`` nodes"
-        # is exactly the condition under which the enumeration yields nothing.
-        seen = {s for s in src_slots if s not in forbidden_nodes}
-        frontier: deque[tuple[int, int]] = deque((s, 1) for s in seen)
-        reachable = False
+        # Distance to ``dst_slots`` (in nodes, 0 on a destination) over the
+        # allowed nodes, by a backward BFS.  A prefix is only extended while
+        # ``length + dist`` stays within ``max_len``, so every queued prefix
+        # can still reach a destination.  Without this the heap expands all
+        # simple prefixes of up to ``max_len`` nodes, which grows exponentially
+        # on lattices with many equal-length chains.  The yielded chains and
+        # their order are those of the unpruned search: dropped prefixes never
+        # complete, and completions are still popped in (length, path) order.
+        dist: dict[int, int] = {}
+        frontier: deque[int] = deque()
+        for s in dst_slots:
+            if s not in forbidden_nodes:
+                dist[s] = 0
+                frontier.append(s)
         while frontier:
-            node, depth = frontier.popleft()
-            if node in dst_slots:
-                reachable = True
-                break
-            if depth >= max_len:
+            node = frontier.popleft()
+            if dist[node] + 2 > max_len:
                 continue
             for nb in adj[node]:
-                if nb not in seen and nb not in forbidden_nodes:
-                    seen.add(nb)
-                    frontier.append((nb, depth + 1))
-        if not reachable:
-            return
+                if nb not in dist and nb not in forbidden_nodes:
+                    dist[nb] = dist[node] + 1
+                    frontier.append(nb)
 
         heap: list[tuple[int, tuple[int, ...]]] = []
         for s in src_slots:
-            if s not in forbidden_nodes:
-                heapq.heappush(heap, (1, (s,)))
+            if s in dist and 1 + dist[s] <= max_len:
+                heapq.heappush(heap, (1 + dist[s], (s,)))
         k = 0
         while heap and k < max_k:
-            length, path_tup = heapq.heappop(heap)
+            _, path_tup = heapq.heappop(heap)
             cur = path_tup[-1]
             if cur in dst_slots:
                 yield list(path_tup)
                 k += 1
                 continue
-            if length >= max_len:
-                continue
+            length = len(path_tup)
             path_set = set(path_tup)
             for nb in adj[cur]:
-                if nb not in path_set and nb not in forbidden_nodes:
-                    heapq.heappush(heap, (length + 1, (*path_tup, nb)))
+                if nb not in path_set and nb in dist and length + 1 + dist[nb] <= max_len:
+                    heapq.heappush(heap, (length + 1 + dist[nb], (*path_tup, nb)))
 
     def _do_swap(d1: int, d2: int) -> None:
         s1, s2 = slot_of[d1], slot_of[d2]
@@ -175,7 +144,15 @@ def repair_contiguity(
         pass_swaps = 0
         pass_locked: set[int] = set()
 
-        for grp, dists in group_districts.items():
+        _items = list(group_districts.items())
+        if order is not None:
+            if order[0] == "size_asc":
+                _items.sort(key=lambda kv: len(kv[1]))
+            elif order[0] == "size_desc":
+                _items.sort(key=lambda kv: -len(kv[1]))
+            elif order[0] == "reverse":
+                _items.reverse()
+        for grp, dists in _items:
             if len(dists) < 2:
                 continue
 
@@ -205,6 +182,8 @@ def repair_contiguity(
                 return dist
 
             sat_comps_sorted = sorted(comps[1:], key=_sat_dist)
+            if order is not None and order[1] == "far":
+                sat_comps_sorted.reverse()
 
             for sat_comp in sat_comps_sorted:
                 sat_slots = set(sat_comp)
@@ -218,10 +197,16 @@ def repair_contiguity(
                     continue
 
                 other_sat_slots: set[int] = set()
-                for c in comps[2:]:
+                for c in comps[1:]:
                     other_sat_slots.update(c)
+                other_sat_slots -= sat_slots
 
-                open_main = main_slots - pass_locked
+                if merge_satellites:
+                    # a satellite may also join another satellite (fewer pieces)
+                    open_main = (main_slots | other_sat_slots) - pass_locked
+                    other_sat_slots = set()
+                else:
+                    open_main = main_slots - pass_locked
 
                 path = None
                 for candidate in _enumerate_paths(sat_slots, open_main, other_sat_slots):
@@ -243,10 +228,14 @@ def repair_contiguity(
                         if len(grp_b_dists) < 2:
                             continue
                         current_b_slots = [slot_of[dd] for dd in grp_b_dists]
-                        if len(_connected_components(current_b_slots)) > 1:
+                        n_current = len(_connected_components(current_b_slots))
+                        if grp_b == grp:
                             continue
                         final_b_slots = [affected_final.get(dd, slot_of[dd]) for dd in grp_b_dists]
-                        if len(_connected_components(final_b_slots)) > 1:
+                        # a contiguous group must stay so; a split group must not
+                        # fall into more pieces (else two split groups take turns
+                        # repairing each other and never settle)
+                        if guard and len(_connected_components(final_b_slots)) > n_current:
                             for k in range(1, n_cand - 1):
                                 if groups[dist_at[candidate[k]]] == grp_b:
                                     bad_slot = candidate[k]
@@ -335,6 +324,153 @@ def repair_contiguity(
             discontiguous.append((grp, sorted(sat_comp)))
 
     return slot_of, discontiguous
+
+
+def repair_contiguity(
+    cells: list | None,
+    groups: list,
+    *,
+    max_passes: int = 20,
+    show_progress: bool = False,
+    debug: bool = False,
+    min_shared_length: float | None = None,
+    adjacency: list[set[int]] | None = None,
+    max_candidate_paths: int = 20,
+    retries: int = 0,
+) -> tuple[np.ndarray, list[tuple[Any, list[int]]]]:
+    """Make each group's cells form a connected subgraph via local swaps.
+
+    A satellite is connected by a chain of swaps along a path to the main body;
+    a chain is refused when it would give another group more pieces.  If
+    pieces remain and *retries* is positive, further runs are tried on the
+    result, which can resolve groups that block each other (see *retries*).
+
+    Parameters
+    ----------
+    cells : list or None
+        Shapely geometry objects — one per slot.  May be None when
+        *adjacency* is supplied.
+    groups : list
+        Group label for each slot (same length as *cells*).
+    max_passes : int
+        Maximum number of repair passes (default 20).
+    show_progress : bool
+        Print per-pass progress summary.
+    debug : bool
+        Print one line per satellite repair attempt.
+    min_shared_length : float or None
+        Minimum shared border length for adjacency.
+    adjacency : list of set of int, or None
+        Precomputed slot adjacency (``adjacency[i]`` = slots sharing an edge
+        with slot *i*).  When given, *cells* is not used and no geometric
+        adjacency is computed.  Callers that already hold an exact tile
+        adjacency graph should pass it so the repair sees the same topology
+        the caller's metrics are computed on.
+    max_candidate_paths : int
+        How many shortest satellite-to-main-body chains to try before giving
+        up on a satellite.  Each candidate may be rejected because rerouting
+        it would split another group, so a low value can abandon a satellite
+        that a slightly longer search would have repaired.  Default 20.
+
+    retries : int
+        Number of fallback runs (at most 8) tried when satellites remain after the
+        first run; none run when *max_passes* is 0.  The first lets a satellite join any other piece of its group;
+        the others apply one run in which chains may split other groups, followed
+        by a normal repair of the damage, with a fixed group and satellite order
+        per run.  A run is kept only if the total number of extra pieces drops and
+        no group gets more pieces.  Default 0 (off).
+
+    Returns
+    -------
+    slot_of : np.ndarray of int, shape (n,)
+        Permutation array: ``slot_of[d]`` is the slot that district *d*
+        should occupy.
+    discontiguous : list[tuple[Any, list[int]]]
+        Remaining satellite components that could not be repaired.
+    """
+    kw: dict[str, Any] = {
+        "max_passes": max_passes,
+        "show_progress": show_progress,
+        "debug": debug,
+        "min_shared_length": min_shared_length,
+        "adjacency": adjacency,
+        "max_candidate_paths": max_candidate_paths,
+    }
+    slot_of, disc = _repair_contiguity_pass(cells, groups, **kw)
+    if not disc or retries <= 0 or max_passes <= 0:
+        return slot_of, disc
+    if adjacency is None:
+        from .adjacency import find_adjacent_pairs
+
+        n = len(groups)
+        adjacency = [set() for _ in range(n)]
+        for i, j, _ in find_adjacent_pairs(cells, min_shared_length=min_shared_length):
+            adjacency[i].add(j)
+            adjacency[j].add(i)
+        kw["adjacency"] = adjacency
+    n = len(groups)
+
+    def _excess(labels):
+        by: dict = defaultdict(list)
+        for s, g in enumerate(labels):
+            by[g].append(s)
+        out = {}
+        for g, sl in by.items():
+            seen: set[int] = set()
+            k = 0
+            for s0 in sl:
+                if s0 in seen:
+                    continue
+                k += 1
+                st = [s0]
+                seen.add(s0)
+                ss = set(sl)
+                while st:
+                    x = st.pop()
+                    for y in adjacency[x]:
+                        if y in ss and y not in seen:
+                            seen.add(y)
+                            st.append(y)
+            out[g] = k - 1
+        return out
+
+    cur_labels = [None] * n
+    for d, s in enumerate(slot_of):
+        cur_labels[int(s)] = groups[d]
+    cur_ex = _excess(cur_labels)
+    best = (sum(cur_ex.values()), slot_of, disc, cur_labels)
+    best_ex = cur_ex
+    variants: list[dict] = [{"merge_satellites": True}]
+    for sat_order in ("near", "far"):
+        for group_order in ("size_asc", "size_desc", "reverse", "default"):
+            if (group_order, sat_order) != ("default", "near"):
+                variants.append({"merge_satellites": True, "lookahead": True, "order": (group_order, sat_order)})
+    variants = variants[:retries]
+    kw = {**kw, "max_passes": max(max_passes, 20)}
+    for v in variants:
+        if best[0] == 0:
+            break
+        start_labels = best[3]
+        v = dict(v)
+        if v.pop("lookahead", False):
+            # one unguarded pass (chains may split other groups), then a guarded repair of the damage
+            sa, _ = _repair_contiguity_pass(None, start_labels, **{**kw, "max_passes": 1}, guard=False, **v)
+            mid = [None] * n
+            for d, s in enumerate(sa):
+                mid[int(s)] = start_labels[d]
+            sb, d2 = _repair_contiguity_pass(None, mid, **kw, merge_satellites=True)
+            s2 = np.asarray([int(sb[int(s)]) for s in sa], dtype=np.intp)
+        else:
+            s2, d2 = _repair_contiguity_pass(None, start_labels, **kw, **v)
+        new_labels = [None] * n
+        for d, s in enumerate(s2):
+            new_labels[int(s)] = start_labels[d]
+        ex = _excess(new_labels)
+        if sum(ex.values()) < best[0] and all(ex[g] <= best_ex[g] for g in ex):
+            comp = np.asarray([int(s2[int(s)]) for s in best[1]], dtype=np.intp)
+            best = (sum(ex.values()), comp, d2, new_labels)
+            best_ex = ex
+    return best[1], best[2]
 
 
 def _swap_preserves_contiguity(

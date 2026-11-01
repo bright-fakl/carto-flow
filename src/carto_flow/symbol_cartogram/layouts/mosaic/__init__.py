@@ -303,7 +303,9 @@ def _chain_swap_repair(
     # max_candidate_paths above the library default: the first chains found are
     # often rejected because rerouting them would split another unit, and the
     # accept-guard below makes a wider search free of downside.
-    slot_of, _ = repair_contiguity(None, units, max_passes=max_passes, adjacency=adjacency, max_candidate_paths=60)
+    slot_of, _ = repair_contiguity(
+        None, units, max_passes=max_passes, adjacency=adjacency, max_candidate_paths=60, retries=8
+    )
 
     repaired = assignment.copy()
     repaired[tiles] = -1

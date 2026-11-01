@@ -547,8 +547,23 @@ The breaking changes below make the next release 3.0.0.
   boundary:** when a rebuilt ring was self-intersecting, `make_valid` returned a
   geometry collection and only items of type `Polygon` were kept.
   ([#111](https://github.com/bright-fakl/carto-flow/pull/111))
+- **`repair_contiguity` connects every satellite and no longer repairs two split groups against each other.** A satellite
+  other than the second largest component found no chain, because its own tiles were forbidden to the chain while the
+  second largest component was not. A chain is also refused when it splits an already split group into more pieces, which
+  stops two split groups from taking turns at repairing each other. On the 432 districts by state with the mosaic layout,
+  hexagons end with 0 split groups (was 1); the 49 states with 350 tiles and squares end with 0 split regions (was 1).
+- **The mosaic layout closes split groups that block each other.** `repair_contiguity` has an opt-in `retries` parameter
+  (default 0; the mosaic layout uses 8). When satellites remain after the repair, it tries a satellite joining any other
+  piece of its group, then runs in which chains may split other groups followed by a normal repair of the damage, with fixed
+  group and satellite orders. A result is kept only if the total number of extra pieces drops and no group gets more
+  pieces. On the 432 districts by state with squares, the two split groups that the chain repair could not resolve are
+  closed.
 
 ### Performance
+
+- **`repair_contiguity` searches chains in a fraction of the time.** The search follows only chains that can still reach the
+  main body, with the same chains in the same order. The chain repair of the mosaic layout for the 432 districts by state with
+  hexagons takes 0.02 s instead of 3.8 s.
 
 - **`IsohedralTiling.generate` is up to hundreds of times faster.** The former implementation compared every pair of tiles to remove
   duplicates, so the time grew with the square of the tile count (IH7: 7.4 s for 2,385 tiles, 32 s for 4,491 tiles, with

@@ -162,6 +162,10 @@ PROFILES = {
 # the lowest value the docs plots show. The carto-flow ladders reach far higher caps than they can use in the
 # budget, so only time limits them.
 FLOOR_PCT = 1e-4
+# A tool also stops climbing once PATIENCE settings in a row improve the best maximum area error by less than
+# MIN_GAIN (relative): a tolerance that is not reached at one setting is not reached by a tighter one.
+PATIENCE = 3
+MIN_GAIN = 0.05
 # A tool stops climbing its ladder once a run takes longer than this many seconds (median of the
 # repeats); the settings above it are not run and the tool is marked truncated in the results.
 # Every dataset has its own budget: the same setting costs more on larger data.
@@ -246,6 +250,14 @@ def timed(fn, repeats: int):
     return seconds, out
 
 
+def no_progress(rows):
+    """True if the last PATIENCE settings did not improve the best maximum area error by MIN_GAIN."""
+    errors = [r["max_area_error_pct"] for r in rows]
+    if len(errors) <= PATIENCE:
+        return False
+    return min(errors[-PATIENCE:]) > (1 - MIN_GAIN) * min(errors[:-PATIENCE])
+
+
 def run_carto_flow(gdf, repeats, variant, ladder, budget):
     from carto_flow.flow_cartogram import MorphOptions, create_flow_cartogram
 
@@ -263,7 +275,7 @@ def run_carto_flow(gdf, repeats, variant, ladder, budget):
         seconds, res = timed(lambda n_iter=n_iter: call(n_iter), repeats)
         out = res.to_geodataframe(include_errors=False, include_density=False).geometry
         rows.append(record(gdf, out, seconds, max_iterations=n_iter))
-        if statistics.median(seconds) > budget or rows[-1]["max_area_error_pct"] <= FLOOR_PCT:
+        if statistics.median(seconds) > budget or rows[-1]["max_area_error_pct"] <= FLOOR_PCT or no_progress(rows):
             break
     return rows
 
@@ -323,7 +335,7 @@ def run_go_cart(gdf, repeats, binary, workdir, ladder, budget):
         out = gpd.read_file(next(outdir.glob("*_cartogram.geojson"))).set_index("ID").loc[gdf["ID"]].geometry
         out = out.set_crs(None, allow_override=True)
         rows.append(record(gdf, out.reset_index(drop=True), seconds, tolerance=tol))
-        if statistics.median(seconds) > budget or rows[-1]["max_area_error_pct"] <= FLOOR_PCT:
+        if statistics.median(seconds) > budget or rows[-1]["max_area_error_pct"] <= FLOOR_PCT or no_progress(rows):
             break
     return rows
 

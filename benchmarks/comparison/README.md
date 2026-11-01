@@ -15,7 +15,7 @@ A tool does not decide when it is accurate enough. A tool also stops climbing it
 - area error: relative deviation of each region's share of the total area from its share of the total value (mean and maximum);
 - validity: the number of output regions that are not valid polygons.
 
-The results JSON is accompanied by a GeoPackage of the same name (`.gpkg`) with the input and one example cartogram per tool (its fastest run within 1 % maximum area error, or its most accurate run), moved and scaled to the input's centroid and total area. The docs page draws them.
+The results JSON is accompanied by a GeoPackage of the same name (`.gpkg`) with the input and one example cartogram per tool (its fastest run within 1 % maximum area error, or its most accurate run), moved and scaled to the input's centroid and total area. `render_examples.py RESULTS_DIR OUTPUT_DIR` draws them into `comparison_<dataset>_examples.png`; the docs page shows these images. Only the JSON and the images are committed, not the GeoPackages.
 
 `time_to_target_s` in the results is the shortest median time among the runs whose measured maximum area error is within 5, 1 and 0.5 %. `null` means no run reached the target.
 

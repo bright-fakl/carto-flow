@@ -47,6 +47,7 @@ HERE = Path(__file__).resolve().parent
 _FLOW = [10, 20, 40, 80, 100, 120, 140, 160, 240, 320, 640, 1280, 2560, 5120, 10240, 20480]
 _GO_CART = [0.05, 0.02, 0.01, 0.005, 0.002, 0.001, 0.0005, 0.0002, 1e-4, 1e-5, 1e-6, 1e-7]
 _AUTO = {"carto-flow (grid=auto)": _FLOW}
+_DT = {"carto-flow (dt=0.05)": _FLOW}
 _REPAIR = {"carto-flow (repair-crossings)": _FLOW, "carto-flow (repair-quadtree)": _FLOW}
 PROFILES = {
     # A short check of the setup and of the curves; not for publication.
@@ -85,6 +86,7 @@ PROFILES = {
             "ladders": {
                 "carto-flow": _FLOW,
                 **_AUTO,
+                **_DT,
                 "Python cartogram": [5, 10, 20, 30, 50, 100],
                 "R cartogram": [5, 10, 20, 50, 100],
                 "cartogramR gsm": [2, 3, 5, 10, 20],
@@ -97,6 +99,7 @@ PROFILES = {
             "ladders": {
                 "carto-flow": _FLOW,
                 **_AUTO,
+                **_DT,
                 **_REPAIR,
                 "Python cartogram": [5, 10, 20],
                 "R cartogram": [5, 10, 20],
@@ -105,7 +108,10 @@ PROFILES = {
                 "go-cart": _GO_CART,
             },
         },
-        "counties": {"repeats": 1, "ladders": {"carto-flow": _FLOW, **_AUTO, **_REPAIR, "go-cart": _GO_CART}},
+        "counties": {
+            "repeats": 1,
+            "ladders": {"carto-flow": _FLOW, **_AUTO, **_DT, **_DT, **_REPAIR, "go-cart": _GO_CART},
+        },
     },
     "ci": {
         "states": {
@@ -113,6 +119,7 @@ PROFILES = {
             "ladders": {
                 "carto-flow": _FLOW,
                 **_AUTO,
+                **_DT,
                 "Python cartogram": [5, 10, 20, 50],
                 "R cartogram": [5, 10, 20, 50],
                 "cartogramR gsm": [2, 3, 5, 10, 20],
@@ -125,13 +132,17 @@ PROFILES = {
             "ladders": {
                 "carto-flow": _FLOW,
                 **_AUTO,
+                **_DT,
                 **_REPAIR,
                 "cartogramR gsm": [2, 3, 5, 10],
                 "cartogramR gn": [2, 5, 10],
                 "go-cart": _GO_CART,
             },
         },
-        "counties": {"repeats": 1, "ladders": {"carto-flow": _FLOW, **_AUTO, **_REPAIR, "go-cart": _GO_CART}},
+        "counties": {
+            "repeats": 1,
+            "ladders": {"carto-flow": _FLOW, **_AUTO, **_DT, **_DT, **_REPAIR, "go-cart": _GO_CART},
+        },
     },
 }
 # carto-flow runs as several tools; each entry is the MorphOptions that differ from the defaults.
@@ -150,6 +161,7 @@ BUDGET_S = {
 CARTO_FLOW_VARIANTS = {
     "carto-flow": {},
     "carto-flow (grid=auto)": {"grid": "auto"},
+    "carto-flow (dt=0.05)": {"dt": 0.05},
     "carto-flow (repair-crossings)": {"validity": "repair-crossings"},
     "carto-flow (repair-quadtree)": {"validity": "repair-quadtree"},
 }

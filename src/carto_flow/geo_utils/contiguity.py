@@ -215,8 +215,9 @@ def repair_contiguity(
                     continue
 
                 other_sat_slots: set[int] = set()
-                for c in comps[2:]:
+                for c in comps[1:]:
                     other_sat_slots.update(c)
+                other_sat_slots -= sat_slots
 
                 open_main = main_slots - pass_locked
 
@@ -240,10 +241,14 @@ def repair_contiguity(
                         if len(grp_b_dists) < 2:
                             continue
                         current_b_slots = [slot_of[dd] for dd in grp_b_dists]
-                        if len(_connected_components(current_b_slots)) > 1:
+                        n_current = len(_connected_components(current_b_slots))
+                        if grp_b == grp:
                             continue
                         final_b_slots = [affected_final.get(dd, slot_of[dd]) for dd in grp_b_dists]
-                        if len(_connected_components(final_b_slots)) > 1:
+                        # a contiguous group must stay so; a split group must not
+                        # fall into more pieces (else two split groups take turns
+                        # repairing each other and never settle)
+                        if len(_connected_components(final_b_slots)) > n_current:
                             for k in range(1, n_cand - 1):
                                 if groups[dist_at[candidate[k]]] == grp_b:
                                     bad_slot = candidate[k]

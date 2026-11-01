@@ -116,3 +116,39 @@ def test_pruned_enumeration_is_linear_when_unreachable():
     adj = Counting(base)
     assert list(_pruned(adj)({0}, {size * size - 1}, set(), 8)) == []
     assert adj.lookups <= 2 * size * size
+
+
+def test_satellite_other_than_second_largest_is_connected():
+    """The satellite being repaired neither forbids its own tiles nor is the largest one spared.
+
+    Satellites are processed nearest first, so the one being repaired is often
+    not the second largest component.  Group A has the main body {0, 1, 2}, a
+    larger satellite {6, 7} and a nearer, smaller satellite {4}; the chain for
+    {4} must find slot 3 even though {6, 7} is kept free of it.
+    """
+    groups = list("AAABABAAB")
+    adj = _from_edges(len(groups), [(i, i + 1) for i in range(len(groups) - 1)])
+    slot_of, _ = repair_contiguity(None, groups, adjacency=adj, max_passes=1)
+    slots_a = {int(slot_of[i]) for i, g in enumerate(groups) if g == "A"}
+    assert {0, 1, 2, 3, 4} <= slots_a
+
+
+def test_us_states_squares_do_not_leave_a_split_region():
+    """Two split regions no longer take turns at repairing each other.
+
+    On the 49 states with 350 tiles and squares, repairing a satellite of one
+    region used to split a neighboring region that was already split, and the
+    next pass undid it, until the passes ran out with a region in two blocks.
+    """
+    import numpy as np
+
+    from carto_flow.data import load_us_census
+    from carto_flow.symbol_cartogram import MosaicLayout, create_layout
+
+    gdf = load_us_census(level="state", population=True, contiguous_only=True).reset_index(drop=True)
+    population = gdf["Population"].to_numpy(dtype=float)
+    gdf["tiles"] = np.maximum(1, np.round(population / population.sum() * 350)).astype(int)
+    result = create_layout(
+        gdf, tile_count="tiles", layout=MosaicLayout(tiling="square", morph=False), show_progress=False
+    )
+    assert result.metrics.algorithm.n_noncontiguous_regions == 0

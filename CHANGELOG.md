@@ -547,6 +547,11 @@ The breaking changes below make the next release 3.0.0.
   boundary:** when a rebuilt ring was self-intersecting, `make_valid` returned a
   geometry collection and only items of type `Polygon` were kept.
   ([#111](https://github.com/bright-fakl/carto-flow/pull/111))
+- **`repair_contiguity` connects every satellite and no longer repairs two split groups against each other.** A satellite
+  other than the second largest component found no chain, because its own tiles were forbidden to the chain while the
+  second largest component was not. A chain is also refused when it splits an already split group into more pieces, which
+  stops two split groups from taking turns at repairing each other. On the 432 districts by state with the mosaic layout,
+  hexagons end with 0 split groups (was 1); the 49 states with 350 tiles and squares end with 0 split regions (was 1).
 
 ### Performance
 

@@ -110,7 +110,13 @@ PROFILES = {
         },
         "counties": {
             "repeats": 1,
-            "ladders": {"carto-flow": _FLOW, **_AUTO, **_DT, **_DT, **_REPAIR, "go-cart": _GO_CART},
+            "ladders": {
+                "carto-flow": _FLOW,
+                **_AUTO,
+                **_DT,
+                "carto-flow (repair-crossings)": _FLOW,
+                "go-cart": _GO_CART,
+            },
         },
     },
     "ci": {
@@ -141,7 +147,13 @@ PROFILES = {
         },
         "counties": {
             "repeats": 1,
-            "ladders": {"carto-flow": _FLOW, **_AUTO, **_DT, **_DT, **_REPAIR, "go-cart": _GO_CART},
+            "ladders": {
+                "carto-flow": _FLOW,
+                **_AUTO,
+                **_DT,
+                "carto-flow (repair-crossings)": _FLOW,
+                "go-cart": _GO_CART,
+            },
         },
     },
 }

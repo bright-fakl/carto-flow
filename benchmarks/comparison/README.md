@@ -1,0 +1,46 @@
+# Flow cartogram comparison
+
+Compares carto-flow with other flow cartogram implementations on the US states, congressional districts and counties:
+
+| Tool | Version |
+|---|---|
+| carto-flow | the checked-out source, with `validity` set to `check` (default), `repair-crossings` and `repair-quadtree` |
+| go-cart (`cartogram-cpp`) | commit 9200b14 |
+| R `cartogram` (`cartogram_cont`, Dougenik et al.) | 0.3.0 |
+| R `cartogramR` (`gsm` and `gn`) | 1.5.1 |
+| Python `cartogram` (Dougenik et al.) | 1.0.2 |
+
+A tool does not decide when it is accurate enough. A tool also stops climbing its ladder once a run takes longer than a time budget (60 s on the states, 120 s on the districts, 300 s on the counties); the results mark it as truncated. It also stops after three settings in a row that improve the best maximum area error by less than 5 %, since a tolerance that is not reached at one setting is not reached by a tighter one. The iterative tools run with a stopping tolerance that cannot be reached and an increasing iteration cap, so every run stops at its cap. go-cart has no iteration cap; it runs with maximum area errors of 5, 2, 1, 0.5 and 0.2 %, which is also its own stopping rule. The accuracy of every output is then measured with the same metrics from the output geometries, so the results do not depend on how a tool reports its own error:
+
+- area error: relative deviation of each region's share of the total area from its share of the total value (mean and maximum);
+- validity: the number of output regions that are not valid polygons.
+
+The results JSON is accompanied by a GeoPackage of the same name (`.gpkg`) with the input and one example cartogram per tool (its fastest run within 1 % maximum area error, or its most accurate run), moved and scaled to the input's centroid and total area. `render_examples.py RESULTS_DIR OUTPUT_DIR` draws them into `comparison_<dataset>_examples.png`; the docs page shows these images. Only the JSON and the images are committed, not the GeoPackages.
+
+`time_to_target_s` in the results is the shortest median time among the runs whose measured maximum area error is within 5, 1 and 0.5 %. `null` means no run reached the target.
+
+Wall-clock times of go-cart include reading the files and starting the process; the other tools are timed around the call. Times are the median of `--repeats` runs (default 3), after a warm-up that is not timed.
+
+## Run it with Docker
+
+From the repository root:
+
+```bash
+docker build -f benchmarks/comparison/Dockerfile -t carto-flow-comparison .
+```
+
+```bash
+docker run --rm -v "$PWD:/repo" -v "$PWD/comparison_out:/out" carto-flow-comparison --dataset states --output /out/comparison_results.json
+```
+
+The image holds the tools and the Python dependencies; the repository is mounted, so changes to the source do not require a rebuild. The go-cart build takes about ten minutes and about 4 GB of memory (`--build-arg JOBS=...` changes the number of compile jobs). `--tools` selects tools, `--dataset` is `states`, `districts` or `counties`, and `--repeats` sets the number of timed runs.
+
+Compare timings only within one run: they depend on the machine, and on macOS and Windows Docker runs in a virtual machine.
+
+## Run it in CI
+
+The `Flow Cartogram Comparison` workflow (`.github/workflows/comparison.yml`) is started manually from the Actions tab, like the benchmarks. It builds the image (layers are cached between runs), runs the chosen profile on the chosen datasets, draws the example images and commits `docs/performance/comparison_*.json` and `comparison_*_examples.png`. With `push_image` it also publishes the image as `ghcr.io/<owner>/carto-flow-comparison:latest`, which can be pulled instead of built; the package has to be made public once in the GitHub package settings. Times from a CI run come from a shared runner and differ from local runs.
+
+## Run it without Docker
+
+Install the tools listed above, put the go-cart binary on the `PATH` (or pass `--go-cart`), make `Rscript` available, and run `python benchmarks/comparison/run_comparison.py`. go-cart needs longitude/latitude input and non-numeric region ids; the script handles both. The Python `cartogram` package must be installed in the same environment as carto-flow.

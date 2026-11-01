@@ -1,0 +1,5 @@
+# The comparison image only needs the dependency files; the repository is mounted at run time.
+*
+!pyproject.toml
+!uv.lock
+!README.md

@@ -32,17 +32,39 @@ class GridMetrics:
 class GridBasedLayoutOptions:
     """Options for grid-based placement.
 
-    The assignment cost function combines four terms, harmonized with the
-    ``TopologyPreservingSimulator`` force terminology:
+    With ``assignment="energy"`` (the default) the assignment of regions to
+    tiles minimizes one energy, in tile units (lengths in steps between
+    neighboring tile centers)::
 
-    - **origin_weight**: Preference for assigning regions near their
-      original centroid positions (analogous to origin attraction force).
-    - **neighbor_weight**: Keep adjacent regions close on the grid
-      (analogous to neighbor tangency force).
-    - **topology_weight**: Preserve the relative direction between
-      neighbors (analogous to angular topology force).
-    - **compactness**: Prefer central/compact placement on the grid
-      (analogous to global centroid attraction).
+        E = origin_weight * (sum of the distances from centroid to tile)
+          + neighbor_weight * (contact penalty)
+          + connectivity_weight * (connectivity defects)
+
+    - The distance is linear: every tile step costs ``origin_weight``.
+    - The contact penalty is, for two neighboring regions, 0 on tiles sharing
+      an edge, 0.2 on tiles sharing only a vertex and ``(h - 1)**2`` on tiles
+      ``h`` steps apart; and 1 for every two regions that are not neighbors
+      but sit on tiles sharing an edge.
+    - A connectivity defect is an extra piece of a group of connected regions,
+      two groups joined into one piece, or a free area enclosed by occupied
+      tiles beyond the holes of the input geometries.
+
+    With the defaults, one tile step of distance costs as much as one missed
+    contact, and one defect as much as 100 missed contacts, so the result is
+    one connected set of tiles without holes whenever a single move, a shift
+    chain or the move of a detached piece can reach it. The minimization
+    starts from a refined Hungarian assignment, in which ``topology_weight``
+    and ``compactness`` also take part, and then moves single regions to free
+    tiles, swaps pairs of regions, fills holes by shift chains and moves
+    detached pieces, accepting a move only when it lowers ``E``. Tiles of the
+    lattice that no region needs therefore change the result only through
+    the distances.
+
+    With ``assignment="refine"`` the assignment is the refined Hungarian
+    assignment itself, followed by ``fill_holes`` and ``fix_islands``. Its
+    origin cost is the squared distance divided by the largest squared
+    distance between a centroid and a tile, so it depends on the extent of
+    the lattice.
 
     Parameters
     ----------
@@ -53,16 +75,18 @@ class GridBasedLayoutOptions:
     grid_size : int, tuple, or "auto"
         Number of grid cells. "auto" creates ~2x regions cells.
     origin_weight : float
-        Weight for assigning regions near their original centroids.
-        Default: 1.0.
+        Weight for assigning regions near their original centroids: the
+        energy of one tile step of distance. Default: 0.5.
     neighbor_weight : float
-        Weight for keeping adjacent regions close on the grid.
-        Default: 0.3.
+        Weight for keeping adjacent regions close on the grid: the energy of
+        one missed contact. Default: 0.5.
     topology_weight : float
-        Weight for preserving relative neighbor orientations.
-        Default: 0.0.
+        Weight for preserving relative neighbor orientations. With
+        ``assignment="energy"`` it shapes the starting assignment only.
+        Default: 0.5.
     compactness : float
-        Weight for compact/central placement. Default: 0.0.
+        Weight for compact/central placement. With ``assignment="energy"``
+        it shapes the starting assignment only. Default: 0.1.
     spacing : float
         Gap between symbols as fraction of cell size (0-1). Used when
         computing the maximum symbol size that fits within grid cells.
@@ -70,17 +94,27 @@ class GridBasedLayoutOptions:
         If True, post-process the assignment to fill internal holes —
         unoccupied tiles surrounded by occupied tiles that don't correspond
         to geographic gaps in the original geometries. Islands and genuine
-        geographic gaps (e.g. internal lakes) are preserved. Default: False.
+        geographic gaps (e.g. internal lakes) are preserved. Used with
+        ``assignment="refine"`` only. Default: True.
     min_hole_fraction : float
         Minimum area of a geographic interior ring, as a fraction of one
         tile's area, for it to count as a genuine geographic gap. Rings
         smaller than this are treated as boundary artifacts and ignored.
+        The geographic gaps are the holes that are not connectivity defects.
         Default: 0.5.
     fix_islands : bool
         If True, post-process the assignment to reassign regions that are
         disconnected from the main assignment cluster to tiles adjacent to
         the cluster. True geographic islands (regions not adjacent to any
-        other region) are preserved. Default: False.
+        other region) are preserved. Used with ``assignment="refine"`` only.
+        Default: True.
+    assignment : {"energy", "refine"}
+        How regions are assigned to tiles: ``"energy"`` minimizes the energy
+        above; ``"refine"`` uses the refined Hungarian assignment followed by
+        ``fill_holes`` and ``fix_islands``. Default: ``"energy"``.
+    connectivity_weight : float
+        Energy of one connectivity defect, with ``assignment="energy"``.
+        Default: 50.0.
     verbose : bool
         If True, print diagnostic information during fill_holes and
         fix_islands processing. Default: False.
@@ -116,6 +150,8 @@ class GridBasedLayoutOptions:
     fill_holes: bool = True
     min_hole_fraction: float = 0.5
     fix_islands: bool = True
+    assignment: Literal["energy", "refine"] = "energy"
+    connectivity_weight: float = 50.0
     verbose: bool = False
     symbol_shape: SymbolShape | None = None
     symbol_orientation: SymbolOrientation = SymbolOrientation.UPRIGHT
@@ -137,6 +173,17 @@ class GridBasedLayoutOptions:
             raise ValueError("spacing must be between 0 and 1")
         if self.min_hole_fraction < 0:
             raise ValueError("min_hole_fraction must be >= 0")
+        if self.assignment not in ("energy", "refine"):
+            raise ValueError("assignment must be 'energy' or 'refine'")
+        if self.connectivity_weight < 0:
+            raise ValueError("connectivity_weight must be >= 0")
+
+
+def _centroid_extent(centroids: NDArray) -> float | None:
+    """Squared diagonal of the bounding box of the centroids, or None for a single point."""
+    span = np.ptp(np.asarray(centroids, dtype=float), axis=0) if len(centroids) else np.zeros(2)
+    ext = float((span**2).sum())
+    return ext if ext > 0 else None
 
 
 class GridBasedLayout(Layout):
@@ -175,6 +222,44 @@ class GridBasedLayout(Layout):
         self._options = _apply_kwargs_to_options(options, kwargs)
         self._options.validate()
 
+    def _assign(self, centroids: NDArray, adjacency: NDArray, tiling_result, data: LayoutData) -> NDArray[np.intp]:
+        """One tile per centroid, by the method set in ``assignment``."""
+        from ._energy import GridEnergy
+        from ._placement import _geographic_holes, assign_to_grid_hungarian
+
+        opts = self._options
+        energy = opts.assignment == "energy"
+        start = assign_to_grid_hungarian(
+            centroids=centroids,
+            grid_centers=tiling_result.centers,
+            adjacency=adjacency,
+            tile_adjacency=tiling_result.adjacency,
+            vertex_adjacency=tiling_result.vertex_adjacency,
+            origin_weight=opts.origin_weight,
+            neighbor_weight=opts.neighbor_weight,
+            topology_weight=opts.topology_weight,
+            compactness=opts.compactness,
+            damping=0.5 if energy else 1.0,
+            origin_scale=_centroid_extent(centroids) if energy else None,
+        )
+        if not energy:
+            return start
+        allowed_holes = _geographic_holes(
+            list(data.source_gdf.geometry), tiling_result.adjacency, tiling_result.centers, opts.min_hole_fraction
+        )[0]
+        model = GridEnergy(
+            centroids,
+            tiling_result.centers,
+            adjacency,
+            tiling_result.adjacency,
+            tiling_result.vertex_adjacency,
+            distance_weight=opts.origin_weight,
+            contact_weight=opts.neighbor_weight,
+            connectivity_weight=opts.connectivity_weight,
+            allowed_holes=allowed_holes,
+        )
+        return model.descend(start)
+
     def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Run grid assignment and return result.
 
@@ -196,7 +281,6 @@ class GridBasedLayout(Layout):
         from ...tiling import resolve_tiling
         from ._placement import (
             _fix_island_assignments,
-            assign_to_grid_hungarian,
             bfs_expand_assignments,
             fill_internal_holes,
         )
@@ -273,17 +357,7 @@ class GridBasedLayout(Layout):
             adjacency_G = data.adjacency[np.ix_(first_items, first_items)]
 
             # Phase 1: G-level Hungarian anchor placement
-            anchor_assignments = assign_to_grid_hungarian(
-                centroids=geometry_positions,
-                grid_centers=tiling_result.centers,
-                adjacency=adjacency_G,
-                tile_adjacency=tiling_result.adjacency,
-                vertex_adjacency=tiling_result.vertex_adjacency,
-                origin_weight=self._options.origin_weight,
-                neighbor_weight=self._options.neighbor_weight,
-                topology_weight=self._options.topology_weight,
-                compactness=self._options.compactness,
-            )
+            anchor_assignments = self._assign(geometry_positions, adjacency_G, tiling_result, data)
 
             # Phase 2: BFS expansion — each geometry grows from its anchor
             geom_tiles = bfs_expand_assignments(
@@ -300,20 +374,11 @@ class GridBasedLayout(Layout):
                 assignments[k] = geom_tiles[g][geom_counters[g]]
                 geom_counters[g] += 1
         else:
-            assignments = assign_to_grid_hungarian(
-                centroids=data.positions,
-                grid_centers=tiling_result.centers,
-                adjacency=data.adjacency,
-                tile_adjacency=tiling_result.adjacency,
-                vertex_adjacency=tiling_result.vertex_adjacency,
-                origin_weight=self._options.origin_weight,
-                neighbor_weight=self._options.neighbor_weight,
-                topology_weight=self._options.topology_weight,
-                compactness=self._options.compactness,
-            )
+            assignments = self._assign(data.positions, data.adjacency, tiling_result, data)
 
         # Post-process: fill holes if requested
-        if self._options.fill_holes:
+        refine = self._options.assignment == "refine"
+        if refine and self._options.fill_holes:
             assignments = fill_internal_holes(
                 assignments,
                 tiling_result.adjacency,
@@ -325,7 +390,7 @@ class GridBasedLayout(Layout):
             )
 
         # Post-process: fix islands if requested
-        if self._options.fix_islands:
+        if refine and self._options.fix_islands:
             assignments = _fix_island_assignments(
                 assignments,
                 tiling_result.adjacency,

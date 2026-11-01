@@ -28,6 +28,44 @@ def _lists(adj: csr_array) -> list[list[int]]:
     return [indices[indptr[t] : indptr[t + 1]] for t in range(adj.shape[0])]
 
 
+def _geographic_holes(
+    original_polygons: list,
+    tile_adjacency: csr_array,
+    grid_centers: NDArray[np.floating],
+    min_hole_fraction: float,
+) -> tuple[int, int, str, float, float]:
+    """Count the interior rings of the union of the input geometries that are at least *min_hole_fraction* of a tile.
+
+    Returns the number of such rings, the number of all rings, the geometry type of
+    the union, the estimated tile area and the minimum ring area.
+    """
+    from shapely import Polygon as ShapelyPolygon
+    from shapely.ops import unary_union
+
+    # Approximate one tile's area from the mean distance between adjacent
+    # tile centers, then scale by min_hole_fraction.  Interior rings
+    # smaller than this threshold are treated as boundary artifacts.
+    adj = _canonical(tile_adjacency)
+    adj_rows = np.repeat(np.arange(adj.shape[0]), np.diff(adj.indptr))
+    if len(adj_rows) > 0:
+        dists = np.linalg.norm(grid_centers[adj_rows] - grid_centers[adj.indices], axis=1)
+        tile_area_est = float(np.mean(dists)) ** 2
+    else:
+        tile_area_est = 0.0
+    min_hole_area = min_hole_fraction * tile_area_est
+
+    union_geom = unary_union(original_polygons)
+    polys = [union_geom] if union_geom.geom_type == "Polygon" else list(getattr(union_geom, "geoms", []))
+    n_geo_holes = 0
+    n_total_rings = 0
+    for poly in polys:
+        for ring in getattr(poly, "interiors", []):
+            n_total_rings += 1
+            if ShapelyPolygon(ring).area >= min_hole_area:
+                n_geo_holes += 1
+    return n_geo_holes, n_total_rings, union_geom.geom_type, tile_area_est, min_hole_area
+
+
 def fill_internal_holes(
     assignments: NDArray[np.intp],
     tile_adjacency: csr_array,
@@ -76,9 +114,6 @@ def fill_internal_holes(
     """
     from collections import deque
 
-    from shapely import Polygon as ShapelyPolygon
-    from shapely.ops import unary_union
-
     assignments = assignments.copy()
     m = len(grid_centers)
     n = len(assignments)
@@ -88,43 +123,15 @@ def fill_internal_holes(
         print(f"[fill_holes] {n} regions assigned to {m} tiles")
         print(f"[fill_holes] {m - len(assigned_set)} unassigned tiles")
 
-    # --- Estimate minimum area for a geographic hole to be significant ---
-    # Approximate one tile's area from the mean distance between adjacent
-    # tile centers, then scale by min_hole_fraction.  Interior rings
-    # smaller than this threshold are treated as boundary artifacts.
     adj = _canonical(tile_adjacency)
     nbrs = _lists(adj)
     neighbor_counts = np.diff(adj.indptr)
-    adj_rows = np.repeat(np.arange(adj.shape[0]), neighbor_counts)
-    adj_cols = adj.indices
-    if len(adj_rows) > 0:
-        dists = np.linalg.norm(
-            grid_centers[adj_rows] - grid_centers[adj_cols],
-            axis=1,
-        )
-        tile_area_est = float(np.mean(dists)) ** 2
-    else:
-        tile_area_est = 0.0
-    min_hole_area = min_hole_fraction * tile_area_est
-
-    # --- Count expected geographic holes in original geometries ---
-    union_geom = unary_union(original_polygons)
-    n_geo_holes = 0
-    n_total_rings = 0
-    if union_geom.geom_type == "Polygon":
-        for ring in union_geom.interiors:
-            n_total_rings += 1
-            if ShapelyPolygon(ring).area >= min_hole_area:
-                n_geo_holes += 1
-    elif union_geom.geom_type == "MultiPolygon":
-        for poly in union_geom.geoms:
-            for ring in poly.interiors:
-                n_total_rings += 1
-                if ShapelyPolygon(ring).area >= min_hole_area:
-                    n_geo_holes += 1
+    n_geo_holes, n_total_rings, union_type, tile_area_est, min_hole_area = _geographic_holes(
+        original_polygons, adj, grid_centers, min_hole_fraction
+    )
 
     if verbose:
-        print(f"[fill_holes] Union geometry type: {union_geom.geom_type}")
+        print(f"[fill_holes] Union geometry type: {union_type}")
         print(
             f"[fill_holes] Estimated tile area: {tile_area_est:.4g}, "
             f"min_hole_fraction: {min_hole_fraction}, "
@@ -701,6 +708,8 @@ def assign_to_grid_hungarian(
     topology_weight: float = 0.0,
     compactness: float = 0.0,
     source_indices: NDArray[np.intp] | None = None,
+    damping: float = 1.0,
+    origin_scale: float | None = None,
 ) -> NDArray[np.intp]:
     """Optimal assignment of regions to grid cells using Hungarian algorithm.
 
@@ -740,6 +749,16 @@ def assign_to_grid_hungarian(
         Weight for neighbor orientation cost. Default: 0.0.
     compactness : float
         Weight for compactness cost. Default: 0.0.
+    damping : float
+        Share of the neighbor cost of the latest assignment in the neighbor
+        cost of the next refinement pass, in (0, 1]. The rest is the neighbor
+        cost used in the previous pass. 1.0 uses the latest assignment only.
+        Smaller values keep the passes from alternating between two
+        assignments. Default: 1.0.
+    origin_scale : float, optional
+        Squared distance that the origin cost is divided by. None uses the
+        largest squared distance between a centroid and a tile center, which
+        depends on the extent of the lattice. Default: None.
 
     Returns
     -------
@@ -752,7 +771,7 @@ def assign_to_grid_hungarian(
 
     # --- Origin cost: distance from centroids to grid cells ---
     origin_cost = cdist(centroids, grid_centers, metric="sqeuclidean")
-    max_dist = np.max(origin_cost)
+    max_dist = np.max(origin_cost) if origin_scale is None else origin_scale
     if max_dist > 0:
         origin_cost = origin_cost / max_dist
 
@@ -804,8 +823,9 @@ def assign_to_grid_hungarian(
         base_cost = init_origin_w * origin_cost + compactness * compactness_cost
         _, assignment = linear_sum_assignment(base_cost)
 
-        # Iterative refinement (up to 10 passes, stop if converged)
-        for _iter in range(10):
+        # Iterative refinement
+        def _terms(assignment):
+            """Neighbor + reverse cost (n, m) and normalized orientation cost for an assignment."""
             neighbor_cost = np.zeros((n, m))
             orientation_cost = np.zeros((n, m))
 
@@ -877,16 +897,22 @@ def assign_to_grid_hungarian(
             if max_oc > 0:
                 orientation_cost /= max_oc
 
+            return neighbor_cost + reverse_cost, orientation_cost
+
+        prev_nb = None
+        for _iter in range(10):
+            prev_assignment = assignment
+            nb_term, orientation_cost = _terms(assignment)
+            if prev_nb is not None and damping < 1.0:
+                nb_term = (1.0 - damping) * prev_nb + damping * nb_term
+            prev_nb = nb_term
             combined = (
                 origin_weight * origin_cost
-                + neighbor_weight * (neighbor_cost + reverse_cost)
+                + neighbor_weight * nb_term
                 + topology_weight * orientation_cost
                 + compactness * compactness_cost
             )
-            prev_assignment = assignment
             _, assignment = linear_sum_assignment(combined)
-
-            # Converged if assignment didn't change
             if np.array_equal(assignment, prev_assignment):
                 break
 

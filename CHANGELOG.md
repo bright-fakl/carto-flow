@@ -315,6 +315,17 @@ The breaking changes below make the next release 3.0.0.
 
 ### Changed
 
+- **`GridBasedLayout` assigns regions to tiles by minimizing one energy, and every default grid layout changes.** The
+  energy, in tile units, is `origin_weight` times the distance of each region from its tile (linear, in tile steps), plus
+  `neighbor_weight` times the contact penalty of the refinement (missed contacts between neighbors, touching
+  non-neighbors), plus the new `connectivity_weight` (default 50) times the number of connectivity defects: extra pieces
+  of a group of connected regions, groups joined into one piece, and enclosed free areas beyond the holes of the input. It
+  is minimized from the refined Hungarian assignment (now damped, so its passes do not alternate between two assignments)
+  by moving single regions, swapping pairs, filling holes by shift chains and moving detached pieces, each only when it
+  lowers the energy. The result is a connected tile set without holes without the `fill_holes` and `fix_islands` steps,
+  regions sit closer to their centroids and more neighbors touch on average, and tiles that no region needs change the
+  result much less. The previous assignment is available as `assignment="refine"`; `fill_holes` and `fix_islands`
+  apply to it only. `topology_weight` and `compactness` shape the starting assignment only.
 - **The overlay colors of `PlotStyle.dark()` differ under red-green color vision deficiency.** The series, accent, positive and highlight colors changed slightly (`#85b7e0`, `#facc38`, `#54d497`, `#bf9cfc`).
 - **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,
   which put each square in a lattice cell: with the default `size_normalization="max"` the squares covered 15 % of the

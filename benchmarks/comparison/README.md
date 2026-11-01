@@ -37,6 +37,10 @@ The image holds the tools and the Python dependencies; the repository is mounted
 
 Compare timings only within one run: they depend on the machine, and on macOS and Windows Docker runs in a virtual machine.
 
+## Run it in CI
+
+The `Flow Cartogram Comparison` workflow (`.github/workflows/comparison.yml`) is started manually from the Actions tab, like the benchmarks. It builds the image (layers are cached between runs), runs the chosen profile on the chosen datasets, draws the example images and commits `docs/performance/comparison_*.json` and `comparison_*_examples.png`. With `push_image` it also publishes the image as `ghcr.io/<owner>/carto-flow-comparison:latest`, which can be pulled instead of built; the package has to be made public once in the GitHub package settings. Times from a CI run come from a shared runner and differ from local runs.
+
 ## Run it without Docker
 
 Install the tools listed above, put the go-cart binary on the `PATH` (or pass `--go-cart`), make `Rscript` available, and run `python benchmarks/comparison/run_comparison.py`. go-cart needs longitude/latitude input and non-numeric region ids; the script handles both. The Python `cartogram` package must be installed in the same environment as carto-flow.

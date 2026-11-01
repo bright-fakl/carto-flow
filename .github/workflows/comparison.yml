@@ -1,0 +1,84 @@
+name: Flow Cartogram Comparison
+
+# Runs the comparison with the other flow cartogram tools (benchmarks/comparison/) in Docker and commits
+# the results and the example images to docs/performance/. Run it manually at a release, like the benchmarks.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Profile (ci is shorter than full)
+        type: choice
+        options: [ci, full]
+        default: ci
+      datasets:
+        description: Datasets, space separated
+        default: "states districts"
+      push_image:
+        description: Publish the image to ghcr.io
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/carto-flow-comparison
+
+jobs:
+  comparison:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        if: inputs.push_image
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: benchmarks/comparison/Dockerfile
+          load: true
+          push: ${{ inputs.push_image }}
+          tags: ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run the comparison
+        run: |
+          mkdir -p comparison_out
+          for dataset in ${{ inputs.datasets }}; do
+            docker run --rm -v "$PWD:/repo" -v "$PWD/comparison_out:/out" "$IMAGE:latest" \
+              --dataset "$dataset" --profile "${{ inputs.profile }}" --output "/out/comparison_${dataset}.json"
+          done
+
+      - name: Set up Python environment
+        uses: ./.github/actions/setup-python-env
+
+      - name: Draw the example images
+        run: |
+          uv sync --group benchmark
+          uv run python benchmarks/comparison/render_examples.py comparison_out docs/performance
+          cp comparison_out/*.json docs/performance/
+
+      - name: Commit the results
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add docs/performance/comparison_*.json docs/performance/comparison_*_examples.png
+          git diff --cached --quiet || \
+            (git commit -m "chore: update comparison results" && git push)

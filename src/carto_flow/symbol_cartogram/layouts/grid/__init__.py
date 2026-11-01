@@ -39,6 +39,7 @@ class GridBasedLayoutOptions:
         E = origin_weight * (sum of the distances from centroid to tile)
           + neighbor_weight * (contact penalty)
           + connectivity_weight * (connectivity defects)
+          + 10 * compactness * neighbor_weight * (pockets)
 
     - The distance is linear: every tile step costs ``origin_weight``.
     - The contact penalty is, for two neighboring regions, 0 on tiles sharing
@@ -48,13 +49,24 @@ class GridBasedLayoutOptions:
     - A connectivity defect is an extra piece of a group of connected regions,
       two groups joined into one piece, or a free area enclosed by occupied
       tiles beyond the holes of the input geometries.
+    - A pocket is a free tile with more than half of the largest number of
+      edge neighbors of a tile occupied: a notch in the tile set.
+
+    ``compactness`` (0 to 1) also restricts the tiles a region may use. The
+    tiles are ordered by a packed growth from the middle of the centroids that
+    always adds the free tile with the most grown neighbors, so every prefix
+    of the order is one connected set without notches. The assignment may use
+    the first ``n + (1 - compactness) * (m - n)`` tiles of ``m``: the whole
+    lattice at 0, where the layout follows the geography as closely as the
+    other terms allow, and exactly ``n`` packed tiles at 1, where the layout
+    is a solid block without pockets.
 
     With the defaults, one tile step of distance costs as much as one missed
     contact, and one defect as much as 100 missed contacts, so the result is
     one connected set of tiles without holes whenever a single move, a shift
     chain or the move of a detached piece can reach it. The minimization
-    starts from a refined Hungarian assignment, in which ``topology_weight``
-    and ``compactness`` also take part, and then moves single regions to free
+    starts from a refined Hungarian assignment on the allowed tiles, in which
+    ``topology_weight`` also takes part, and then moves single regions to free
     tiles, swaps pairs of regions, fills holes by shift chains and moves
     detached pieces, accepting a move only when it lowers ``E``. Tiles of the
     lattice that no region needs therefore change the result only through
@@ -85,8 +97,10 @@ class GridBasedLayoutOptions:
         ``assignment="energy"`` it shapes the starting assignment only.
         Default: 0.5.
     compactness : float
-        Weight for compact/central placement. With ``assignment="energy"``
-        it shapes the starting assignment only. Default: 0.1.
+        With ``assignment="energy"``: from 0 to 1, how packed the tile set
+        is, through the allowed tiles and the pocket term above. With
+        ``assignment="refine"``: weight of the distance from the grid center
+        in the assignment cost. Default: 0.25.
     spacing : float
         Gap between symbols as fraction of cell size (0-1). Used when
         computing the maximum symbol size that fits within grid cells.
@@ -145,7 +159,7 @@ class GridBasedLayoutOptions:
     origin_weight: float = 0.5
     neighbor_weight: float = 0.5
     topology_weight: float = 0.5
-    compactness: float = 0.1
+    compactness: float = 0.25
     spacing: float = 0.05
     fill_holes: bool = True
     min_hole_fraction: float = 0.5
@@ -169,6 +183,8 @@ class GridBasedLayoutOptions:
             raise ValueError("topology_weight must be >= 0")
         if self.compactness < 0:
             raise ValueError("compactness must be >= 0")
+        if self.assignment == "energy" and self.compactness > 1:
+            raise ValueError("compactness must be between 0 and 1 with assignment='energy'")
         if not 0 <= self.spacing <= 1:
             raise ValueError("spacing must be between 0 and 1")
         if self.min_hole_fraction < 0:
@@ -177,6 +193,10 @@ class GridBasedLayoutOptions:
             raise ValueError("assignment must be 'energy' or 'refine'")
         if self.connectivity_weight < 0:
             raise ValueError("connectivity_weight must be >= 0")
+
+
+# Energy of a pocket at compactness 1, in missed contacts
+_POCKET_SCALE = 10.0
 
 
 def _centroid_extent(centroids: NDArray) -> float | None:
@@ -229,16 +249,25 @@ class GridBasedLayout(Layout):
 
         opts = self._options
         energy = opts.assignment == "energy"
+        centers, tile_adj, vert_adj = tiling_result.centers, tiling_result.adjacency, tiling_result.vertex_adjacency
+        allowed = None
+        if energy and opts.compactness > 0:
+            from ._compact import candidate_tiles
+
+            allowed = candidate_tiles(centroids, centers, tile_adj, opts.compactness)
+            sub = np.ix_(allowed, allowed)
+            centers, tile_adj = centers[allowed], tile_adj.tocsr()[sub]
+            vert_adj = vert_adj.tocsr()[sub] if vert_adj is not None else None
         start = assign_to_grid_hungarian(
             centroids=centroids,
-            grid_centers=tiling_result.centers,
+            grid_centers=centers,
             adjacency=adjacency,
-            tile_adjacency=tiling_result.adjacency,
-            vertex_adjacency=tiling_result.vertex_adjacency,
+            tile_adjacency=tile_adj,
+            vertex_adjacency=vert_adj,
             origin_weight=opts.origin_weight,
             neighbor_weight=opts.neighbor_weight,
             topology_weight=opts.topology_weight,
-            compactness=opts.compactness,
+            compactness=0.0 if energy else opts.compactness,
             damping=0.5 if energy else 1.0,
             origin_scale=_centroid_extent(centroids) if energy else None,
         )
@@ -249,16 +278,18 @@ class GridBasedLayout(Layout):
         )[0]
         model = GridEnergy(
             centroids,
-            tiling_result.centers,
+            centers,
             adjacency,
-            tiling_result.adjacency,
-            tiling_result.vertex_adjacency,
+            tile_adj,
+            vert_adj,
             distance_weight=opts.origin_weight,
             contact_weight=opts.neighbor_weight,
             connectivity_weight=opts.connectivity_weight,
             allowed_holes=allowed_holes,
+            pocket_weight=_POCKET_SCALE * opts.compactness * opts.neighbor_weight,
         )
-        return model.descend(start)
+        out = model.descend(start)
+        return out if allowed is None else allowed[out]
 
     def _compute(self, data: LayoutData, show_progress: bool = True, save_history: bool = False) -> LayoutResult:
         """Run grid assignment and return result.

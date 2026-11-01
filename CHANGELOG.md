@@ -325,7 +325,12 @@ The breaking changes below make the next release 3.0.0.
   lowers the energy. The result is a connected tile set without holes without the `fill_holes` and `fix_islands` steps,
   regions sit closer to their centroids and more neighbors touch on average, and tiles that no region needs change the
   result much less. The previous assignment is available as `assignment="refine"`; `fill_holes` and `fix_islands`
-  apply to it only. `topology_weight` and `compactness` shape the starting assignment only.
+  apply to it only. `topology_weight` shapes the starting assignment only.
+- **`compactness` of `GridBasedLayout` is a 0 to 1 setting of how packed the tile set is (default 0.25).** With the energy
+  assignment it limits the tiles a region may use to a packed set grown from the middle of the centroids, from the whole
+  lattice at 0 to exactly one tile per region at 1, and adds a penalty for each notch (a free tile with more than half of
+  its neighbors occupied). At 1 the layout is a solid block of tiles. Values above 1 are rejected with the energy
+  assignment; with `assignment="refine"` it is the former cost weight.
 - **The overlay colors of `PlotStyle.dark()` differ under red-green color vision deficiency.** The series, accent, positive and highlight colors changed slightly (`#85b7e0`, `#facc38`, `#54d497`, `#bf9cfc`).
 - **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,
   which put each square in a lattice cell: with the default `size_normalization="max"` the squares covered 15 % of the

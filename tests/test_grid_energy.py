@@ -131,3 +131,50 @@ def test_refine_assignment_still_available():
     assert len(set(np.asarray(res.assignments).tolist())) == len(gdf)
     with pytest.raises(ValueError, match="assignment"):
         GridBasedLayout(assignment="other")
+
+
+def _pockets(centers_adj, chosen):
+    adj = (centers_adj.toarray() != 0).astype(float)
+    kk = int(adj.sum(axis=1).max()) // 2 + 1
+    return int((~chosen & (adj @ chosen.astype(float) >= kk)).sum())
+
+
+def test_packed_candidates_have_no_pockets_and_grow_with_lower_compactness():
+    from carto_flow.symbol_cartogram.layouts.grid._compact import candidate_tiles
+
+    centers, edge = _grid(12, 9)
+    centroids, _ = _block(5, 4, jitter=0.4, seed=2)
+    centroids = centroids * 2.0 + 1.0
+    sizes = []
+    for c in (1.0, 0.5, 0.0):
+        tiles = candidate_tiles(centroids, centers, edge, c)
+        sizes.append(len(tiles))
+        if c == 1.0:
+            chosen = np.zeros(len(centers), dtype=bool)
+            chosen[tiles] = True
+            assert _pockets(edge, chosen) == 0
+    assert sizes == sorted(sizes)
+    assert sizes[0] == len(centroids)
+    assert sizes[-1] == len(centers)
+
+
+@pytest.mark.parametrize("tiling", ["hexagon", "square", "triangle"])
+def test_layout_full_compactness_has_no_pockets(tiling):
+    from carto_flow.data import load_us_census
+    from carto_flow.symbol_cartogram import create_layout
+    from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
+
+    gdf = load_us_census(population=True)
+    res = create_layout(gdf, layout=GridBasedLayout(tiling=tiling, compactness=1.0), show_progress=False)
+    tr = res.tiling_result
+    chosen = np.zeros(tr.n_tiles, dtype=bool)
+    chosen[np.asarray(res.assignments)] = True
+    assert _pockets(tr.adjacency, chosen) == 0
+
+
+def test_compactness_above_one_rejected_for_energy():
+    from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
+
+    with pytest.raises(ValueError, match="compactness"):
+        GridBasedLayout(compactness=1.5)
+    GridBasedLayout(compactness=1.5, assignment="refine")

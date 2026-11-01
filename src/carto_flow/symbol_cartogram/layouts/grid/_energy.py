@@ -8,6 +8,7 @@ centers), so it does not depend on the extent of the map or of the lattice::
          + contact_weight * (sum_{i<j neighbors}     A[i, j] * p(t[i], t[j])
                              + sum_{i<j not neighbors} q(t[i], t[j]))
          + connectivity_weight * K(t)
+         + pocket_weight * P(t)
 
 - ``d(i, k)``: distance from the centroid of region ``i`` to the center of tile
   ``k``, in tile steps. It is linear, so every tile step costs the same.
@@ -21,10 +22,11 @@ centers), so it does not depend on the extent of the map or of the lattice::
   and the free tiles should have no component enclosed by occupied tiles beyond
   the number of geographic holes. ``K`` counts every extra piece of a group,
   every pair of groups merged into one piece, and every extra enclosed hole.
+- ``P(t)``: number of pockets, free tiles with more than half of the largest
+  number of edge neighbors occupied (notches in the tile set).
 
-Unused tiles enter the energy only through the distance of a region placed on
-them, so tiles far from every centroid are not chosen unless that saves
-contacts or defects worth more than the distance.
+A tile far from every centroid is not chosen unless that saves contacts,
+defects or pockets worth more than the distance of the region placed on it.
 
 The minimizer is a descent from a given assignment. It applies a move only when
 the move lowers ``E``, so ``E`` decreases with every move and the descent ends.
@@ -78,6 +80,9 @@ class GridEnergy:
         Energy of one missed contact: the factor of the pair terms.
     connectivity_weight : float
         Energy of one connectivity defect.
+    pocket_weight : float
+        Energy of one pocket: a free tile with more than half of the largest
+        number of edge neighbors occupied.
     allowed_holes : int
         Number of enclosed free components that are not defects (geographic
         holes of the input).
@@ -96,6 +101,7 @@ class GridEnergy:
         contact_weight: float = 1.0,
         connectivity_weight: float = 5.0,
         allowed_holes: int = 0,
+        pocket_weight: float = 0.0,
     ) -> None:
         n, m = len(centroids), len(grid_centers)
         self.n, self.m = n, m
@@ -132,6 +138,10 @@ class GridEnergy:
 
         self.connectivity_weight = connectivity_weight
         self.allowed_holes = allowed_holes
+        self.pocket_weight = pocket_weight
+        deg = self.q.sum(axis=1)
+        self._kk = int(deg.max()) // 2 + 1 if m else 1
+        self._qs = csr_array(self.q)
         coo = edge.tocoo()
         self._rows, self._cols = coo.row, coo.col
         counts = np.diff(edge.indptr)
@@ -184,7 +194,29 @@ class GridEnergy:
     def energy(self, t: NDArray[np.intp]) -> float:
         """Total energy ``E`` of an assignment."""
         dist, pair, k = self.terms(t)
-        return dist + pair + self.connectivity_weight * k
+        e = dist + pair + self.connectivity_weight * k
+        return e + self.pocket_weight * self.pockets(t) if self.pocket_weight else e
+
+    def _pocket_delta(self, owner: NDArray[np.intp], a: int, x: int) -> int:
+        """Change of the pocket count when the region on tile *a* moves to the free tile *x*."""
+        nb = self._nbrs
+        tiles = {a, x, *nb[a], *nb[x]}
+        occ = owner >= 0
+
+        def count(o_a: bool, o_x: bool) -> int:
+            def is_occ(y: int) -> bool:
+                return o_a if y == a else (o_x if y == x else bool(occ[y]))
+
+            return sum(1 for y in tiles if not is_occ(y) and sum(is_occ(z) for z in nb[y]) >= self._kk)
+
+        return count(False, True) - count(True, False)
+
+    def pockets(self, t: NDArray[np.intp]) -> int:
+        """Free tiles with more than half of the maximum number of edge neighbors occupied."""
+        occ = np.zeros(self.m)
+        occ[t] = 1.0
+        cnt = self._qs @ occ
+        return int(((occ == 0) & (cnt >= self._kk)).sum())
 
     # --- descent ------------------------------------------------------------------------
 
@@ -232,6 +264,9 @@ class GridEnergy:
         owner[t] = np.arange(n)
         field = self.pair_field(t)
         k_cur = self.defects(t)
+        pw, kk = self.pocket_weight, self._kk
+        p_cur = self.pockets(t) if pw else 0
+        gain = None
         mu = self.connectivity_weight
         ar = np.arange(n)
         if trace is not None:
@@ -245,12 +280,14 @@ class GridEnergy:
             field += np.outer(wn, self.q[new] - self.q[old])
 
         def _reset(new_t: NDArray[np.intp]) -> None:
-            nonlocal t, field, k_cur
+            nonlocal t, field, k_cur, p_cur, gain
             t = new_t
             owner[:] = -1
             owner[t] = ar
             field = self.pair_field(t)
             k_cur = self.defects(t)
+            p_cur = self.pockets(t) if pw else 0
+            gain = None
             if trace is not None:
                 trace.append(self.energy(t))
 
@@ -269,6 +306,15 @@ class GridEnergy:
                 # Relocations of i to every free tile
                 d_rel = self.unary[i] - self.unary[i, a] + field[i] - field[i, a]
                 d_rel[owner >= 0] = np.inf
+                d_rank = d_rel
+                if pw:
+                    if gain is None:
+                        occf = (owner >= 0).astype(float)
+                        cnt = self._qs @ occf
+                        free = occf == 0
+                        gain = self._qs @ (free & (cnt == kk - 1)).astype(float) - (cnt >= kk)
+                    vac = float(cnt[a] >= kk) - float((self.q[a] * (free & (cnt == kk))).sum())
+                    d_rank = d_rel + pw * (gain + vac)
                 # Swaps of i with every other region j
                 tj = t
                 d_swp = (
@@ -285,14 +331,14 @@ class GridEnergy:
                 d_swp[i] = np.inf
 
                 cands: list[tuple[str, int, float]] = []
-                order_r = np.argsort(d_rel, kind="stable")[:n_candidates]
-                cands += [("r", int(x), float(d_rel[x])) for x in order_r if d_rel[x] < -_EPS]
+                order_r = np.argsort(d_rank, kind="stable")[:n_candidates]
+                cands += [("r", int(x), float(d_rel[x])) for x in order_r if d_rank[x] < -_EPS]
                 order_s = np.argsort(d_swp, kind="stable")[:n_candidates]
                 cands += [("s", int(x), float(d_swp[x])) for x in order_s if d_swp[x] < -_EPS]
 
-                best: tuple[str, int, float, int] | None = None
+                best: tuple[str, int, float, int, int] | None = None
                 for kind, x, d in cands:
-                    if best is not None and d - mu * k_cur >= best[2] - _EPS:
+                    if not pw and best is not None and d - mu * k_cur >= best[2] - _EPS:
                         continue  # cannot beat the best even if it removes every defect
                     t2 = t.copy()
                     if kind == "r":
@@ -301,12 +347,13 @@ class GridEnergy:
                         t2[i], t2[x] = t[x], a
                     # a swap keeps the occupied tiles: no change with one group
                     k2 = k_cur if kind == "s" and self.n_groups == 1 else self.defects(t2)
-                    total = d + mu * (k2 - k_cur)
+                    p2 = p_cur + self._pocket_delta(owner, a, x) if pw and kind == "r" else p_cur
+                    total = d + mu * (k2 - k_cur) + pw * (p2 - p_cur)
                     if total < -_EPS and (best is None or total < best[2]):
-                        best = (kind, x, total, k2)
+                        best = (kind, x, total, k2, p2)
                 if best is None:
                     continue
-                kind, x, _, k2 = best
+                kind, x, _, k2, p_cur = best
                 if kind == "r":
                     _move(i, a, x)
                     owner[a], owner[x] = -1, i
@@ -318,6 +365,7 @@ class GridEnergy:
                     t[i], t[x] = b, a
                     owner[a], owner[b] = x, i
                 k_cur = k2
+                gain = None
                 improved = True
                 if trace is not None:
                     trace.append(self.energy(t))
@@ -429,7 +477,7 @@ class GridEnergy:
         """Best move of all regions of a detached piece next to the largest piece of their group, if it lowers ``E``.
 
         The regions of the piece move one at a time, in index order, each to the
-        free tile next to the largest piece that is closest to its centroid.
+        free tile next to the largest piece with the lowest distance and pair energy.
         """
         occ = owner >= 0
         lab = self._labels(occ)
@@ -455,7 +503,10 @@ class GridEnergy:
                     if not near.any():
                         break
                     cand = np.flatnonzero(near)
-                    x = int(cand[np.argmin(self.unary[r, cand])])
+                    others = np.delete(t2, r)
+                    wa, wn = np.delete(self.w_adj[r], r), np.delete(self.w_non[r], r)
+                    cost = self.unary[r, cand] + wa @ self.p[np.ix_(others, cand)] + wn @ self.q[np.ix_(others, cand)]
+                    x = int(cand[np.argmin(cost)])
                     occ2[t2[r]] = False
                     occ2[x] = True
                     body[x] = True

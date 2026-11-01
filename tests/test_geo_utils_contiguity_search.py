@@ -208,3 +208,11 @@ def test_retries_resolve_what_the_single_run_leaves_and_default_is_unchanged():
     again, left0 = repair_contiguity(None, labels, adjacency=adj, max_candidate_paths=60, retries=0)
     assert list(again) == list(base_slot)
     assert left0 == base_left
+
+
+def test_retries_do_not_run_without_passes():
+    """With max_passes=0 the call only reports satellites; retries must not repair."""
+    adj, labels, _base_slot, _base_left, _slot, _left = _stuck_instance()
+    slot, left = repair_contiguity(None, labels, adjacency=adj, max_candidate_paths=60, max_passes=0, retries=8)
+    assert list(slot) == list(range(len(labels)))
+    assert left

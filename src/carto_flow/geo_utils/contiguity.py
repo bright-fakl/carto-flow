@@ -374,7 +374,7 @@ def repair_contiguity(
 
     retries : int
         Number of fallback runs (at most 8) tried when satellites remain after the
-        first run.  The first lets a satellite join any other piece of its group;
+        first run; none run when *max_passes* is 0.  The first lets a satellite join any other piece of its group;
         the others apply one run in which chains may split other groups, followed
         by a normal repair of the damage, with a fixed group and satellite order
         per run.  A run is kept only if the total number of extra pieces drops and
@@ -397,7 +397,7 @@ def repair_contiguity(
         "max_candidate_paths": max_candidate_paths,
     }
     slot_of, disc = _repair_contiguity_pass(cells, groups, **kw)
-    if not disc or retries <= 0:
+    if not disc or retries <= 0 or max_passes <= 0:
         return slot_of, disc
     if adjacency is None:
         from .adjacency import find_adjacent_pairs

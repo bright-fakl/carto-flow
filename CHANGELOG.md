@@ -491,6 +491,11 @@ The breaking changes below make the next release 3.0.0.
 
 ### Fixed
 
+- **`GridBasedLayout` closes a one-tile gap between two groups of regions with one move.** When the assignment left a group of
+  regions separated from the main group by a free tile, `fix_islands` moved every region of the group to a tile next to the
+  main group (11 of 49 states for the `tree` preset at offset (0.9, 0.1) on 175 tiles, mean distance 1.676 against 1.100 on 158
+  tiles). It now first moves the one region of the group whose move to the gap tile costs least in distance and in lost
+  neighbor contacts; wider gaps use the previous rule.
 - **Square flow grids have a cell size that matches their coordinates.** With `grid_square=True` (the default of
   `LadderSpec`, so every multiresolution run), the cell size was set to the average of the two directions while the
   domain kept its own extent in the longer one, so the nodes of the grid were spaced slightly differently from the cell size

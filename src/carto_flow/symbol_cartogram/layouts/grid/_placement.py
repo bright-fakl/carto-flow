@@ -436,6 +436,48 @@ def _fix_island_assignments(
 
         fixed_any = False
         for comp_regions in non_main:
+            # A gap of one free tile: fill it with the one region of the component that moves least.
+            comp_tiles = {int(assignments[r]) for r in comp_regions}
+            bridges = [
+                t
+                for t in range(m)
+                if t not in assigned_set
+                and any(nb in main_tiles for nb in nbrs[t])
+                and any(nb in comp_tiles for nb in nbrs[t])
+            ]
+            if bridges:
+                t0 = int(assignments[comp_regions[0]])
+                step = float(min(np.linalg.norm(grid_centers[nb] - grid_centers[t0]) for nb in nbrs[t0]))
+
+                def _touching(r: int, t: int) -> int:
+                    if region_adjacency is None:
+                        return 0
+                    return sum(
+                        1 for q in range(n) if q != r and region_adjacency[r, q] > 0 and int(assignments[q]) in nbrs[t]
+                    )
+
+                moves = [
+                    (
+                        (
+                            float(np.linalg.norm(grid_centers[t] - centroids[r]))
+                            - float(np.linalg.norm(grid_centers[assignments[r]] - centroids[r]))
+                        )
+                        / step
+                        + _touching(r, int(assignments[r]))
+                        - _touching(r, t),
+                        r,
+                        t,
+                    )
+                    for r in comp_regions
+                    for t in bridges
+                ]
+                _, region, best_tile = min(moves)
+                old_tile = int(assignments[region])
+                assignments[region] = best_tile
+                if verbose:
+                    print(f"[fix_islands]   Bridge region {region}: tile {old_tile} → {best_tile}")
+                fixed_any = True
+                break
             for region in comp_regions:
                 candidate_tiles = set()
                 for mt in main_tiles:

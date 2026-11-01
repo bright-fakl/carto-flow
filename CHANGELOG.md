@@ -550,6 +550,10 @@ The breaking changes below make the next release 3.0.0.
 
 ### Performance
 
+- **`repair_contiguity` searches chains in a fraction of the time.** The search follows only chains that can still reach the
+  main body, with the same chains in the same order. The chain repair of the mosaic layout for the 432 districts by state with
+  hexagons takes 0.02 s instead of 3.8 s.
+
 - **`IsohedralTiling.generate` is up to hundreds of times faster.** The former implementation compared every pair of tiles to remove
   duplicates, so the time grew with the square of the tile count (IH7: 7.4 s for 2,385 tiles, 32 s for 4,491 tiles, with
   adjacency). It now takes 0.12 s and 0.17 s. The grid and mosaic layouts with a curved tiling profit most (the mosaic layout of

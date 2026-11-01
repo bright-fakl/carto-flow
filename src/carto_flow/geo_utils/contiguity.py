@@ -108,49 +108,46 @@ def repair_contiguity(
         max_len: int = 10,
         max_k: int = max_candidate_paths,
     ):
-        # Reachability pre-check.  The enumeration below walks *paths*, so a
-        # node is re-expanded once per prefix that reaches it, and the search
-        # ends only when the heap empties -- which, when nothing reaches
-        # ``dst_slots``, means enumerating every simple path of up to
-        # ``max_len`` nodes.  A node-level BFS over the same restricted node
-        # set settles reachability in linear time, and a shortest walk is a
-        # simple path, so "no node of ``dst_slots`` within ``max_len`` nodes"
-        # is exactly the condition under which the enumeration yields nothing.
-        seen = {s for s in src_slots if s not in forbidden_nodes}
-        frontier: deque[tuple[int, int]] = deque((s, 1) for s in seen)
-        reachable = False
+        # Distance to ``dst_slots`` (in nodes, 0 on a destination) over the
+        # allowed nodes, by a backward BFS.  A prefix is only extended while
+        # ``length + dist`` stays within ``max_len``, so every queued prefix
+        # can still reach a destination.  Without this the heap expands all
+        # simple prefixes of up to ``max_len`` nodes, which grows exponentially
+        # on lattices with many equal-length chains.  The yielded chains and
+        # their order are those of the unpruned search: dropped prefixes never
+        # complete, and completions are still popped in (length, path) order.
+        dist: dict[int, int] = {}
+        frontier: deque[int] = deque()
+        for s in dst_slots:
+            if s not in forbidden_nodes:
+                dist[s] = 0
+                frontier.append(s)
         while frontier:
-            node, depth = frontier.popleft()
-            if node in dst_slots:
-                reachable = True
-                break
-            if depth >= max_len:
+            node = frontier.popleft()
+            if dist[node] + 2 > max_len:
                 continue
             for nb in adj[node]:
-                if nb not in seen and nb not in forbidden_nodes:
-                    seen.add(nb)
-                    frontier.append((nb, depth + 1))
-        if not reachable:
-            return
+                if nb not in dist and nb not in forbidden_nodes:
+                    dist[nb] = dist[node] + 1
+                    frontier.append(nb)
 
         heap: list[tuple[int, tuple[int, ...]]] = []
         for s in src_slots:
-            if s not in forbidden_nodes:
-                heapq.heappush(heap, (1, (s,)))
+            if s in dist and 1 + dist[s] <= max_len:
+                heapq.heappush(heap, (1 + dist[s], (s,)))
         k = 0
         while heap and k < max_k:
-            length, path_tup = heapq.heappop(heap)
+            _, path_tup = heapq.heappop(heap)
             cur = path_tup[-1]
             if cur in dst_slots:
                 yield list(path_tup)
                 k += 1
                 continue
-            if length >= max_len:
-                continue
+            length = len(path_tup)
             path_set = set(path_tup)
             for nb in adj[cur]:
-                if nb not in path_set and nb not in forbidden_nodes:
-                    heapq.heappush(heap, (length + 1, (*path_tup, nb)))
+                if nb not in path_set and nb in dist and length + 1 + dist[nb] <= max_len:
+                    heapq.heappush(heap, (length + 1 + dist[nb], (*path_tup, nb)))
 
     def _do_swap(d1: int, d2: int) -> None:
         s1, s2 = slot_of[d1], slot_of[d2]

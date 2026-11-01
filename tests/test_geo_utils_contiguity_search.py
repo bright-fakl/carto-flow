@@ -16,13 +16,13 @@ from collections import deque
 
 import pytest
 
-from carto_flow.geo_utils.contiguity import repair_contiguity
+from carto_flow.geo_utils.contiguity import _repair_contiguity_pass, repair_contiguity
 
 DEFAULT_MAX_LEN = 10
 
 
 def _pruned(adj, max_k=20):
-    lines = inspect.getsource(repair_contiguity).splitlines()
+    lines = inspect.getsource(_repair_contiguity_pass).splitlines()
     starts = [i for i, line in enumerate(lines) if line.startswith("    def _enumerate_paths(")]
     if len(starts) != 1:
         pytest.fail("could not locate _enumerate_paths in repair_contiguity source")
@@ -152,3 +152,59 @@ def test_us_states_squares_do_not_leave_a_split_region():
         gdf, tile_count="tiles", layout=MosaicLayout(tiling="square", morph=False), show_progress=False
     )
     assert result.metrics.algorithm.n_noncontiguous_regions == 0
+
+
+_STUCK = "ABAAAACDBDBBAADCBAABDCAABBDBAC"
+
+
+def _stuck_instance():
+    """A 5x6 grid labeling that the single repair run leaves split and the retries improve."""
+    rows, cols = 5, 6
+    edges = []
+    for r in range(rows):
+        for c in range(cols):
+            if c + 1 < cols:
+                edges.append((r * cols + c, r * cols + c + 1))
+            if r + 1 < rows:
+                edges.append((r * cols + c, (r + 1) * cols + c))
+    adj = _from_edges(rows * cols, edges)
+    labels = list(_STUCK)
+    base_slot, base_left = repair_contiguity(None, labels, adjacency=adj, max_candidate_paths=60)
+    slot, left = repair_contiguity(None, labels, adjacency=adj, max_candidate_paths=60, retries=8)
+    return adj, labels, base_slot, base_left, slot, left
+
+
+def _pieces(adj, labels, slot_of):
+    final = list(labels)
+    for d, s in enumerate(slot_of):
+        final[int(s)] = labels[d]
+    total = 0
+    for g in set(final):
+        slots = {s for s, x in enumerate(final) if x == g}
+        seen: set[int] = set()
+        for s0 in slots:
+            if s0 in seen:
+                continue
+            total += 1
+            stack = [s0]
+            seen.add(s0)
+            while stack:
+                x = stack.pop()
+                for y in adj[x]:
+                    if y in slots and y not in seen:
+                        seen.add(y)
+                        stack.append(y)
+    return total, final
+
+
+def test_retries_resolve_what_the_single_run_leaves_and_default_is_unchanged():
+    adj, labels, base_slot, base_left, slot, _left = _stuck_instance()
+    assert base_left
+    n_base, _ = _pieces(adj, labels, base_slot)
+    n_retry, final = _pieces(adj, labels, slot)
+    assert n_retry < n_base
+    assert sorted(final) == sorted(labels)
+    # retries=0 is the plain repair
+    again, left0 = repair_contiguity(None, labels, adjacency=adj, max_candidate_paths=60, retries=0)
+    assert list(again) == list(base_slot)
+    assert left0 == base_left

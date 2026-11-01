@@ -552,6 +552,12 @@ The breaking changes below make the next release 3.0.0.
   second largest component was not. A chain is also refused when it splits an already split group into more pieces, which
   stops two split groups from taking turns at repairing each other. On the 432 districts by state with the mosaic layout,
   hexagons end with 0 split groups (was 1); the 49 states with 350 tiles and squares end with 0 split regions (was 1).
+- **The mosaic layout closes split groups that block each other.** `repair_contiguity` has an opt-in `retries` parameter
+  (default 0; the mosaic layout uses 8). When satellites remain after the repair, it tries a satellite joining any other
+  piece of its group, then runs in which chains may split other groups followed by a normal repair of the damage, with fixed
+  group and satellite orders. A result is kept only if the total number of extra pieces drops and no group gets more
+  pieces. On the 432 districts by state with squares, the two split groups that the chain repair could not resolve are
+  closed.
 
 ### Performance
 

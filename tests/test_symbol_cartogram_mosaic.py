@@ -344,7 +344,7 @@ class TestRingSwapbackReach:
     The margin over 8 hops has since narrowed under a higher default
     ``interior_bonus``, which recovers some stranded tiles on its own. At
     ``morph=True`` the two reaches now tie on this fixture; at ``morph=False``
-    8 hops still strands a region in two blocks where 16 does not.
+    8 hops still strands more core tiles than 16.
     """
 
     def test_default_is_16(self):
@@ -369,9 +369,7 @@ class TestRingSwapbackReach:
 
         16 hops must leave every region contiguous and every group whole, and
         must leave no more stranded core tiles than 8 hops does.  Under
-        ``morph=False`` it is strictly better on stranded core tiles, and 8
-        hops is the only one of the two that strands a region in more than one
-        block.
+        ``morph=False`` it is strictly better on stranded core tiles.
 
         Under ``morph=True`` the two hop counts now reach the same stranded
         count on this fixture: the connectivity bonus already recovers what the
@@ -399,7 +397,6 @@ class TestRingSwapbackReach:
 
         if not morph:
             assert _unassigned_core(sixteen) < _unassigned_core(eight)
-            assert eight.metrics.algorithm.n_noncontiguous_regions > 0
 
 
 class TestChainSwapRepair:

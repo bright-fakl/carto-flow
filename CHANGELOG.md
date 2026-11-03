@@ -333,7 +333,9 @@ The breaking changes below make the next release 3.0.0.
   its neighbors occupied). At 1 the layout is a solid block of tiles that fills the outline. The new option
   `components` (`"separate"`, the default, `"connected"` or `"spaced"`) keeps separate land parts such as Alaska and
   Hawaii at their own location, attaches them to the block of the largest part, or does so with one free tile between
-  each part and the block. Values of `compactness` above 1 are rejected with the
+  each part and the block. The result lists the allocated tiles in
+  `result.metrics.algorithm.allowed_tiles`, and `plot_tile_sets(result)` (from `carto_flow.symbol_cartogram.layouts.grid`)
+  draws them against the assigned tiles. Values of `compactness` above 1 are rejected with the
   energy assignment; with `assignment="refine"` it is the former cost weight.
 - **The overlay colors of `PlotStyle.dark()` differ under red-green color vision deficiency.** The series, accent, positive and highlight colors changed slightly (`#85b7e0`, `#facc38`, `#54d497`, `#bf9cfc`).
 - **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,

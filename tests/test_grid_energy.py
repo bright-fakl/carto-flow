@@ -266,3 +266,20 @@ def test_components_validated():
     with pytest.raises(ValueError, match="components"):
         GridBasedLayout(components="joined")
     GridBasedLayout(components="connected")
+
+
+@pytest.mark.parametrize("compactness", [0.0, 0.5, 1.0])
+def test_allocated_tiles_contain_assigned_tiles(compactness):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from carto_flow.data import load_us_census
+    from carto_flow.symbol_cartogram import create_layout
+    from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout, plot_tile_sets
+
+    gdf = load_us_census(population=True)
+    res = create_layout(gdf, layout=GridBasedLayout(compactness=compactness), show_progress=False)
+    allowed = set(res.metrics.algorithm.allowed_tiles.tolist())
+    assert set(np.asarray(res.assignments).tolist()) <= allowed
+    assert len(allowed) == len(gdf) + round((1 - compactness) * (res.tiling_result.n_tiles - len(gdf)))
+    plot_tile_sets(res, labels=gdf["State Abbreviation"].tolist())

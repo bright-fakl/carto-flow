@@ -12,11 +12,12 @@ from ...options import SymbolOrientation, SymbolShape
 from ..base import Layout, _apply_kwargs_to_options, _orient_tiling, _validate_lattice_options
 from ..data_prep import LayoutData
 from ..layout_result import LayoutResult, Transform
+from ._diagnostics import plot_tile_sets
 
 if TYPE_CHECKING:
     pass
 
-__all__ = ["GridBasedLayout", "GridBasedLayoutOptions", "GridMetrics"]
+__all__ = ["GridBasedLayout", "GridBasedLayoutOptions", "GridMetrics", "plot_tile_sets"]
 
 
 @dataclass
@@ -26,6 +27,7 @@ class GridMetrics:
     tiling: str = ""
     tile_size: float = 0.0
     n_tiles: int = 0
+    allowed_tiles: NDArray[np.intp] | None = None  # sorted indices of the tiles the assignment could use
 
 
 @dataclass
@@ -269,10 +271,11 @@ class GridBasedLayout(Layout):
         energy = opts.assignment == "energy"
         centers, tile_adj, vert_adj = tiling_result.centers, tiling_result.adjacency, tiling_result.vertex_adjacency
         allowed = None
+        self._allowed = np.arange(len(centers), dtype=np.intp)
         if energy and opts.compactness > 0:
             from ._compact import candidate_tiles
 
-            allowed = candidate_tiles(
+            allowed = self._allowed = candidate_tiles(
                 centroids, centers, tile_adj, opts.compactness, list(data.source_gdf.geometry), opts.components
             )
             sub = np.ix_(allowed, allowed)
@@ -427,6 +430,8 @@ class GridBasedLayout(Layout):
         else:
             assignments = self._assign(data.positions, data.adjacency, tiling_result, data)
 
+        allowed_tiles = getattr(self, "_allowed", np.arange(len(tiling_result.polygons), dtype=np.intp))
+
         # Post-process: fill holes if requested
         refine = self._options.assignment == "refine"
         if refine and self._options.fill_holes:
@@ -484,6 +489,7 @@ class GridBasedLayout(Layout):
                 tiling=str(self._options.tiling),
                 tile_size=float(tiling_result.tile_size),
                 n_tiles=len(tiling_result.polygons),
+                allowed_tiles=allowed_tiles,
             ),
         )
 

@@ -66,18 +66,16 @@ _N_SCALES = 120  # scales of the outline tried
 def _silhouette_rank(
     grid_centers: NDArray[np.floating], outline: shapely.geometry.base.BaseGeometry, anchor: NDArray[np.floating]
 ) -> NDArray[np.intp]:
-    """Tiles in the order of the smallest scale of *outline* from which on it contains their center.
+    """Tiles in the order of the smallest scale of *outline* that contains their center.
 
     The outline is scaled about its area centroid, which is placed at *anchor*.
-    A tile counts only once it stays inside at every larger scale, so notches
-    of the outline (lakes, bays) are not filled early by a shrunken copy.
-    Ties, and tiles outside at every scale, go by distance to *anchor*.
+    Ties, and tiles outside the outline at every scale, go by distance to *anchor*.
     """
     c = np.asarray(outline.centroid.coords[0], dtype=float)
-    first = np.zeros(len(grid_centers))
-    for k in np.geomspace(0.03, 4.0, _N_SCALES):
+    first = np.full(len(grid_centers), np.inf)
+    for k in np.geomspace(0.03, 4.0, _N_SCALES)[::-1]:
         q = c + (grid_centers - anchor) / k
-        first[~shapely.contains_xy(outline, q[:, 0], q[:, 1])] = k
+        first[shapely.contains_xy(outline, q[:, 0], q[:, 1])] = k
     dist = np.hypot(*(grid_centers - anchor).T)
     return np.lexsort((np.arange(len(grid_centers)), dist, first)).astype(np.intp)
 

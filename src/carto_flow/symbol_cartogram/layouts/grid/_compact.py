@@ -9,6 +9,7 @@ import numpy as np
 import shapely
 from numpy.typing import NDArray
 from scipy.sparse import csr_array
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial.distance import cdist
 
 from ._placement import _canonical
@@ -135,15 +136,18 @@ def _silhouette_set(
     adj = _canonical(tile_adjacency)
     adj = csr_array((adj.maximum(adj.T) != 0).astype(float))
     first, main = True, None
+    patches = []
     for j in np.argsort(-counts, kind="stable"):
         anchor = np.asarray(parts[j].centroid.coords[0], dtype=float)
         take = int(quota[j])
         free = ~chosen
+        seeds: list[int] = []
         if components != "separate" and not first:
             gap = components == "spaced"
             anchor, seed, free = _attach_anchor(anchor, chosen, grid_centers, step, take, adj, gap)
             if seed is not None:
                 chosen[seed], take = True, take - 1
+                seeds.append(seed)
                 free[seed] = False
         first = False
         free = np.flatnonzero(free)
@@ -154,9 +158,37 @@ def _silhouette_set(
         else:
             order = free[_silhouette_rank(grid_centers[free], parts[j], anchor)]
         chosen[order[:take]] = True
+        patches.append((np.concatenate([seeds, order[:take]]).astype(np.intp), order))
         if main is None:
             main = chosen.copy()
+    for tiles, order in patches:
+        _connect_patch(chosen, tiles, order, adj)
     return chosen, main
+
+
+def _connect_patch(chosen: NDArray[np.bool_], tiles: NDArray[np.intp], order: NDArray[np.intp], adj: csr_array) -> None:
+    """Make the tiles of one land part a single piece, in place.
+
+    The tiles of the smaller pieces move to the free tiles next to the largest
+    piece that come first in the part's *order*.
+    """
+    if len(tiles) < 2:
+        return
+    lab = connected_components(adj[tiles][:, tiles], directed=False)[1]
+    if lab.max() == 0:
+        return
+    keep = lab == np.argmax(np.bincount(lab))
+    chosen[tiles[~keep]] = False
+    rank = np.full(len(chosen), len(chosen) + 1)
+    rank[order] = np.arange(len(order))
+    block = np.zeros(len(chosen), dtype=bool)
+    block[tiles[keep]] = True
+    for _ in range(int((~keep).sum())):
+        edge = np.flatnonzero((adj @ block.astype(float) > 0) & ~chosen)
+        if len(edge) == 0:
+            break
+        t = int(edge[np.argmin(rank[edge])])
+        chosen[t] = block[t] = True
 
 
 def _attach_anchor(

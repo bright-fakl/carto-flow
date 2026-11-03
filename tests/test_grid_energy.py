@@ -283,3 +283,20 @@ def test_allocated_tiles_contain_assigned_tiles(compactness):
     assert set(np.asarray(res.assignments).tolist()) <= allowed
     assert len(allowed) == len(gdf) + round((1 - compactness) * (res.tiling_result.n_tiles - len(gdf)))
     plot_tile_sets(res, labels=gdf["State Abbreviation"].tolist())
+
+
+@pytest.mark.parametrize("preset", ["regular_hexagon", "square"])
+def test_allocated_set_at_full_compactness_is_one_piece(preset):
+    from scipy.sparse.csgraph import connected_components
+
+    from carto_flow.data import load_us_census
+    from carto_flow.symbol_cartogram import create_layout
+    from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
+    from carto_flow.symbol_cartogram.tiling import IsohedralTiling
+
+    gdf = load_us_census(population=True)
+    tiling = IsohedralTiling.from_preset(preset).with_offset((0.0, 0.0))
+    res = create_layout(gdf, layout=GridBasedLayout(tiling=tiling, compactness=1.0), show_progress=False)
+    allowed = res.metrics.algorithm.allowed_tiles
+    adj = res.tiling_result.adjacency.tocsr()
+    assert connected_components(adj[allowed][:, allowed], directed=False)[0] == 1

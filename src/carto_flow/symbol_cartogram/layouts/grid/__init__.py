@@ -129,14 +129,18 @@ class GridBasedLayoutOptions:
         How regions are assigned to tiles: ``"energy"`` minimizes the energy
         above; ``"refine"`` uses the refined Hungarian assignment followed by
         ``fill_holes`` and ``fix_islands``. Default: ``"energy"``.
-    components : {"separate", "connected"}
+    components : {"separate", "connected", "spaced"}
         With ``assignment="energy"`` and ``compactness`` > 0, how separate
         land parts of the map (such as Alaska and Hawaii) share the allowed
         tiles. ``"separate"`` gives each part its own patch of tiles at its
         own location; ``"connected"`` puts the patches of the smaller parts
         against the block of the largest part, on the side of their real
-        position, so that the tile set is one piece. The default applies at
-        every compactness, including 1. Default: ``"separate"``.
+        position, so that the tile set is one piece; ``"spaced"`` does the
+        same with one free tile (two edge steps) between each patch and the
+        block. Below compactness 1 the modes shape the allowed tiles only:
+        the energy may still place a region on any allowed tile, so the
+        parts need not end up joined or spaced. Default: ``"separate"``,
+        at every compactness.
     connectivity_weight : float
         Energy of one connectivity defect, with ``assignment="energy"``.
         Default: 50.0.
@@ -176,7 +180,7 @@ class GridBasedLayoutOptions:
     min_hole_fraction: float = 0.5
     fix_islands: bool = True
     assignment: Literal["energy", "refine"] = "energy"
-    components: Literal["separate", "connected"] = "separate"
+    components: Literal["separate", "connected", "spaced"] = "separate"
     connectivity_weight: float = 50.0
     verbose: bool = False
     symbol_shape: SymbolShape | None = None
@@ -201,8 +205,8 @@ class GridBasedLayoutOptions:
             raise ValueError("spacing must be between 0 and 1")
         if self.min_hole_fraction < 0:
             raise ValueError("min_hole_fraction must be >= 0")
-        if self.components not in ("separate", "connected"):
-            raise ValueError("components must be 'separate' or 'connected'")
+        if self.components not in ("separate", "connected", "spaced"):
+            raise ValueError("components must be 'separate', 'connected' or 'spaced'")
         if self.assignment not in ("energy", "refine"):
             raise ValueError("assignment must be 'energy' or 'refine'")
         if self.connectivity_weight < 0:

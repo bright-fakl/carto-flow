@@ -6,6 +6,7 @@ import itertools
 
 import numpy as np
 import pytest
+import shapely
 from scipy.sparse import csr_array
 
 from carto_flow.symbol_cartogram.layouts.grid._energy import GridEnergy
@@ -202,22 +203,46 @@ def _groups(res, gdf):
     return dict(zip(gdf["postal"], lab, strict=True)), np.bincount(lab)
 
 
-def test_components_separate_keeps_islands_apart_and_connected_joins_them():
+@pytest.mark.parametrize("tiling", ["hexagon", "square"])
+def test_components_modes_place_islands(tiling):
+    from scipy.sparse.csgraph import dijkstra
+
     from carto_flow.symbol_cartogram import create_layout
     from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
 
     gdf = _states_with_islands()
+    names = list(gdf["postal"])
     out = {}
-    for comp in ("separate", "connected"):
+    for comp in ("separate", "connected", "spaced"):
         res = create_layout(
-            gdf, layout=GridBasedLayout(tiling="hexagon", compactness=1.0, components=comp), show_progress=False
+            gdf, layout=GridBasedLayout(tiling=tiling, compactness=1.0, components=comp), show_progress=False
         )
-        assert len(res.assignments) == len(gdf)  # n tiles at compactness 1
-        out[comp] = _groups(res, gdf)
-    lab, sizes = out["separate"]
+        a = np.asarray(res.assignments)
+        assert len(set(a.tolist())) == len(gdf)  # n tiles at compactness 1
+        adj = res.tiling_result.adjacency.tocsr() != 0
+        main = a[[i for i, nm in enumerate(names) if nm not in ("AK", "HI")]]
+        steps = dijkstra(adj, unweighted=True, indices=main, min_only=True)
+        out[comp] = (_groups(res, gdf), {nm: int(steps[a[names.index(nm)]]) for nm in ("AK", "HI")})
+    (lab, sizes), steps = out["separate"]
     assert len(sizes) == 3
     assert sizes[lab["AK"]] == 1 and sizes[lab["HI"]] == 1 and lab["AK"] != lab["HI"]
-    assert len(out["connected"][1]) == 1
+    assert min(steps.values()) > 2
+    assert len(out["connected"][0][1]) == 1
+    assert out["connected"][1] == {"AK": 1, "HI": 1}
+    assert len(out["spaced"][0][1]) == 3
+    assert out["spaced"][1] == {"AK": 2, "HI": 2}
+
+
+def test_single_tile_part_sits_next_to_its_islands():
+    from carto_flow.symbol_cartogram import create_layout
+    from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
+
+    gdf = _states_with_islands()
+    res = create_layout(gdf, layout=GridBasedLayout(tiling="hexagon", compactness=1.0), show_progress=False)
+    tr = res.tiling_result
+    hi = int(np.asarray(res.assignments)[list(gdf["postal"]).index("HI")])
+    pt = shapely.Point(tr.centers[hi])
+    assert pt.distance(gdf.geometry.iloc[list(gdf["postal"]).index("HI")]) < tr.tile_size
 
 
 def test_set_size_is_n_at_full_compactness_and_grows():

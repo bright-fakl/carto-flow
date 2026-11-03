@@ -66,16 +66,18 @@ _N_SCALES = 120  # scales of the outline tried
 def _silhouette_rank(
     grid_centers: NDArray[np.floating], outline: shapely.geometry.base.BaseGeometry, anchor: NDArray[np.floating]
 ) -> NDArray[np.intp]:
-    """Tiles in the order of the smallest scale of *outline* that contains their center.
+    """Tiles in the order of the smallest scale of *outline* from which on it contains their center.
 
     The outline is scaled about its area centroid, which is placed at *anchor*.
-    Ties, and tiles outside the outline at every scale, go by distance to *anchor*.
+    A tile counts only once it stays inside at every larger scale, so notches
+    of the outline (lakes, bays) are not filled early by a shrunken copy.
+    Ties, and tiles outside at every scale, go by distance to *anchor*.
     """
     c = np.asarray(outline.centroid.coords[0], dtype=float)
-    first = np.full(len(grid_centers), np.inf)
-    for k in np.geomspace(0.03, 4.0, _N_SCALES)[::-1]:
+    first = np.zeros(len(grid_centers))
+    for k in np.geomspace(0.03, 4.0, _N_SCALES):
         q = c + (grid_centers - anchor) / k
-        first[shapely.contains_xy(outline, q[:, 0], q[:, 1])] = k
+        first[~shapely.contains_xy(outline, q[:, 0], q[:, 1])] = k
     dist = np.hypot(*(grid_centers - anchor).T)
     return np.lexsort((np.arange(len(grid_centers)), dist, first)).astype(np.intp)
 
@@ -121,8 +123,9 @@ def _silhouette_set(
     geometries: Sequence,
     size: int,
     components: str,
-) -> NDArray[np.bool_]:
-    """Boolean mask of *size* tiles chosen by the silhouette of the land parts."""
+    tile_adjacency: csr_array,
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """Mask of *size* tiles chosen by the silhouette of the land parts, and of those of the largest part."""
     n, m = len(centroids), len(grid_centers)
     parts, label = _land_parts(geometries, centroids)
     counts = np.bincount(label, minlength=len(parts))
@@ -131,19 +134,31 @@ def _silhouette_set(
     chosen = np.zeros(m, dtype=bool)
     sample = cdist(grid_centers[: min(m, 50)], grid_centers)
     step = float(np.where(sample > 0, sample, np.inf).min()) if m > 1 else 1.0
-    first = True
+    adj = _canonical(tile_adjacency)
+    adj = csr_array((adj.maximum(adj.T) != 0).astype(float))
+    first, main = True, None
     for j in np.argsort(-counts, kind="stable"):
         anchor = np.asarray(parts[j].centroid.coords[0], dtype=float)
         take = int(quota[j])
-        if components == "connected" and not first:
-            anchor, seed = _attach_anchor(anchor, chosen, grid_centers, step, take)
+        free = ~chosen
+        if components != "separate" and not first:
+            gap = components == "spaced"
+            anchor, seed, free = _attach_anchor(anchor, chosen, grid_centers, step, take, adj, gap)
             if seed is not None:
                 chosen[seed], take = True, take - 1
+                free[seed] = False
         first = False
-        free = np.flatnonzero(~chosen)
-        order = free[_silhouette_rank(grid_centers[free], parts[j], anchor)]
+        free = np.flatnonzero(free)
+        if quota[j] == 1 and components == "separate":
+            # smaller than a tile: the free tile nearest the part
+            d = shapely.distance(shapely.points(grid_centers[free]), parts[j])
+            order = free[np.lexsort((np.hypot(*(grid_centers[free] - anchor).T), d))]
+        else:
+            order = free[_silhouette_rank(grid_centers[free], parts[j], anchor)]
         chosen[order[:take]] = True
-    return chosen
+        if main is None:
+            main = chosen.copy()
+    return chosen, main
 
 
 def _attach_anchor(
@@ -152,21 +167,30 @@ def _attach_anchor(
     grid_centers: NDArray[np.floating],
     step: float,
     quota: int,
-) -> tuple[NDArray[np.floating], int | None]:
-    """Anchor and first tile that put a part against the chosen block, on the side toward its real position.
+    adj: csr_array,
+    gap: bool,
+) -> tuple[NDArray[np.floating], int | None, NDArray[np.bool_]]:
+    """Anchor, first tile and free tiles that put a part against the chosen block.
 
-    The first tile is the free tile next to the block that is nearest to
-    *anchor*; the anchor lies one patch radius outside it. *step* is the
+    The first tile is the free tile nearest *anchor* among those next to the
+    block (two edge steps from it with *gap*, which leaves one tile free); the
+    anchor lies one patch radius outside it, away from the block. The free
+    tiles exclude the one-tile border of the block with *gap*. *step* is the
     distance between neighboring tile centers.
     """
-    near = cdist(grid_centers, grid_centers[chosen]).min(axis=1)
-    edge = np.flatnonzero(~chosen & (near < 1.5 * step))
+    c = chosen.astype(float)
+    ring1 = (adj @ c > 0) & ~chosen
+    if gap:
+        ring2 = (adj @ ring1.astype(float) > 0) & ~chosen & ~ring1
+        edge, free = np.flatnonzero(ring2), ~chosen & ~ring1
+    else:
+        edge, free = np.flatnonzero(ring1), ~chosen
     if len(edge) == 0:
-        return anchor, None
+        return anchor, None, ~chosen
     seed = int(edge[np.argmin(np.hypot(*(grid_centers[edge] - anchor).T))])
     direction = grid_centers[seed] - grid_centers[chosen].mean(axis=0)
     direction = direction / max(float(np.hypot(*direction)), 1e-12)
-    return grid_centers[seed] + direction * step * np.sqrt(quota / np.pi), seed
+    return grid_centers[seed] + direction * step * np.sqrt(quota / np.pi), seed, free
 
 
 def candidate_tiles(
@@ -184,7 +208,8 @@ def candidate_tiles(
     scaled copy of the outline of the map: each land part is scaled about its
     area centroid and gets tiles in proportion to its number of regions,
     the largest part first. ``components="connected"`` places the other parts
-    against the block of the largest part, on the side of their real position.
+    against the block of the largest part, on the side of their real position;
+    ``"spaced"`` does so with one free tile between each part and the block.
     Pockets are then closed. Without usable geometries the first tiles of the
     packed growth are taken.
     """
@@ -192,30 +217,36 @@ def candidate_tiles(
     size = n + round((1.0 - compactness) * (m - n))
     if size >= m:
         return np.arange(m, dtype=np.intp)
-    chosen = None
+    chosen = movable = None
     if geometries is not None and len(geometries) == n:
         try:
-            chosen = _silhouette_set(centroids, grid_centers, list(geometries), size, components)
+            chosen, movable = _silhouette_set(
+                centroids, grid_centers, list(geometries), size, components, tile_adjacency
+            )
         except Exception:
             chosen = None
     if chosen is None:
         order = packed_order(centroids, grid_centers, tile_adjacency)
         chosen = np.zeros(m, dtype=bool)
         chosen[order[:size]] = True
-    return np.flatnonzero(_close_pockets(chosen, tile_adjacency))
+    return np.flatnonzero(_close_pockets(chosen, tile_adjacency, movable))
 
 
-def _close_pockets(chosen: NDArray[np.bool_], tile_adjacency: csr_array) -> NDArray[np.bool_]:
+def _close_pockets(
+    chosen: NDArray[np.bool_], tile_adjacency: csr_array, movable: NDArray[np.bool_] | None = None
+) -> NDArray[np.bool_]:
     """Swap tiles out of and into *chosen* while that lowers the number of pockets.
 
     A pocket is an unchosen tile with more than half of the largest number of
     edge neighbors chosen. Each swap moves a chosen tile with few chosen
-    neighbors into the pocket with the most.
+    neighbors into the pocket with the most. Only tiles in *movable* (default:
+    all chosen tiles) are moved, so the patches of small parts stay where placed.
     """
     adj = _canonical(tile_adjacency)
     adj = csr_array((adj.maximum(adj.T) != 0).astype(float))
     kk = int(np.diff(adj.indptr).max()) // 2 + 1
     chosen = chosen.copy()
+    movable = chosen.copy() if movable is None else movable.copy()
 
     def pockets(c: NDArray[np.bool_]) -> tuple[int, NDArray[np.floating]]:
         cnt = adj @ c.astype(float)
@@ -226,12 +257,16 @@ def _close_pockets(chosen: NDArray[np.bool_], tile_adjacency: csr_array) -> NDAr
         if n_p == 0:
             break
         pocket = int(np.argmax(np.where(~chosen & (cnt >= kk), cnt, -1)))
-        for loose in np.argsort(np.where(chosen, cnt, np.inf), kind="stable")[:_N_LOOSE].tolist():
+        for loose in np.argsort(np.where(chosen & movable, cnt, np.inf), kind="stable")[:_N_LOOSE].tolist():
+            if not (chosen[loose] and movable[loose]):
+                continue
             trial = chosen.copy()
             trial[pocket], trial[loose] = True, False
+            movable_t = movable.copy()
+            movable_t[pocket], movable_t[loose] = True, False
             n_t, cnt_t = pockets(trial)
             if n_t < n_p:
-                chosen, n_p, cnt = trial, n_t, cnt_t
+                chosen, n_p, cnt, movable = trial, n_t, cnt_t, movable_t
                 break
         else:
             break

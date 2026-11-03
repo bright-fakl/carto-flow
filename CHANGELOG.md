@@ -315,6 +315,28 @@ The breaking changes below make the next release 3.0.0.
 
 ### Changed
 
+- **`GridBasedLayout` assigns regions to tiles by minimizing one energy, and every default grid layout changes.** The
+  energy, in tile units, is `origin_weight` times the distance of each region from its tile (linear, in tile steps), plus
+  `neighbor_weight` times the contact penalty of the refinement (missed contacts between neighbors, touching
+  non-neighbors), plus the new `connectivity_weight` (default 50) times the number of connectivity defects: extra pieces
+  of a group of connected regions, groups joined into one piece, and enclosed free areas beyond the holes of the input. It
+  is minimized from the refined Hungarian assignment (now damped, so its passes do not alternate between two assignments)
+  by moving single regions, swapping pairs, filling holes by shift chains and moving detached pieces, each only when it
+  lowers the energy. The result is a connected tile set without holes without the `fill_holes` and `fix_islands` steps,
+  regions sit closer to their centroids and more neighbors touch on average, and tiles that no region needs change the
+  result much less. The previous assignment is available as `assignment="refine"`; `fill_holes` and `fix_islands`
+  apply to it only. `topology_weight` shapes the starting assignment only.
+- **`compactness` of `GridBasedLayout` is a 0 to 1 setting of how packed the tile set is (default 0.25).** With the energy
+  assignment it limits the tiles a region may use to those inside the smallest scaled copy of the outline of the map
+  (each land part scaled about its own area centroid, with tiles in proportion to its number of regions), from the whole
+  lattice at 0 to exactly one tile per region at 1, and adds a penalty for each notch (a free tile with more than half of
+  its neighbors occupied). At 1 the layout is a solid block of tiles that fills the outline. The new option
+  `components` (`"separate"`, the default, `"connected"` or `"spaced"`) keeps separate land parts such as Alaska and
+  Hawaii at their own location, attaches them to the block of the largest part, or does so with one free tile between
+  each part and the block. The result lists the allocated tiles in
+  `result.metrics.algorithm.allowed_tiles`, and `plot_tile_sets(result)` (from `carto_flow.symbol_cartogram.layouts.grid`)
+  draws them against the assigned tiles. The tiles allocated to one land part form one piece: a detached tile of the silhouette (such as a tip of Florida) moves to the free tile next to the part that ranks first. Values of `compactness` above 1 are rejected with the
+  energy assignment; with `assignment="refine"` it is the former cost weight.
 - **The overlay colors of `PlotStyle.dark()` differ under red-green color vision deficiency.** The series, accent, positive and highlight colors changed slightly (`#85b7e0`, `#facc38`, `#54d497`, `#bf9cfc`).
 - **`demers_cartogram` packs squares that touch their neighbors.** The preset used the grid layout with a square tiling,
   which put each square in a lattice cell: with the default `size_normalization="max"` the squares covered 15 % of the
@@ -491,6 +513,11 @@ The breaking changes below make the next release 3.0.0.
 
 ### Fixed
 
+- **`GridBasedLayout` closes a one-tile gap between two groups of regions with one move.** When the assignment left a group of
+  regions separated from the main group by a free tile, `fix_islands` moved every region of the group to a tile next to the
+  main group (11 of 49 states for the `tree` preset at offset (0.9, 0.1) on 175 tiles, mean distance 1.676 against 1.100 on 158
+  tiles). It now first moves the one region of the group whose move to the gap tile costs least in distance and in lost
+  neighbor contacts; wider gaps use the previous rule.
 - **Square flow grids have a cell size that matches their coordinates.** With `grid_square=True` (the default of
   `LadderSpec`, so every multiresolution run), the cell size was set to the average of the two directions while the
   domain kept its own extent in the longer one, so the nodes of the grid were spaced slightly differently from the cell size

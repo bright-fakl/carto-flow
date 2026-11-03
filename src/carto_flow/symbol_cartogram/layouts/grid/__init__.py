@@ -53,13 +53,16 @@ class GridBasedLayoutOptions:
       edge neighbors of a tile occupied: a notch in the tile set.
 
     ``compactness`` (0 to 1) also restricts the tiles a region may use. The
-    tiles are ordered by a packed growth from the middle of the centroids that
-    always adds the free tile with the most grown neighbors, so every prefix
-    of the order is one connected set without notches. The assignment may use
-    the first ``n + (1 - compactness) * (m - n)`` tiles of ``m``: the whole
-    lattice at 0, where the layout follows the geography as closely as the
-    other terms allow, and exactly ``n`` packed tiles at 1, where the layout
-    is a solid block without pockets.
+    allowed tiles are those whose centers lie in the smallest scaled copy of
+    the outline of the map: the outline of each land part is scaled about its
+    area centroid, and the part gets tiles in proportion to its number of
+    regions (see ``components``). Pockets in the set are then closed. The
+    assignment may use ``n + (1 - compactness) * (m - n)`` tiles of ``m``: the
+    whole lattice at 0, where the layout follows the geography as closely as
+    the other terms allow, and exactly ``n`` tiles at 1, where the layout is a
+    solid block without pockets that fills the outline. Without usable
+    geometries, the first tiles of a packed growth from the middle of the
+    centroids are used.
 
     With the defaults, one tile step of distance costs as much as one missed
     contact, and one defect as much as 100 missed contacts, so the result is
@@ -126,6 +129,14 @@ class GridBasedLayoutOptions:
         How regions are assigned to tiles: ``"energy"`` minimizes the energy
         above; ``"refine"`` uses the refined Hungarian assignment followed by
         ``fill_holes`` and ``fix_islands``. Default: ``"energy"``.
+    components : {"separate", "connected"}
+        With ``assignment="energy"`` and ``compactness`` > 0, how separate
+        land parts of the map (such as Alaska and Hawaii) share the allowed
+        tiles. ``"separate"`` gives each part its own patch of tiles at its
+        own location; ``"connected"`` puts the patches of the smaller parts
+        against the block of the largest part, on the side of their real
+        position, so that the tile set is one piece. The default applies at
+        every compactness, including 1. Default: ``"separate"``.
     connectivity_weight : float
         Energy of one connectivity defect, with ``assignment="energy"``.
         Default: 50.0.
@@ -165,6 +176,7 @@ class GridBasedLayoutOptions:
     min_hole_fraction: float = 0.5
     fix_islands: bool = True
     assignment: Literal["energy", "refine"] = "energy"
+    components: Literal["separate", "connected"] = "separate"
     connectivity_weight: float = 50.0
     verbose: bool = False
     symbol_shape: SymbolShape | None = None
@@ -189,6 +201,8 @@ class GridBasedLayoutOptions:
             raise ValueError("spacing must be between 0 and 1")
         if self.min_hole_fraction < 0:
             raise ValueError("min_hole_fraction must be >= 0")
+        if self.components not in ("separate", "connected"):
+            raise ValueError("components must be 'separate' or 'connected'")
         if self.assignment not in ("energy", "refine"):
             raise ValueError("assignment must be 'energy' or 'refine'")
         if self.connectivity_weight < 0:
@@ -254,7 +268,9 @@ class GridBasedLayout(Layout):
         if energy and opts.compactness > 0:
             from ._compact import candidate_tiles
 
-            allowed = candidate_tiles(centroids, centers, tile_adj, opts.compactness)
+            allowed = candidate_tiles(
+                centroids, centers, tile_adj, opts.compactness, list(data.source_gdf.geometry), opts.components
+            )
             sub = np.ix_(allowed, allowed)
             centers, tile_adj = centers[allowed], tile_adj.tocsr()[sub]
             vert_adj = vert_adj.tocsr()[sub] if vert_adj is not None else None

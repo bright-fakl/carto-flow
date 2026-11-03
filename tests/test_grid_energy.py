@@ -158,11 +158,15 @@ def test_packed_candidates_have_no_pockets_and_grow_with_lower_compactness():
     assert sizes[-1] == len(centers)
 
 
-@pytest.mark.parametrize("tiling", ["hexagon", "square", "triangle"])
+@pytest.mark.parametrize("tiling", ["hexagon", "square", "triangle", "tree"])
 def test_layout_full_compactness_has_no_pockets(tiling):
     from carto_flow.data import load_us_census
     from carto_flow.symbol_cartogram import create_layout
     from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
+    from carto_flow.symbol_cartogram.tiling import IsohedralTiling
+
+    if tiling == "tree":
+        tiling = IsohedralTiling.from_preset("tree")
 
     gdf = load_us_census(population=True)
     res = create_layout(gdf, layout=GridBasedLayout(tiling=tiling, compactness=1.0), show_progress=False)
@@ -178,3 +182,62 @@ def test_compactness_above_one_rejected_for_energy():
     with pytest.raises(ValueError, match="compactness"):
         GridBasedLayout(compactness=1.5)
     GridBasedLayout(compactness=1.5, assignment="refine")
+
+
+def _states_with_islands():
+    """The 51 states in Albers coordinates; Alaska and Hawaii lie apart from the contiguous states."""
+    from carto_flow.data import load_us_states
+
+    gdf = load_us_states().to_crs("ESRI:102003")
+    return gdf[[g.area > 0 for g in gdf.geometry]].reset_index(drop=True)
+
+
+def _groups(res, gdf):
+    """Connected tile group of each region and the group sizes."""
+    from scipy.sparse.csgraph import connected_components
+
+    a = np.asarray(res.assignments)
+    adj = res.tiling_result.adjacency.tocsr()
+    lab = connected_components(adj[a][:, a], directed=False)[1]
+    return dict(zip(gdf["postal"], lab, strict=True)), np.bincount(lab)
+
+
+def test_components_separate_keeps_islands_apart_and_connected_joins_them():
+    from carto_flow.symbol_cartogram import create_layout
+    from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
+
+    gdf = _states_with_islands()
+    out = {}
+    for comp in ("separate", "connected"):
+        res = create_layout(
+            gdf, layout=GridBasedLayout(tiling="hexagon", compactness=1.0, components=comp), show_progress=False
+        )
+        assert len(res.assignments) == len(gdf)  # n tiles at compactness 1
+        out[comp] = _groups(res, gdf)
+    lab, sizes = out["separate"]
+    assert len(sizes) == 3
+    assert sizes[lab["AK"]] == 1 and sizes[lab["HI"]] == 1 and lab["AK"] != lab["HI"]
+    assert len(out["connected"][1]) == 1
+
+
+def test_set_size_is_n_at_full_compactness_and_grows():
+    from carto_flow.data import load_us_census
+    from carto_flow.symbol_cartogram import create_layout
+    from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
+    from carto_flow.symbol_cartogram.layouts.grid._compact import candidate_tiles
+
+    gdf = load_us_census(population=True)
+    res = create_layout(gdf, layout=GridBasedLayout(compactness=1.0), show_progress=False)
+    assert len(set(np.asarray(res.assignments).tolist())) == len(gdf)
+    tr = res.tiling_result
+    cent = np.array([[g.centroid.x, g.centroid.y] for g in gdf.geometry])
+    sizes = [len(candidate_tiles(cent, tr.centers, tr.adjacency, c, list(gdf.geometry))) for c in (1.0, 0.5, 0.0)]
+    assert sizes[0] == len(gdf) and sizes == sorted(sizes) and sizes[-1] == tr.n_tiles
+
+
+def test_components_validated():
+    from carto_flow.symbol_cartogram.layouts.grid import GridBasedLayout
+
+    with pytest.raises(ValueError, match="components"):
+        GridBasedLayout(components="joined")
+    GridBasedLayout(components="connected")

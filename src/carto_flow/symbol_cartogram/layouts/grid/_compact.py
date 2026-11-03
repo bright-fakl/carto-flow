@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import heapq
+from collections.abc import Sequence
 
 import numpy as np
+import shapely
 from numpy.typing import NDArray
 from scipy.sparse import csr_array
 from scipy.spatial.distance import cdist
@@ -58,24 +60,148 @@ def packed_order(
     return np.concatenate([np.asarray(order, dtype=np.intp), rest])
 
 
+_N_SCALES = 120  # scales of the outline tried
+
+
+def _silhouette_rank(
+    grid_centers: NDArray[np.floating], outline: shapely.geometry.base.BaseGeometry, anchor: NDArray[np.floating]
+) -> NDArray[np.intp]:
+    """Tiles in the order of the smallest scale of *outline* that contains their center.
+
+    The outline is scaled about its area centroid, which is placed at *anchor*.
+    Ties, and tiles outside the outline at every scale, go by distance to *anchor*.
+    """
+    c = np.asarray(outline.centroid.coords[0], dtype=float)
+    first = np.full(len(grid_centers), np.inf)
+    for k in np.geomspace(0.03, 4.0, _N_SCALES)[::-1]:
+        q = c + (grid_centers - anchor) / k
+        first[shapely.contains_xy(outline, q[:, 0], q[:, 1])] = k
+    dist = np.hypot(*(grid_centers - anchor).T)
+    return np.lexsort((np.arange(len(grid_centers)), dist, first)).astype(np.intp)
+
+
+def _land_parts(
+    geometries: Sequence, centroids: NDArray[np.floating]
+) -> tuple[list[shapely.geometry.base.BaseGeometry], NDArray[np.intp]]:
+    """Land parts of the union of *geometries* and the part of each region.
+
+    Parts joined by one region (the islands of a multipart region) are one
+    part, so a small part is always a whole region or several, such as an
+    island state, which keeps its own patch.
+    """
+    geoms = shapely.make_valid(np.asarray(geometries, dtype=object))
+    union = shapely.union_all(geoms).buffer(0)
+    polys = list(getattr(union, "geoms", [union]))
+    parent = list(range(len(polys)))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    tree = shapely.STRtree(polys)
+    for g in geoms:
+        h = sorted(int(j) for j in tree.query(g, predicate="intersects"))
+        for j in h[1:]:
+            parent[find(j)] = find(h[0])
+    roots = sorted({find(i) for i in range(len(polys))})
+    groups = [shapely.union_all([polys[i] for i in range(len(polys)) if find(i) == r]) for r in roots]
+    parts = groups
+    label = np.zeros(len(geoms), dtype=np.intp)
+    for i, g in enumerate(geoms):
+        ref = shapely.Point(centroids[i]) if g.is_empty else g
+        label[i] = int(np.argmin([part.distance(ref) for part in parts]))
+    return parts, label
+
+
+def _silhouette_set(
+    centroids: NDArray[np.floating],
+    grid_centers: NDArray[np.floating],
+    geometries: Sequence,
+    size: int,
+    components: str,
+) -> NDArray[np.bool_]:
+    """Boolean mask of *size* tiles chosen by the silhouette of the land parts."""
+    n, m = len(centroids), len(grid_centers)
+    parts, label = _land_parts(geometries, centroids)
+    counts = np.bincount(label, minlength=len(parts))
+    quota = counts + ((size - n) * counts) // n
+    quota[int(np.argmax(counts))] += size - int(quota.sum())
+    chosen = np.zeros(m, dtype=bool)
+    sample = cdist(grid_centers[: min(m, 50)], grid_centers)
+    step = float(np.where(sample > 0, sample, np.inf).min()) if m > 1 else 1.0
+    first = True
+    for j in np.argsort(-counts, kind="stable"):
+        anchor = np.asarray(parts[j].centroid.coords[0], dtype=float)
+        take = int(quota[j])
+        if components == "connected" and not first:
+            anchor, seed = _attach_anchor(anchor, chosen, grid_centers, step, take)
+            if seed is not None:
+                chosen[seed], take = True, take - 1
+        first = False
+        free = np.flatnonzero(~chosen)
+        order = free[_silhouette_rank(grid_centers[free], parts[j], anchor)]
+        chosen[order[:take]] = True
+    return chosen
+
+
+def _attach_anchor(
+    anchor: NDArray[np.floating],
+    chosen: NDArray[np.bool_],
+    grid_centers: NDArray[np.floating],
+    step: float,
+    quota: int,
+) -> tuple[NDArray[np.floating], int | None]:
+    """Anchor and first tile that put a part against the chosen block, on the side toward its real position.
+
+    The first tile is the free tile next to the block that is nearest to
+    *anchor*; the anchor lies one patch radius outside it. *step* is the
+    distance between neighboring tile centers.
+    """
+    near = cdist(grid_centers, grid_centers[chosen]).min(axis=1)
+    edge = np.flatnonzero(~chosen & (near < 1.5 * step))
+    if len(edge) == 0:
+        return anchor, None
+    seed = int(edge[np.argmin(np.hypot(*(grid_centers[edge] - anchor).T))])
+    direction = grid_centers[seed] - grid_centers[chosen].mean(axis=0)
+    direction = direction / max(float(np.hypot(*direction)), 1e-12)
+    return grid_centers[seed] + direction * step * np.sqrt(quota / np.pi), seed
+
+
 def candidate_tiles(
     centroids: NDArray[np.floating],
     grid_centers: NDArray[np.floating],
     tile_adjacency: csr_array,
     compactness: float,
+    geometries: Sequence | None = None,
+    components: str = "separate",
 ) -> NDArray[np.intp]:
     """Sorted indices of the tiles the assignment may use.
 
-    The first ``n + round((1 - compactness) * (m - n))`` tiles of the packed
-    order: all ``m`` tiles at 0, the ``n`` most packed tiles at 1.
+    ``n + round((1 - compactness) * (m - n))`` tiles: all ``m`` at 0, ``n`` at 1.
+    With the region *geometries*, the tiles whose centers lie in the smallest
+    scaled copy of the outline of the map: each land part is scaled about its
+    area centroid and gets tiles in proportion to its number of regions,
+    the largest part first. ``components="connected"`` places the other parts
+    against the block of the largest part, on the side of their real position.
+    Pockets are then closed. Without usable geometries the first tiles of the
+    packed growth are taken.
     """
     n, m = len(centroids), len(grid_centers)
     size = n + round((1.0 - compactness) * (m - n))
     if size >= m:
         return np.arange(m, dtype=np.intp)
-    order = packed_order(centroids, grid_centers, tile_adjacency)
-    chosen = np.zeros(m, dtype=bool)
-    chosen[order[:size]] = True
+    chosen = None
+    if geometries is not None and len(geometries) == n:
+        try:
+            chosen = _silhouette_set(centroids, grid_centers, list(geometries), size, components)
+        except Exception:
+            chosen = None
+    if chosen is None:
+        order = packed_order(centroids, grid_centers, tile_adjacency)
+        chosen = np.zeros(m, dtype=bool)
+        chosen[order[:size]] = True
     return np.flatnonzero(_close_pockets(chosen, tile_adjacency))
 
 

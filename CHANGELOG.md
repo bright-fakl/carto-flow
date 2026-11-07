@@ -86,6 +86,17 @@ The breaking changes below make the next release 3.0.0.
 
 ### Added
 
+- **`TileLayout` (`layout="tiles"`), one tile layout for one tile per region, `tile_count` and `group_by`.** It first allocates
+  the usable tiles from the silhouette of each land part, with `compactness` setting their number on the geometric scale
+  `n * (m / n) ** (1 - compactness)` (default 0.75; 1 uses exactly the needed tiles), and `components` (`"separate"`,
+  `"connected"`, `"spaced"`) setting how land parts relate. It then assigns tiles by exact optimal transport with a reserve that
+  leaves unused tiles on the edge of the allowed set. A region only uses tiles of its own land part. One tile per region is
+  followed by a contact descent (`protect_contacts` keeps contacts of neighbors); tile counts and groups by a swap search and
+  chain moves that keep each region or group in one piece, which is not guaranteed at `compactness=1`. `pre_morph=True` assigns
+  by a flow cartogram of the input. The result is a `TileLayoutResult`. New
+  `carto_flow.geo_utils.find_bordering_pairs` finds neighbors by shared border length. See
+  [Tile Layout Algorithm](explanations/symbol-cartogram-tile-layout.md).
+
 - **`rotation` and `offset` options of `GridBasedLayout` and `MosaicLayout`.** `rotation` is in degrees, counter-clockwise, about
   the center of the covered region (the mosaic layout had no rotation). `offset=(u, v)` shifts the lattice by `u` and `v` times
   its two translation vectors; it is periodic, and the default `(0, 0)` is the lattice anchored at the region center. The

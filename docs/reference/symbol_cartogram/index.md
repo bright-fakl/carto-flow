@@ -28,7 +28,7 @@ graph TD
 | Sub-module | Description |
 |------------|-------------|
 | **[API](api.md)** | Main functions: `create_symbol_cartogram`, `create_layout` |
-| **[Layouts](layout.md)** | Layout algorithms: `PackingLayout`, `FlowDensityLayout`, `GridBasedLayout`, `MosaicLayout`, etc. |
+| **[Layouts](layout.md)** | Layout algorithms: `PackingLayout`, `FlowDensityLayout`, `GridBasedLayout`, `MosaicLayout`, `TileLayout`, etc. |
 | **[LayoutResult](layout_result.md)** | Immutable layout output with transforms |
 | **[Result](result.md)** | `SymbolCartogram` result container |
 | **[Styling](styling.md)** | Symbol styling configuration |

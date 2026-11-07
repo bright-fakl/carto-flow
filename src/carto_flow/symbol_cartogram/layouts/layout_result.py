@@ -167,7 +167,7 @@ class LayoutResult:
         CRS information as WKT string from source GeoDataFrame.
     layout_type : str
         Registry key of the layout that produced the result (``"packing"``,
-        ``"flow_density"``, ``"centroid"``, ``"grid"``, ``"mosaic"``). It
+        ``"flow_density"``, ``"centroid"``, ``"grid"``, ``"mosaic"``, ``"tiles"``). It
         records which layout ran, and selects the result class to rebuild
         when a serialized result is read back with :meth:`from_dict`.
     metrics : AlgorithmMetrics | None
@@ -394,6 +394,8 @@ class LayoutResult:
             result_cls = GridLayoutResult
         elif layout_type == "mosaic":
             result_cls = MosaicLayoutResult
+        elif layout_type == "tiles":
+            result_cls = TileLayoutResult
         else:
             result_cls = LayoutResult
 
@@ -644,6 +646,17 @@ class MosaicLayoutResult(TiledLayoutResult):
     counts: NDArray[np.intp] | None = None
     core_tile_indices: NDArray[np.intp] | None = None
     pool_tile_indices: NDArray[np.intp] | None = None
+
+
+@dataclass
+class TileLayoutResult(MosaicLayoutResult):
+    """Layout result from TileLayout.
+
+    Carries the fields of :class:`MosaicLayoutResult`; ``core_tile_indices``
+    and ``pool_tile_indices`` both hold the tiles the layout was allowed to use.
+    """
+
+    layout_type: str = "tiles"
 
 
 # Import at end to avoid circular import

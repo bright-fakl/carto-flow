@@ -73,7 +73,7 @@ def create_symbol_cartogram(
         ignores the grouping (see ``Layout.supports_group_by``).
     layout : Layout or str
         Layout instance or string shorthand, e.g. "packing", "grid",
-        or "mosaic". Defaults to "packing".
+        "mosaic", or "tiles". Defaults to "packing".
         Pass a Layout instance for full control over algorithm options.
     size_scale : str
         Scaling method for proportional sizing: "sqrt", "linear", or "log".
@@ -232,7 +232,7 @@ def create_layout(
         (see ``Layout.supports_group_by``).
     layout : Layout or str
         Layout instance or string shorthand, e.g. "packing", "grid",
-        or "mosaic". Defaults to "packing".
+        "mosaic", or "tiles". Defaults to "packing".
     size_scale : str
         Scaling method for proportional sizing: "sqrt", "linear", or "log".
     size_max_value : float, optional

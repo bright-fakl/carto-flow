@@ -27,6 +27,8 @@ compute_complex_polygon_areas_numba
     Parallel area computation for polygons with holes.
 find_adjacent_pairs
     Find touching geometry pairs using buffered intersection.
+find_bordering_pairs
+    Find geometry pairs that share a border of a minimum length.
 find_crossing_segments
     Mask of the segments of a set of rings that cross another segment.
 find_crossing_pairs
@@ -97,7 +99,7 @@ See Also
 """
 
 # Import and re-export main functions and classes from geometry module
-from .adjacency import find_adjacent_pairs
+from .adjacency import find_adjacent_pairs, find_bordering_pairs
 from .contiguity import (
     repair_adjacency,
     repair_compactness,
@@ -139,6 +141,7 @@ __all__ = [
     "densify_coverage",
     "explode_geodataframe",
     "find_adjacent_pairs",
+    "find_bordering_pairs",
     "find_crossing_pairs",
     "find_crossing_segments",
     "prescale_connected_components",

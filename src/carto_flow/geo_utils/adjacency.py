@@ -8,6 +8,8 @@ Functions
 ---------
 find_adjacent_pairs
     Find adjacent geometry pairs using buffered intersection.
+find_bordering_pairs
+    Find geometry pairs that share a border of a minimum length.
 
 Examples
 --------
@@ -25,7 +27,7 @@ import numpy as np
 import shapely
 from shapely import STRtree
 
-__all__ = ["find_adjacent_pairs"]
+__all__ = ["find_adjacent_pairs", "find_bordering_pairs"]
 
 
 def find_adjacent_pairs(
@@ -98,3 +100,66 @@ def find_adjacent_pairs(
                 pairs.append((i, j, float(shared_length)))
 
     return pairs
+
+
+def find_bordering_pairs(
+    geometries: list,
+    tile_size: float | None = None,
+    buffer_fraction: float = 0.01,
+    min_length_fraction: float = 0.05,
+) -> list[tuple[int, int, float]]:
+    """Find geometry pairs that share a border of a minimum length.
+
+    Two geometries are neighbors when their boundaries run alongside each
+    other for more than a minimum length. The shared length of a pair is
+    measured twice: as the length of the boundary of ``a`` that lies within a
+    thin buffer of the boundary of ``b``, and the reverse. The mean of both
+    is the shared border length. Unlike a distance tolerance, this separates
+    regions that border each other from regions that only come close (across
+    a strait) or that touch at a corner.
+
+    Parameters
+    ----------
+    geometries : list of shapely.Geometry
+        Polygon geometries to test.
+    tile_size : float, optional
+        Reference length for the buffer and the minimum length. Default: the
+        diameter of a circle with the mean area of the geometries.
+    buffer_fraction : float
+        Buffer distance around each boundary, as a fraction of *tile_size*.
+        Default: 0.01.
+    min_length_fraction : float
+        A pair is returned when its shared border length exceeds this
+        fraction of *tile_size*. Default: 0.05.
+
+    Returns
+    -------
+    list[tuple[int, int, float]]
+        ``(i, j, shared_length)`` for each neighboring pair with ``i < j``,
+        in increasing order of ``i`` then ``j``.
+    """
+    n = len(geometries)
+    if n < 2:
+        return []
+    geoms = shapely.make_valid(np.asarray(geometries, dtype=object))
+    if tile_size is None:
+        mean_area = float(np.mean(shapely.area(geoms)))
+        tile_size = 2.0 * float(np.sqrt(max(mean_area, 0.0) / np.pi))
+    if tile_size <= 0:
+        return []
+    width = buffer_fraction * tile_size
+    min_length = min_length_fraction * tile_size
+
+    boundaries = shapely.boundary(geoms)
+    zones = shapely.buffer(boundaries, width)
+    tree = STRtree(zones)
+    left, right = tree.query(zones, predicate="intersects")
+    keep = left < right
+    left, right = left[keep], right[keep]
+    if len(left) == 0:
+        return []
+    forward = shapely.length(shapely.intersection(boundaries[left], zones[right]))
+    backward = shapely.length(shapely.intersection(boundaries[right], zones[left]))
+    shared = 0.5 * (forward + backward)
+    order = np.lexsort((right, left))
+    return [(int(left[k]), int(right[k]), float(shared[k])) for k in order if shared[k] > min_length]

@@ -12,7 +12,7 @@ from .centroid import CentroidLayout, CentroidLayoutOptions, CentroidMetrics
 from .data_prep import LayoutData, compute_symbol_sizes, prepare_layout_data
 from .flow import FlowDensityHistory, FlowDensityLayout, FlowDensityLayoutOptions, FlowDensityMetrics
 from .grid import GridBasedLayout, GridBasedLayoutOptions, GridMetrics
-from .layout_result import AlgorithmMetrics, LayoutResult, SimulationHistory, Transform
+from .layout_result import AlgorithmMetrics, LayoutResult, SimulationHistory, TileLayoutResult, Transform
 from .mosaic import HungarianOptions, MosaicLayout, MosaicLayoutOptions, MosaicMetrics
 from .packing import (
     PackingAdvancedOptions,
@@ -21,6 +21,7 @@ from .packing import (
     PackingLayoutOptions,
     PackingMetrics,
 )
+from .tiles import TileLayout, TileLayoutOptions, TileMetrics
 
 __all__ = [
     "AlgorithmMetrics",
@@ -47,6 +48,10 @@ __all__ = [
     "PackingLayoutOptions",
     "PackingMetrics",
     "SimulationHistory",
+    "TileLayout",
+    "TileLayoutOptions",
+    "TileLayoutResult",
+    "TileMetrics",
     "Transform",
     "_apply_kwargs_to_options",
     "check_group_by_support",
@@ -62,6 +67,7 @@ register_layout("flow_density", FlowDensityLayout)
 register_layout("grid", GridBasedLayout)
 register_layout("mosaic", MosaicLayout)
 register_layout("packing", PackingLayout)
+register_layout("tiles", TileLayout)
 register_layout("topology", PackingLayout)  # backward-compat alias
 
 

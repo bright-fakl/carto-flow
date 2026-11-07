@@ -516,7 +516,7 @@ class TileLayout(Layout):
         from ._descent import contact_descent
 
         n = len(working)
-        tile_of = np.empty(n, dtype=np.intp)
+        tile_of: NDArray[np.intp] = np.empty(n, dtype=np.intp)
         used = np.flatnonzero(label >= 0)
         tile_of[label[used]] = used
         targets = np.array([g.centroid.coords[0] for g in working], dtype=float)

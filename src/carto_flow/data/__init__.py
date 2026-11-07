@@ -464,8 +464,8 @@ def _finalize_census_gdf(
 
     gdf = gdf.copy()
 
-    gdf["Region"] = gdf["STATE"].map(lambda x: REGION_NAMES.get(STATE_REGIONS.get(x or "", ""), None))  # type: ignore[arg-type]
-    gdf["Division"] = gdf["STATE"].map(lambda x: DIVISION_NAMES.get(STATE_DIVISIONS.get(x or "", ""), None))  # type: ignore[arg-type]
+    gdf["Region"] = gdf["STATE"].map(lambda x: REGION_NAMES.get(STATE_REGIONS.get(x or "", "")))  # type: ignore[arg-type]
+    gdf["Division"] = gdf["STATE"].map(lambda x: DIVISION_NAMES.get(STATE_DIVISIONS.get(x or "", "")))  # type: ignore[arg-type]
 
     if population:
         gdf["Population (Millions)"] = gdf["Population"] / 1e6

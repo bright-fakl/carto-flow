@@ -288,7 +288,7 @@ def allocate_tiles(
         outline = outlines[j]
         anchor = np.asarray(outline.centroid.coords[0], dtype=float)
         take = int(quota[j])
-        free = ~chosen
+        free: NDArray[np.bool_] = ~chosen
         seeds: list[int] = []
         if components != "separate" and j > 0:
             anchor, seed, free = _attach_anchor(anchor, chosen, centers, step, take, adj, components == "spaced")

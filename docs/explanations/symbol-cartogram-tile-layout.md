@@ -50,7 +50,8 @@ tiles of the largest part.
 - `"spaced"`: as connected, with one unused tile between each part and the block.
 
 A region may only use tiles of its own land part, in every mode. Land parts always come from the
-input geometries, also with `pre_morph`.
+input geometries, also with `pre_morph`. With `"separate"`, the smaller land parts choose their
+tiles before the largest one.
 
 A region with parts more than one tile away from its main part receives a share of its tile count
 for each remote part, in proportion to area, when the share rounds to at least one tile. With one
@@ -60,7 +61,7 @@ tile the tile goes to the main part.
 
 ### One tile per region
 
-Tiles are assigned by an exact optimal assignment (Hungarian) of regions to the allowed tiles. The
+Tiles are assigned by the transport problem below with a capacity of 1 per region, solved exactly. The
 cost of a tile is the squared distance, in tile steps, from its center to the region geometry, plus
 0.1 times the squared distance to its centroid. The surplus tiles go to a reserve whose cost is
 the distance of a tile to the boundary of the convex hull of the allowed tiles, so unused tiles
@@ -73,14 +74,16 @@ touching regions that are not neighbors, plus one per pocket. Neighbors are regi
 shared border is longer than 0.05 tile; see
 [`find_bordering_pairs`][carto_flow.geo_utils.adjacency.find_bordering_pairs]. With
 `protect_contacts=True` a move that lowers the number of touching neighbor pairs among the moved
-regions is rejected.
+regions is rejected, and the result is kept only if at least as many neighbor pairs touch as in
+the unprotected descent.
 
 ### Tile counts and groups
 
 With `tile_count` or `group_by`, the group (the region itself with `tile_count`) has a capacity
 equal to its tile count, and the same transport problem is solved exactly with replicated rows.
 The reserve cost gains one per used neighbor of an unused tile, from the previous solution, in
-three passes. The result is repaired in two steps:
+three passes. The result is repaired by two steps, repeated while they reduce the number of split
+groups:
 
 1. A swap search exchanges tiles between neighboring groups when that lowers the number of extra
    components of the two groups, or keeps it and lowers the cost.
@@ -89,20 +92,24 @@ three passes. The result is repaired in two steps:
 Within a group, tiles go to the group's geometries by matching their centroids, after fitting the
 centroids to the tiles by translation and uniform scaling.
 
-Contiguity is not guaranteed at `compactness=1`, where no tile is spare: a group can remain in
-two pieces (Florida in a districts-by-state map, for instance). Below 1 the repair finds a
-contiguous solution for typical inputs.
+Contiguity is not guaranteed at `compactness=1`, where no tile is spare, nor for compactness close
+to it, and a lattice offset can leave a group in two pieces at lower values. The layout warns when
+groups remain in more than one piece. Below that range the repair normally finds a contiguous
+solution.
 
 ## Pre-morph
 
 `pre_morph=True` morphs the geometries with the flow cartogram to equal area per tile before the
-assignment; the assignment then draws tiles to the morphed geometries. It helps most when
-region sizes differ widely (US states, districts). The land parts stay those of the input.
+assignment; the assignment then draws tiles to the morphed geometries. It is most useful when
+region sizes differ widely. The land parts stay those of the input.
 
 ## Cost and limits
 
-- The assignment is dense in the number of usable tiles: time and memory grow with its square.
-- The result is deterministic.
+- The assignment is dense in the number of usable tiles: time and memory grow with its square. The
+  layout warns when the dense matrices are estimated to exceed 2 GB, which is
+  `8 * (pieces * lattice tiles + 3 * usable tiles ** 2)` bytes.
+- The result is deterministic and does not depend on the order of the input rows: regions are
+  processed in the order of their centroid x, y and area.
 - The layout does not reproduce every shape feature; a region can sit a hop away from some of
   its neighbors, and at low compactness a few pockets can remain.
 

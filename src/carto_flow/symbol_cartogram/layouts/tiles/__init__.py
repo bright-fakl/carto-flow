@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import warnings
 from dataclasses import dataclass
 from typing import Literal
@@ -18,6 +19,9 @@ from ..layout_result import AlgorithmMetrics, LayoutResult, TileLayoutResult
 __all__ = ["TileLayout", "TileLayoutOptions", "TileMetrics"]
 
 _COMPONENTS = ("separate", "connected", "spaced")
+_REPAIR_ROUNDS = 5  # swap and chain searches repeated while they reduce the number of split groups
+_CHAIN_DEPTH = 4  # groups in a chain move
+_MEMORY_WARNING_BYTES = 2.0e9  # estimated size of the dense matrices above which the layout warns
 
 
 @dataclass
@@ -80,8 +84,8 @@ class TileLayoutOptions:
         layout uses exactly ``n`` tiles and follows the outline of the map
         exactly, at the cost of larger displacements; below 1 surplus tiles
         let regions stay near their position. Contiguity of groups is
-        repaired for compactness below 1 and not guaranteed at 1.
-        Default 0.75.
+        repaired for compactness below 1 and not guaranteed at 1 or close to it;
+        a warning reports groups left in more than one piece. Default 0.75.
     components : {"separate", "connected", "spaced"}
         Where separate land masses (islands, exclaves) are placed: at their
         own position (``"separate"``), against the block of the largest land
@@ -96,10 +100,12 @@ class TileLayoutOptions:
     morph_options : MorphOptions or None
         Options for the pre-morph. None gives ``MorphOptions(n_iter=100)``.
     protect_contacts : bool
-        With one tile per region, reject a move that lowers the number of
-        touching pairs of neighboring regions among the regions it moves. This
-        keeps more neighbors in contact and allows more false contacts and
-        larger displacement. Default False.
+        With one tile per region, reject a move or swap that lowers the number
+        of touching pairs of neighboring regions among the regions it moves,
+        and keep the result of the protected descent only if it leaves at least
+        as many neighbor pairs touching as the unprotected descent. This keeps
+        more neighbors in contact and can allow more false contacts and larger
+        displacement. Default False.
     spacing : float
         Gap between drawn symbols as a fraction of tile size (0-1). It does
         not change the assignment. Default 0.05.
@@ -134,6 +140,25 @@ class TileLayoutOptions:
             raise ValueError(f"spacing must be between 0 and 1, got {self.spacing}")
 
 
+def _part_key(part: shapely.Geometry) -> tuple[float, float, float]:
+    """Sort key of a part: largest first, ties by position."""
+    c = part.centroid
+    return (-round(part.area, 6), round(c.x, 6), round(c.y, 6))
+
+
+def _canonical_order(geometries: list, bounds: tuple[float, float, float, float]) -> NDArray[np.intp]:
+    """Order of geometries by centroid x, then y, then area, independent of their input order.
+
+    Coordinates are rounded relative to the extent of *bounds* so that
+    floating-point noise does not change the order; ties keep the input order.
+    """
+    extent = max(bounds[2] - bounds[0], bounds[3] - bounds[1], 1e-12)
+    cents = np.array([g.centroid.coords[0] for g in geometries], dtype=float)
+    key = np.round((cents - np.array(bounds[:2])) / extent * 1e6)
+    area = np.round(np.array([g.area for g in geometries]) / max(sum(g.area for g in geometries), 1e-300) * 1e6)
+    return np.lexsort((area, key[:, 1], key[:, 0])).astype(np.intp)
+
+
 def _split_capacity(areas: NDArray[np.floating], k: int) -> NDArray[np.intp]:
     """Split *k* tiles over parts in proportion to their areas; the first part keeps at least one."""
     caps = np.zeros(len(areas), dtype=np.intp)
@@ -161,11 +186,12 @@ class TileLayout(Layout):
     receives a share of its tile count for each remote part when the share
     rounds to a whole tile.
 
-    With one tile per region and no grouping, the tiles are assigned by an
-    exact optimal assignment and then improved by swaps that keep neighboring
-    regions in contact. With ``tile_count`` or ``group_by``, the tiles are
-    assigned by exact optimal transport, a swap search and chain moves that
-    keep each region or group in one piece. Within a group, tiles go to the
+    The tiles are assigned by exact optimal transport with a reserve that takes
+    the unused tiles. With one tile per region and no grouping this is the
+    transport problem with a capacity of 1 per region, followed by swaps and
+    moves that keep neighboring regions in contact. With ``tile_count`` or
+    ``group_by``, the capacity is the tile count, and a swap search and chain
+    moves, repeated while they help, keep each region or group in one piece. Within a group, tiles go to the
     group's geometries by matching their centroids, after fitting the
     centroids to the tiles by translation and uniform scaling.
 
@@ -184,7 +210,9 @@ class TileLayout(Layout):
     Notes
     -----
     The tiles are solved as a dense assignment whose size is the number of
-    usable tiles, so time and memory grow with its square. The lattice window
+    usable tiles, so time and memory grow with its square; the layout warns
+    when the dense matrices are estimated to exceed 2 GB. The result does not
+    depend on the order of the input rows. The lattice window
     and tile size follow the geometries: a tile has the mean area of a tile
     needed. ``size_normalization`` does not change the assignment.
     """
@@ -251,7 +279,7 @@ class TileLayout(Layout):
 
         # Lattice: tiles with the area of one needed tile, over the window of the geometries.
         tiling_obj = _orient_tiling(resolve_tiling(opts.tiling), opts.rotation, opts.offset)
-        tile_area = float(sum(g.area for g in unit_geom)) / n
+        tile_area = math.fsum(g.area for g in unit_geom) / n
         probe = tiling_obj.generate(bounds=(-1.0, -1.0, 1.0, 1.0), tile_size=1.0)
         unit_area = probe.canonical_tile.area / probe.tile_size**2
         tile_size = float(np.sqrt(tile_area / unit_area))
@@ -271,15 +299,20 @@ class TileLayout(Layout):
         nbrs = neighbor_lists(tiling_result.adjacency)
         step = tile_step(centers)
 
+        # Canonical order of the units (by position, then area) so that the result does not depend on row order.
+        unit_order = _canonical_order(unit_geom, data.bounds)
+        geom_rank = np.empty(n_geoms, dtype=np.intp)
+        geom_rank[_canonical_order(geometries, data.bounds)] = np.arange(n_geoms)
+
         # Pieces: the parts of a unit that receive tiles. A part within one tile of the main part joins it;
         # remote parts receive a share of the unit's tiles that rounds to at least one.
         piece_geom: list = []
         piece_cap: list[int] = []
         piece_unit: list[int] = []
-        for u in range(n_units):
+        for u in unit_order.tolist():
             if unit_cap[u] == 0:
                 continue
-            parts = sorted(getattr(unit_geom[u], "geoms", [unit_geom[u]]), key=lambda p: -p.area)
+            parts = sorted(getattr(unit_geom[u], "geoms", [unit_geom[u]]), key=_part_key)
             parts = [p for p in parts if not p.is_empty]
             main = parts[0]
             core = [p for p in parts if p.distance(main) < step]
@@ -314,6 +347,16 @@ class TileLayout(Layout):
         allocation = allocate_tiles(outlines, need, centers, tiling_result.adjacency, size, opts.components)
         allowed = allocation.tiles
 
+        dense_bytes = 8.0 * (n_pieces * n_lattice + 3.0 * len(allowed) ** 2)
+        if dense_bytes > _MEMORY_WARNING_BYTES:
+            warnings.warn(
+                f"TileLayout builds dense matrices of about {dense_bytes / 1e9:.1f} GB "
+                f"({n_pieces} pieces, {len(allowed)} usable of {n_lattice} lattice tiles); "
+                "lower compactness toward 1 or use fewer regions to reduce it",
+                UserWarning,
+                stacklevel=3,
+            )
+
         # Transport of the allowed tiles to the pieces, restricted to the land part of each piece.
         cost = np.full((n_pieces, n_lattice), FORBIDDEN)
         foreign = allocation.part_of_tile[allowed][None, :] != piece_part[:, None]
@@ -324,12 +367,33 @@ class TileLayout(Layout):
         )
         if plain:
             label = self._contact_descent(
-                label, allowed, centers, nbrs, working, geometries, allocation.part_of_tile, piece_part, step
+                label,
+                allowed,
+                centers,
+                nbrs,
+                working,
+                geometries,
+                piece_unit_arr,
+                allocation.part_of_tile,
+                piece_part,
+                step,
             )
         else:
-            label = swap_search(label, cost, reserve_cost, nbrs)
-            label = chain_search(label, cost, reserve_cost, nbrs)
+            for _ in range(_REPAIR_ROUNDS):
+                before = split_groups(label, n_pieces, nbrs)
+                label = swap_search(label, cost, reserve_cost, nbrs)
+                label = chain_search(label, cost, reserve_cost, nbrs, depth=_CHAIN_DEPTH)
+                if split_groups(label, n_pieces, nbrs) >= before:
+                    break
         used = np.flatnonzero(label >= 0)
+        n_split_pieces = split_groups(label, n_pieces, nbrs)[0]
+        if n_split_pieces:
+            warnings.warn(
+                f"{n_split_pieces} group(s) are split into more than one piece; contiguity is not guaranteed "
+                "for compactness close to 1",
+                UserWarning,
+                stacklevel=3,
+            )
         if np.any(cost[label[used], used] >= FORBIDDEN / 2):
             warnings.warn("Some tiles lie outside the land mass of their region", UserWarning, stacklevel=3)
 
@@ -338,6 +402,7 @@ class TileLayout(Layout):
         for u in range(n_units):
             tiles = used[piece_unit_arr[label[used]] == u]
             members = np.flatnonzero(unit_of_geom == u).astype(np.intp)
+            members = members[np.argsort(geom_rank[members], kind="stable")]
             if len(tiles) == 0:
                 continue
             if len(members) == 1:
@@ -369,7 +434,7 @@ class TileLayout(Layout):
             iterations=1,
             final_overlaps=0,
             algorithm=TileMetrics(
-                tiling=str(opts.tiling),
+                tiling=opts.tiling if isinstance(opts.tiling, str) else type(tiling_obj).__name__,
                 tile_size=float(tiling_result.tile_size),
                 n_tiles=n_lattice,
                 n_allowed=len(allowed),
@@ -436,11 +501,17 @@ class TileLayout(Layout):
         nbrs: list[list[int]],
         working: list,
         geometries: list,
+        piece_unit: NDArray[np.intp],
         part_of_tile: NDArray[np.intp],
         piece_part: NDArray[np.intp],
         step: float,
     ) -> NDArray[np.intp]:
-        """Improve the contacts of regions with one tile each; return the updated labels."""
+        """Improve the contacts of regions with one tile each; return the updated labels.
+
+        With ``protect_contacts`` the descent that rejects moves losing contacts
+        is run next to the plain descent, and the one that leaves more neighbor
+        pairs touching is kept (the protected one on a tie).
+        """
         from ....geo_utils.adjacency import find_bordering_pairs
         from ._descent import contact_descent
 
@@ -449,18 +520,37 @@ class TileLayout(Layout):
         used = np.flatnonzero(label >= 0)
         tile_of[label[used]] = used
         targets = np.array([g.centroid.coords[0] for g in working], dtype=float)
-        pairs = [(i, j) for i, j, _ in find_bordering_pairs(geometries)]
-        tile_of = contact_descent(
-            tile_of,
-            allowed,
-            centers,
-            nbrs,
-            targets,
-            pairs,
-            step,
-            tile_ok=lambda t, g: bool(part_of_tile[t] == piece_part[g]),
-            protect_contacts=self._options.protect_contacts,
+        piece_of_unit = np.empty(len(piece_unit), dtype=np.intp)
+        piece_of_unit[piece_unit] = np.arange(n)
+        pairs = sorted(
+            (min(piece_of_unit[i], piece_of_unit[j]), max(piece_of_unit[i], piece_of_unit[j]))
+            for i, j, _ in find_bordering_pairs(geometries)
         )
+
+        def descend(protect: bool) -> NDArray[np.intp]:
+            return contact_descent(
+                tile_of,
+                allowed,
+                centers,
+                nbrs,
+                targets,
+                pairs,
+                step,
+                tile_ok=lambda t, g: bool(part_of_tile[t] == piece_part[g]),
+                protect_contacts=protect,
+            )
+
+        result = descend(self._options.protect_contacts)
+        if self._options.protect_contacts:
+            plain = descend(False)
+            nbr_sets = [set(x) for x in nbrs]
+
+            def touching(tiles: NDArray[np.intp]) -> int:
+                return sum(int(tiles[b] in nbr_sets[tiles[a]]) for a, b in pairs)
+
+            if touching(plain) > touching(result):
+                result = plain
+        tile_of = result
         out = np.where(label == -2, -2, -1).astype(np.intp)
         out[tile_of] = np.arange(n)
         return out

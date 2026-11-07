@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from scipy.sparse import csr_array
 from scipy.sparse.csgraph import shortest_path
 
+_FALSE_CONTACT = 0.5  # energy of a touching pair of regions that are not neighbors
 _HOP_CAP = 9.0  # cap of the squared hop gap of a neighboring pair that does not touch
 _RELOCATE_REACH = 2  # hops a region may move to a free tile
 _SWAP_REACH = 3  # hops between two regions that may exchange their tiles
@@ -125,7 +126,7 @@ def contact_descent(
                         gap = hops[tile_of[g], tile_of[h]] - 1
                         energy += 0.5 * min(gap * gap, _HOP_CAP)
                 elif touch:
-                    energy += 0.5
+                    energy += _FALSE_CONTACT
         tiles = set(tile_of[regions].tolist())
         for t in list(tiles):
             tiles.update(nbrs[t])

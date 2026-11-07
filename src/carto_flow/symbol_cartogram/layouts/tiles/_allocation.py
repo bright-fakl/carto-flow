@@ -96,7 +96,7 @@ def land_parts(geometries: Sequence) -> tuple[list, NDArray[np.intp]]:
             parent[find(j)] = find(hit[0])
     roots = sorted({find(i) for i in range(len(pieces))})
     merged = [shapely.union_all([pieces[i] for i in range(len(pieces)) if find(i) == r]) for r in roots]
-    parts = sorted(merged, key=lambda p: -p.area)
+    parts = sorted(merged, key=lambda p: (-round(p.area, 6), round(p.centroid.x, 6), round(p.centroid.y, 6)))
     labels = np.empty(len(geoms), dtype=np.intp)
     for i, g in enumerate(geoms):
         labels[i] = int(np.argmin([p.distance(g) for p in parts]))
@@ -244,7 +244,7 @@ def allocate_tiles(
     Each land part is scaled about its area centroid and receives tiles in
     proportion to the number it needs, taken in the order of the smallest scale
     of its outline that contains their centers; the first part receives the
-    remainder. ``components="connected"`` puts the other parts against the
+    remainder, and with ``"separate"`` chooses its tiles last. ``components="connected"`` puts the other parts against the
     block of the first part on the side of their real position, ``"spaced"``
     with one free tile between each part and the block. Each part is then made
     one piece and pockets in the result are closed by moving tiles of the first
@@ -281,7 +281,11 @@ def allocate_tiles(
     chosen = np.zeros(m, dtype=bool)
     owner = np.full(m, -1, dtype=np.intp)
     patches: list[tuple[int, NDArray[np.intp], NDArray[np.intp]]] = []
-    for j, outline in enumerate(outlines):
+    # Separate parts are placed at their own position: the smaller parts choose their tiles first, so the first
+    # part flows around them and a small part is not pushed away by the tiles of a large neighbor.
+    sequence = [*range(1, len(outlines)), 0] if components == "separate" else range(len(outlines))
+    for j in sequence:
+        outline = outlines[j]
         anchor = np.asarray(outline.centroid.coords[0], dtype=float)
         take = int(quota[j])
         free = ~chosen

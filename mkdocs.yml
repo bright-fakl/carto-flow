@@ -142,6 +142,7 @@ nav:
         - Circle Packing Layout Algorithm: explanations/symbol-cartogram-circle-packing.md
         - Flow Density Layout Algorithm: explanations/symbol-cartogram-flow-density-layout.md
         - Mosaic Layout Algorithm: explanations/symbol-cartogram-mosaic-layout.md
+        - Tile Layout Algorithm: explanations/symbol-cartogram-tile-layout.md
         - Tiling System: explanations/tiling-system.md
     - Voronoi Cartogram:
         - Algorithm: explanations/voronoi-cartogram-algorithm.md

@@ -31,7 +31,7 @@ from carto_flow.symbol_cartogram.presets import (
     geographic_grouped_cartogram,
 )
 
-SUPPORTING = ["centroid", "flow_density", "mosaic", "packing", "topology"]
+SUPPORTING = ["centroid", "flow_density", "mosaic", "packing", "tiles", "topology"]
 NOT_SUPPORTING = ["grid"]
 
 

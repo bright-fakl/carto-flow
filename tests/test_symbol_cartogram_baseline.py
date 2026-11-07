@@ -522,6 +522,7 @@ EXPECTED_LAYOUT_TYPES = {
     "grid": "grid",
     "mosaic": "mosaic",
     "packing": "packing",
+    "tiles": "tiles",
     "topology": "packing",  # registered alias of the packing layout
 }
 
@@ -555,6 +556,7 @@ class TestLayoutTypeProvenance:
             GridLayoutResult,
             LayoutResult,
             MosaicLayoutResult,
+            TileLayoutResult,
         )
 
         gdf = make_grid_gdf(rows=3, cols=3)
@@ -562,7 +564,7 @@ class TestLayoutTypeProvenance:
 
         restored = LayoutResult.from_serialized(result.serialize())
 
-        expected_cls = {"grid": GridLayoutResult, "mosaic": MosaicLayoutResult}.get(
+        expected_cls = {"grid": GridLayoutResult, "mosaic": MosaicLayoutResult, "tiles": TileLayoutResult}.get(
             EXPECTED_LAYOUT_TYPES[name], LayoutResult
         )
         assert type(restored) is expected_cls
